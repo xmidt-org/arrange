@@ -1,19 +1,19 @@
-# __PROJECT__
+# arrange
 
-__PROJECT__ does something good.
+arrange does something good.
 
-[![Build Status](https://travis-ci.com/xmidt-org/__PROJECT__.svg?branch=main)](https://travis-ci.com/xmidt-org/__PROJECT__)
-[![codecov.io](http://codecov.io/github/xmidt-org/__PROJECT__/coverage.svg?branch=main)](http://codecov.io/github/xmidt-org/__PROJECT__?branch=main)
-[![Code Climate](https://codeclimate.com/github/xmidt-org/__PROJECT__/badges/gpa.svg)](https://codeclimate.com/github/xmidt-org/__PROJECT__)
-[![Issue Count](https://codeclimate.com/github/xmidt-org/__PROJECT__/badges/issue_count.svg)](https://codeclimate.com/github/xmidt-org/__PROJECT__)
-[![Go Report Card](https://goreportcard.com/badge/github.com/xmidt-org/__PROJECT__)](https://goreportcard.com/report/github.com/xmidt-org/__PROJECT__)
-[![Apache V2 License](http://img.shields.io/badge/license-Apache%20V2-blue.svg)](https://github.com/xmidt-org/__PROJECT__/blob/main/LICENSE)
-[![GitHub release](https://img.shields.io/github/release/xmidt-org/__PROJECT__.svg)](CHANGELOG.md)
-[![GoDoc](https://godoc.org/github.com/xmidt-org/__PROJECT__?status.svg)](https://godoc.org/github.com/xmidt-org/__PROJECT__)
+[![Build Status](https://travis-ci.com/xmidt-org/arrange.svg?branch=main)](https://travis-ci.com/xmidt-org/arrange)
+[![codecov.io](http://codecov.io/github/xmidt-org/arrange/coverage.svg?branch=main)](http://codecov.io/github/xmidt-org/arrange?branch=main)
+[![Code Climate](https://codeclimate.com/github/xmidt-org/arrange/badges/gpa.svg)](https://codeclimate.com/github/xmidt-org/arrange)
+[![Issue Count](https://codeclimate.com/github/xmidt-org/arrange/badges/issue_count.svg)](https://codeclimate.com/github/xmidt-org/arrange)
+[![Go Report Card](https://goreportcard.com/badge/github.com/xmidt-org/arrange)](https://goreportcard.com/report/github.com/xmidt-org/arrange)
+[![Apache V2 License](http://img.shields.io/badge/license-Apache%20V2-blue.svg)](https://github.com/xmidt-org/arrange/blob/main/LICENSE)
+[![GitHub release](https://img.shields.io/github/release/xmidt-org/arrange.svg)](CHANGELOG.md)
+[![GoDoc](https://godoc.org/github.com/xmidt-org/arrange?status.svg)](https://godoc.org/github.com/xmidt-org/arrange)
 
 ## Summary
 
-Search and replace __PROJECT__ with your project name. Summary should be a 
+Search and replace arrange with your project name. Summary should be a 
 small paragraph explanation of what this project does.
 
 ## Table of Contents

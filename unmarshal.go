@@ -7,22 +7,6 @@ import (
 	"go.uber.org/fx"
 )
 
-// MergeDecoderConfigOptions simply smashes together two slices of viper decoder options.
-// This function is used to merge global options, such as is provided in the fx.App as a component,
-// with local options provided in an UnmarshalXXX function.
-func MergeDecoderConfigOptions(v1, v2 []viper.DecoderConfigOption) []viper.DecoderConfigOption {
-	if len(v1) == 0 {
-		return v2
-	} else if len(v2) == 0 {
-		return v1
-	}
-
-	return append(
-		append([]viper.DecoderConfigOption{}, v1...),
-		v2...,
-	)
-}
-
 // UnmarshalIn is the set of dependencies for all UnmarshalXXX functions in this package
 type UnmarshalIn struct {
 	fx.In
@@ -54,19 +38,19 @@ func (up unmarshalProvider) unmarshal(args []reflect.Value) []reflect.Value {
 		err = u.Viper.UnmarshalKey(
 			up.key,
 			up.target.Interface(),
-			MergeDecoderConfigOptions(u.DecodeOptions, up.decodeOptions)...,
+			Merge(u.DecodeOptions, up.decodeOptions),
 		)
 
 	case up.exact:
 		err = u.Viper.UnmarshalExact(
 			up.target.Interface(),
-			MergeDecoderConfigOptions(u.DecodeOptions, up.decodeOptions)...,
+			Merge(u.DecodeOptions, up.decodeOptions),
 		)
 
 	default:
 		err = u.Viper.Unmarshal(
 			up.target.Interface(),
-			MergeDecoderConfigOptions(u.DecodeOptions, up.decodeOptions)...,
+			Merge(u.DecodeOptions, up.decodeOptions),
 		)
 	}
 
@@ -166,15 +150,6 @@ func newUnmarshalProvider(prototype interface{}, opts ...viper.DecoderConfigOpti
 //   )
 func Unmarshal(prototype interface{}, opts ...viper.DecoderConfigOption) interface{} {
 	return newUnmarshalProvider(prototype, opts...).provide()
-}
-
-// UnmarshalExact is similar to Unmarshal, but it uses viper.UnmarshalExact instead of viper.Unmarshal.
-//
-// See: https://pkg.go.dev/github.com/spf13/viper?tab=doc#UnmarshalExact
-func UnmarshalExact(prototype interface{}, opts ...viper.DecoderConfigOption) interface{} {
-	up := newUnmarshalProvider(prototype, opts...)
-	up.exact = true
-	return up.provide()
 }
 
 // UnmarshalKey uses viper.UnmarshalKey to unmarshal its component, but is in

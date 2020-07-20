@@ -57,6 +57,37 @@ age: 16
 	)
 }
 
+func testUnmarshalValueExact(t *testing.T) {
+	const yaml = `
+name: "testy mctest"
+age: 16
+nosuch: 123455
+`
+	var (
+		assert  = assert.New(t)
+		require = require.New(t)
+		v       = viper.New()
+
+		actual TestConfig
+	)
+
+	v.SetConfigType("yaml")
+	require.NoError(v.ReadConfig(strings.NewReader(yaml)))
+
+	t.Log("EXPECTED ERROR OUTPUT")
+
+	app := fx.New(
+		fx.Logger(testPrinter{T: t}),
+		fx.Supply(v, []viper.DecoderConfigOption{Exact}),
+		fx.Provide(
+			Unmarshal(TestConfig{Interval: 15 * time.Second}),
+		),
+		fx.Populate(&actual),
+	)
+
+	assert.Error(app.Err())
+}
+
 func testUnmarshalPointer(t *testing.T) {
 	const yaml = `
 name: "testy mctest"
@@ -222,7 +253,8 @@ testKey:
 }
 
 func TestUnmarshalKey(t *testing.T) {
-	t.Run("Value", testUnmarshalKeyValue)
+	t.Run("Value", testUnmarshalValue)
+	t.Run("ValueExact", testUnmarshalValueExact)
 	t.Run("Pointer", testUnmarshalKeyPointer)
 	t.Run("NilPointer", testUnmarshalKeyNilPointer)
 }

@@ -22,7 +22,6 @@ type UnmarshalIn struct {
 // into an fx.App
 type unmarshalProvider struct {
 	key           string
-	exact         bool
 	component     reflect.Value
 	target        reflect.Value
 	decodeOptions []viper.DecoderConfigOption
@@ -33,21 +32,13 @@ type unmarshalProvider struct {
 func (up unmarshalProvider) unmarshal(args []reflect.Value) []reflect.Value {
 	u := args[0].Interface().(UnmarshalIn)
 	var err error
-	switch {
-	case len(up.key) > 0:
+	if len(up.key) > 0 {
 		err = u.Viper.UnmarshalKey(
 			up.key,
 			up.target.Interface(),
 			Merge(u.DecodeOptions, up.decodeOptions),
 		)
-
-	case up.exact:
-		err = u.Viper.UnmarshalExact(
-			up.target.Interface(),
-			Merge(u.DecodeOptions, up.decodeOptions),
-		)
-
-	default:
+	} else {
 		err = u.Viper.Unmarshal(
 			up.target.Interface(),
 			Merge(u.DecodeOptions, up.decodeOptions),

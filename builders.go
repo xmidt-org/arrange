@@ -88,7 +88,7 @@ func (ob *OptionBuilder) Group(group string) *SingleBuilder {
 		group:         group,
 	}
 
-	ob.Extend(sb)
+	ob.o.Extend(sb)
 	return sb
 }
 
@@ -148,12 +148,12 @@ func (sb *SingleBuilder) Unmarshal(prototype interface{}, opts ...viper.DecoderC
 	return sb.OptionBuilder
 }
 
-func (sb *SingleBuilder) Append(options []fx.Option) []fx.Option {
+func (sb *SingleBuilder) AppendTo(options []fx.Option) []fx.Option {
 	var constructor interface{}
 	if len(sb.key) > 0 {
-		constructor = ProvideKey(sb.key, sb.prototype, sb.decodeOptions...)
+		constructor = unmarshalKey(sb.key, sb.prototype, sb.decodeOptions...)
 	} else {
-		constructor = Provide(sb.prototype, sb.decodeOptions...)
+		constructor = unmarshal(sb.prototype, sb.decodeOptions...)
 	}
 
 	if len(sb.name) > 0 {
@@ -196,9 +196,9 @@ func (mb *MultiKeyBuilder) Unmarshal(prototype interface{}, opts ...viper.Decode
 	return mb.OptionBuilder
 }
 
-func (mb *MultiKeyBuilder) Append(options []fx.Option) []fx.Option {
+func (mb *MultiKeyBuilder) AppendTo(options []fx.Option) []fx.Option {
 	for _, key := range mb.keys {
-		constructor := ProvideKey(key, mb.prototype, mb.decodeOptions...)
+		constructor := unmarshalKey(key, mb.prototype, mb.decodeOptions...)
 		if len(mb.group) > 0 {
 			options = append(options, fx.Provide(
 				fx.Annotated{

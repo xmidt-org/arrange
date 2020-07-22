@@ -24,9 +24,9 @@ func (c *Conditional) Then(o ...fx.Option) fx.Option {
 //   fx.New(
 //     fx.Supply(v),
 //
-//     // the unmarshal key could be conditional, but it's safe to provide
-//     // it unconditionally as fx will not invoke this constructor unless needed
-//     arrange.UnmarshalKey("server.main", ServerConfig{}),
+//     // it's safe to provide this unconditionally as fx will not invoke
+//     // this constructor unless needed
+//     arrange.ProvideKey("server.main", ServerConfig{}),
 //
 //     arrange.If(v.IsSet("server.main")).Then(
 //       fx.Invoke(

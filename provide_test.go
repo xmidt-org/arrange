@@ -319,3 +319,93 @@ func TestProvideKey(t *testing.T) {
 	t.Run("Success", testProvideKeySuccess)
 	t.Run("Exact", testProvideKeyExact)
 }
+
+func TestKeys(t *testing.T) {
+	const yaml = `
+test1:
+  name: first
+  age: 11
+test2:
+  name: second
+  age: 22
+test3:
+  name: third
+  age: 33
+`
+	type In struct {
+		fx.In
+
+		Test1 TestConfig `name:"test1"`
+		Test2 TestConfig `name:"test2"`
+		Test3 TestConfig `name:"test3"`
+
+		Tests []*TestConfig `group:"tests"`
+	}
+
+	var (
+		assert  = assert.New(t)
+		require = require.New(t)
+		v       = viper.New()
+
+		globalCount int
+		global      = func(*mapstructure.DecoderConfig) {
+			globalCount++
+		}
+
+		option1Count int
+		option1      = func(*mapstructure.DecoderConfig) {
+			option1Count++
+		}
+
+		option2Count int
+		option2      = func(*mapstructure.DecoderConfig) {
+			option2Count++
+		}
+
+		actual In
+	)
+
+	v.SetConfigType("yaml")
+	require.NoError(v.ReadConfig(strings.NewReader(yaml)))
+
+	fxtest.New(
+		t,
+		Supply(v, global),
+		Keys("test1", "test2", "test3").Provide(TestConfig{}, option1),
+		Keys("test1", "test2", "test3").Group("tests").Provide(&TestConfig{}, option2),
+		fx.Invoke(
+			func(in In) {
+				actual = in
+			},
+		),
+	)
+
+	assert.Equal(
+		TestConfig{Name: "first", Age: 11},
+		actual.Test1,
+	)
+
+	assert.Equal(
+		TestConfig{Name: "second", Age: 22},
+		actual.Test2,
+	)
+
+	assert.Equal(
+		TestConfig{Name: "third", Age: 33},
+		actual.Test3,
+	)
+
+	assert.ElementsMatch(
+		[]*TestConfig{
+			&TestConfig{Name: "first", Age: 11},
+			&TestConfig{Name: "second", Age: 22},
+			&TestConfig{Name: "third", Age: 33},
+		},
+		actual.Tests,
+	)
+
+	// called once per unmarshal ...
+	assert.Equal(6, globalCount)
+	assert.Equal(3, option1Count)
+	assert.Equal(3, option2Count)
+}

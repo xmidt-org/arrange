@@ -8,6 +8,8 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 - Upgrade mapstructure to v1.3.2
 - Added convenient viper.DecoderConfigOption implementations
 - Removed UnmarshalExact, as it is superfluous
+- Added a simple way to unmarshal multiple keys at once
+- Streamlined unmarshal/provide API
 
 ## [v0.1.0]
 - Initial creation

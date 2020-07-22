@@ -156,6 +156,10 @@ func Keys(values ...string) *K {
 		keys: make(map[string]bool, len(values)),
 	}
 
+	for _, v := range values {
+		k.keys[v] = true
+	}
+
 	return k
 }
 

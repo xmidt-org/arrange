@@ -1,17 +1,143 @@
 package arrange
 
 import (
-	"errors"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/mitchellh/mapstructure"
 	"github.com/spf13/viper"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/fx"
 	"go.uber.org/fx/fxtest"
 )
+
+func testUnmarshalSuccess(t *testing.T) {
+	var (
+		assert = assert.New(t)
+		v      = viper.New()
+
+		actual TestConfig
+	)
+
+	v.Set("name", "first")
+	v.Set("age", 1)
+
+	fxtest.New(
+		t,
+		Supply(v),
+		fx.Provide(
+			Unmarshal(TestConfig{}),
+		),
+		fx.Populate(&actual),
+	)
+
+	assert.Equal(
+		TestConfig{Name: "first", Age: 1},
+		actual,
+	)
+}
+
+func testUnmarshalExact(t *testing.T) {
+	var (
+		assert = assert.New(t)
+		v      = viper.New()
+
+		globalCalled = false
+		global       = func(*mapstructure.DecoderConfig) {
+			globalCalled = true
+		}
+
+		actual TestConfig
+	)
+
+	v.Set("name", "first")
+	v.Set("age", 1)
+	v.Set("nosuch", "asdfasdfasdf")
+
+	t.Log("EXPECTED ERROR OUTPUT:")
+
+	app := fx.New(
+		fx.Logger(testPrinter{T: t}),
+		Supply(v, global),
+		fx.Provide(
+			Unmarshal(TestConfig{}, Exact),
+		),
+		fx.Populate(&actual),
+	)
+
+	assert.True(globalCalled)
+	assert.Error(app.Err())
+}
+
+func TestUnmarshal(t *testing.T) {
+	t.Run("Success", testUnmarshalSuccess)
+	t.Run("Exact", testUnmarshalExact)
+}
+
+func testUnmarshalKeySuccess(t *testing.T) {
+	var (
+		assert = assert.New(t)
+		v      = viper.New()
+
+		actual TestConfig
+	)
+
+	v.Set("test.name", "first")
+	v.Set("test.age", 1)
+
+	fxtest.New(
+		t,
+		Supply(v),
+		fx.Provide(
+			UnmarshalKey("test", TestConfig{}),
+		),
+		fx.Populate(&actual),
+	)
+
+	assert.Equal(
+		TestConfig{Name: "first", Age: 1},
+		actual,
+	)
+}
+
+func testUnmarshalKeyExact(t *testing.T) {
+	var (
+		assert = assert.New(t)
+		v      = viper.New()
+
+		globalCalled = false
+		global       = func(*mapstructure.DecoderConfig) {
+			globalCalled = true
+		}
+
+		actual TestConfig
+	)
+
+	v.Set("test.name", "first")
+	v.Set("test.age", 1)
+	v.Set("test.nosuch", "asdfasdfasdf")
+
+	t.Log("EXPECTED ERROR OUTPUT:")
+
+	app := fx.New(
+		fx.Logger(testPrinter{T: t}),
+		Supply(v, global),
+		fx.Provide(
+			UnmarshalKey("test", TestConfig{}, Exact),
+		),
+		fx.Populate(&actual),
+	)
+
+	assert.True(globalCalled)
+	assert.Error(app.Err())
+}
+
+func TestUnmarshalKey(t *testing.T) {
+	t.Run("Success", testUnmarshalKeySuccess)
+	t.Run("Exact", testUnmarshalKeyExact)
+}
 
 func testProvideSuccess(t *testing.T) {
 	const yaml = `
@@ -36,7 +162,7 @@ age: 64
 		t,
 		Supply(v),
 		Provide(TestConfig{Interval: 15 * time.Second}),
-		Provide(&AnotherConfig{Interval: 15 * time.Second}),
+		Provide(&AnotherConfig{Interval: 17 * time.Hour}),
 		Provide((*TestConfig)(nil)),
 		fx.Populate(&value, &initiallyNil, &initiallyNotNil),
 	)
@@ -50,7 +176,7 @@ age: 64
 	)
 
 	assert.Equal(
-		AnotherConfig{Name: "testy mctest", Age: 64, Interval: 15 * time.Second},
+		AnotherConfig{Name: "testy mctest", Age: 64, Interval: 17 * time.Hour},
 		*initiallyNotNil,
 	)
 
@@ -97,19 +223,31 @@ func TestProvide(t *testing.T) {
 
 func testProvideKeySuccess(t *testing.T) {
 	const yaml = `
-test:
-  name: "testy mctest"
-  age: 64
+test1:
+  name: "first"
+  age: 1
+test2:
+  name: "second"
+  age: 2
+test3:
+  name: "third"
+  age: 3
 `
+
+	type In struct {
+		fx.In
+
+		Test1 TestConfig  `name:"test1"`
+		Test2 *TestConfig `name:"test2"`
+		Test3 *TestConfig `name:"test3"`
+	}
 
 	var (
 		assert  = assert.New(t)
 		require = require.New(t)
 		v       = viper.New()
 
-		value           TestConfig
-		initiallyNotNil *AnotherConfig
-		initiallyNil    *TestConfig
+		actual In
 	)
 
 	v.SetConfigType("yaml")
@@ -118,31 +256,31 @@ test:
 	fxtest.New(
 		t,
 		Supply(v),
-		ProvideKey("test", TestConfig{Interval: 15 * time.Second}),
-
-		// need to give this another type, since it will conflict with another *TestConfig component
-		ProvideKey("test", &AnotherConfig{Interval: 15 * time.Second}),
-
-		ProvideKey("test", (*TestConfig)(nil)),
-		fx.Populate(&value, &initiallyNil, &initiallyNotNil),
-	)
-
-	require.NotNil(initiallyNotNil)
-	require.NotNil(initiallyNil)
-
-	assert.Equal(
-		TestConfig{Name: "testy mctest", Age: 64, Interval: 15 * time.Second},
-		value,
+		ProvideKey("test1", TestConfig{Interval: 15 * time.Second}),
+		ProvideKey("test2", &TestConfig{Interval: 23 * time.Minute}),
+		ProvideKey("test3", (*TestConfig)(nil)),
+		fx.Invoke(
+			func(in In) {
+				actual = in
+			},
+		),
 	)
 
 	assert.Equal(
-		AnotherConfig{Name: "testy mctest", Age: 64, Interval: 15 * time.Second},
-		*initiallyNotNil,
+		TestConfig{Name: "first", Age: 1, Interval: 15 * time.Second},
+		actual.Test1,
 	)
 
+	require.NotNil(actual.Test2)
 	assert.Equal(
-		TestConfig{Name: "testy mctest", Age: 64},
-		*initiallyNil,
+		TestConfig{Name: "second", Age: 2, Interval: 23 * time.Minute},
+		*actual.Test2,
+	)
+
+	require.NotNil(actual.Test3)
+	assert.Equal(
+		TestConfig{Name: "third", Age: 3},
+		*actual.Test3,
 	)
 }
 
@@ -180,116 +318,4 @@ test:
 func TestProvideKey(t *testing.T) {
 	t.Run("Success", testProvideKeySuccess)
 	t.Run("Exact", testProvideKeyExact)
-}
-
-func testProvideNamedSuccess(t *testing.T) {
-	const yaml = `
-value:
-  name: "test #1"
-  age: 17
-initiallyNotNil:
-  name: "test #2"
-  age: 34
-initiallyNil:
-  name: "test #3"
-  age: 58
-`
-
-	var (
-		assert  = assert.New(t)
-		require = require.New(t)
-		v       = viper.New()
-
-		value           TestConfig
-		initiallyNotNil *TestConfig
-		initiallyNil    *TestConfig
-	)
-
-	v.SetConfigType("yaml")
-	require.NoError(v.ReadConfig(strings.NewReader(yaml)))
-
-	type In struct {
-		fx.In
-
-		Value           TestConfig  `name:"value"`
-		InitiallyNotNil *TestConfig `name:"initiallyNotNil"`
-		InitiallyNil    *TestConfig `name:"initiallyNil"`
-	}
-
-	fxtest.New(
-		t,
-		Supply(v),
-		ProvideNamed("value", TestConfig{Interval: 56 * time.Minute}),
-		ProvideNamed("initiallyNotNil", &TestConfig{Interval: 17 * time.Millisecond}),
-		ProvideNamed("initiallyNil", (*TestConfig)(nil)),
-		fx.Invoke(
-			func(in In) {
-				value = in.Value
-				initiallyNotNil = in.InitiallyNotNil
-				initiallyNil = in.InitiallyNil
-			},
-		),
-	)
-
-	require.NotNil(initiallyNotNil)
-	require.NotNil(initiallyNil)
-
-	assert.Equal(
-		TestConfig{Name: "test #1", Age: 17, Interval: 56 * time.Minute},
-		value,
-	)
-
-	assert.Equal(
-		TestConfig{Name: "test #2", Age: 34, Interval: 17 * time.Millisecond},
-		*initiallyNotNil,
-	)
-
-	assert.Equal(
-		TestConfig{Name: "test #3", Age: 58},
-		*initiallyNil,
-	)
-}
-
-func testProvideNamedExact(t *testing.T) {
-	const yaml = `
-test:
-  name: "testy mctest"
-  age: 64
-  nosuch: asdfasdfasdf
-`
-
-	var (
-		assert  = assert.New(t)
-		require = require.New(t)
-		v       = viper.New()
-	)
-
-	v.SetConfigType("yaml")
-	require.NoError(v.ReadConfig(strings.NewReader(yaml)))
-
-	type In struct {
-		fx.In
-
-		Value TestConfig `name:"test"`
-	}
-
-	t.Log("EXPECTED ERROR OUTPUT:")
-
-	app := fx.New(
-		fx.Logger(testPrinter{T: t}),
-		Supply(v, Exact),
-		ProvideNamed("test", TestConfig{}),
-		fx.Invoke(
-			func(in In) error {
-				return errors.New("the invoke should not have been called, as unmarshalling should fail")
-			},
-		),
-	)
-
-	assert.Error(app.Err())
-}
-
-func TestProvideNamed(t *testing.T) {
-	t.Run("Success", testProvideNamedSuccess)
-	t.Run("Exact", testProvideNamedExact)
 }

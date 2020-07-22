@@ -8,7 +8,6 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 - Upgrade mapstructure to v1.3.2
 - Added convenient viper.DecoderConfigOption implementations
 - Removed UnmarshalExact, as it is superfluous
-- Refactored into a Fluent Builder, which reduces code noise
 
 ## [v0.1.0]
 - Initial creation

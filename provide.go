@@ -7,6 +7,14 @@ import (
 	"go.uber.org/fx"
 )
 
+// unmarshalTarget reflects prototype and returns (2) values:
+//
+// The component is the actual object that will be returned from the provider.
+// This can be a value or a pointer.
+//
+// The target is the target object for the viper.UnmarshalXXX call.  It will always
+// be a pointer to a fresh instance of either the component value or the value that
+// component points at.
 func unmarshalTarget(prototype interface{}) (component, target reflect.Value) {
 	pvalue := reflect.ValueOf(prototype)
 	if pvalue.Kind() == reflect.Ptr {
@@ -25,6 +33,8 @@ func unmarshalTarget(prototype interface{}) (component, target reflect.Value) {
 	return
 }
 
+// unmarshalFuncOf is an analog of reflect.FuncOf.  It returns a reflect.Type
+// which is the function signature of the unmarshal function.
 func unmarshalFuncOf(result reflect.Value) reflect.Type {
 	return reflect.FuncOf(
 		// inputs:
@@ -41,8 +51,12 @@ func unmarshalFuncOf(result reflect.Value) reflect.Type {
 	)
 }
 
+// stub is a convenient type for the function signature that reflect.MakeFunc requires
 type stub func([]reflect.Value) []reflect.Value
 
+// unmarshalStub returns a function that expects ProvideIn to be passed to it
+// and returns the tuple of the component object and any error that resulted from
+// unmarshaling.
 func unmarshalStub(component, target reflect.Value, opts ...viper.DecoderConfigOption) stub {
 	return func(args []reflect.Value) []reflect.Value {
 		var (
@@ -69,6 +83,8 @@ func unmarshalStub(component, target reflect.Value, opts ...viper.DecoderConfigO
 	}
 }
 
+// unmarshalKeyStub is like unmarshalStub, except that viper.UnmarshalKey will be called
+// to obtain the component object's state.
 func unmarshalKeyStub(key string, component, target reflect.Value, opts ...viper.DecoderConfigOption) stub {
 	return func(args []reflect.Value) []reflect.Value {
 		var (

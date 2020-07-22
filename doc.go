@@ -56,6 +56,21 @@
 //   }
 //
 //   v := viper.New()
+//
+//   // assume a yaml configuration file similar to:
+//   // server:
+//   //   main:
+//   //     tlsEnabled: true
+//   //     address: ":8080"
+//   //   health:
+//   //     address: ":80"
+//   //   health:
+//   //     address: ":80"
+//   //   pprof:
+//   //     address: "localhost:9999"
+//   //   control:
+//   //     address: "localhost:8500"
+//
 //   fx.New(
 //     arrange.Supply(v),
 //     arrange.Keys(
@@ -65,7 +80,7 @@
 //       "server.control",
 //     ).Unmarshal(Config{}), // these will be distinct, named instances of Config
 //     fx.Invoke(
-//       func(cfg Config) error {
+//       func(c Components) error {
 //         // start all the servers
 //       },
 //     ),

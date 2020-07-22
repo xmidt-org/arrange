@@ -1,6 +1,7 @@
 # arrange
 
-arrange does something good.
+Arrange is a companion to go.uber.org/fx that adds unmarshaled components, conditional options,
+and some other goodies.  Refer to the godoc for more information and examples.
 
 [![Build Status](https://travis-ci.com/xmidt-org/arrange.svg?branch=main)](https://travis-ci.com/xmidt-org/arrange)
 [![codecov.io](http://codecov.io/github/xmidt-org/arrange/coverage.svg?branch=main)](http://codecov.io/github/xmidt-org/arrange?branch=main)

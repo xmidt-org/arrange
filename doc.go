@@ -63,8 +63,6 @@
 //   //     address: ":8080"
 //   //   health:
 //   //     address: ":80"
-//   //   health:
-//   //     address: ":80"
 //   //   pprof:
 //   //     address: "localhost:9999"
 //   //   control:

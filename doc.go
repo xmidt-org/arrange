@@ -1,6 +1,5 @@
-// Package arrange enhances uber/fx with some features commonly needed
-// when using external configuration to drive the structure of the
-// DI container.
+// Package arrange enhances uber/fx with extra features common in
+// server-side use of dependency injection.
 //
 // Unmarshaled components
 //
@@ -107,5 +106,19 @@
 //         },
 //       )
 //     )
+//   )
+//
+// Logger support
+//
+// It's often desireable to redirect the DI container's logging output, which contains
+// information about the dependency graph, to some other location.  Arrange provides
+// easy integration with logging frameworks like go.uber.org/zap:
+//
+//   l := zap.NewDevelopment()
+//   fx.New(
+//     // All DI container output is sent to the given logger at the INFO level
+//     arrange.LoggerFunc(l.SugaredLogger().Infof),
+//
+//     // carry on ...
 //   )
 package arrange

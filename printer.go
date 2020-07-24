@@ -19,13 +19,14 @@ func (pf PrinterFunc) Printf(template string, args ...interface{}) {
 	pf(template, args...)
 }
 
-// LoggerWriter supplies an fx.Printer that writes to the given io.Writer.
+// LoggerWriter supplies an fx.Printer that writes to an arbitrary io.Writer.
 // Any write error results in a panic.  Every write has a newline appended to it.
 //
 // This is a convenient function to dump all DI container logging to os.Stdout
 // or os.Stderr:
 //
 //   fx.New(
+//     // NOTE: the default setup for go.uber.org/fx sends output to os.Stderr
 //     arrange.LoggerWriter(os.Stdout),
 //
 //     // carry on ...

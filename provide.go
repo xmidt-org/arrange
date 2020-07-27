@@ -7,121 +7,27 @@ import (
 	"go.uber.org/fx"
 )
 
-// unmarshalTarget reflects prototype and returns (2) values:
-//
-// The component is the actual object that will be returned from the provider.
-// This can be a value or a pointer.
-//
-// The target is the target object for the viper.UnmarshalXXX call.  It will always
-// be a pointer to a fresh instance of either the component value or the value that
-// component points at.
-func unmarshalTarget(prototype interface{}) (component, target reflect.Value) {
-	pvalue := reflect.ValueOf(prototype)
-	if pvalue.Kind() == reflect.Ptr {
-		target = reflect.New(pvalue.Type().Elem())
-		if !pvalue.IsNil() {
-			target.Elem().Set(pvalue.Elem())
-		}
-
-		component = target
-	} else {
-		target = reflect.New(pvalue.Type())
-		target.Elem().Set(pvalue)
-		component = target.Elem()
-	}
-
-	return
-}
-
-// unmarshalFuncOf is an analog of reflect.FuncOf.  It returns a reflect.Type
-// which is the function signature of the unmarshal function.
-func unmarshalFuncOf(result reflect.Value) reflect.Type {
-	return reflect.FuncOf(
-		// inputs:
-		[]reflect.Type{reflect.TypeOf(ProvideIn{})},
-
-		// outputs:
-		[]reflect.Type{
-			result.Type(),
-			reflect.TypeOf((*error)(nil)).Elem(),
-		},
-
-		// we're not variadic:
-		false,
-	)
-}
-
-// stub is a convenient type for the function signature that reflect.MakeFunc requires
-type stub func([]reflect.Value) []reflect.Value
-
-// unmarshalStub returns a function that expects ProvideIn to be passed to it
-// and returns the tuple of the component object and any error that resulted from
-// unmarshaling.
-func unmarshalStub(component, target reflect.Value, opts ...viper.DecoderConfigOption) stub {
-	return func(args []reflect.Value) []reflect.Value {
-		var (
-			u = args[0].Interface().(ProvideIn)
-
-			err = u.Viper.Unmarshal(
-				target.Interface(),
-				Merge(u.DecodeOptions, opts),
-			)
-
-			errPtr = reflect.New(
-				reflect.TypeOf((*error)(nil)).Elem(),
-			)
-		)
-
-		if err != nil {
-			errPtr.Elem().Set(reflect.ValueOf(err))
-		}
-
-		return []reflect.Value{
-			component,
-			errPtr.Elem(),
-		}
-	}
-}
-
-// unmarshalKeyStub is like unmarshalStub, except that viper.UnmarshalKey will be called
-// to obtain the component object's state.
-func unmarshalKeyStub(key string, component, target reflect.Value, opts ...viper.DecoderConfigOption) stub {
-	return func(args []reflect.Value) []reflect.Value {
-		var (
-			u = args[0].Interface().(ProvideIn)
-
-			err = u.Viper.UnmarshalKey(
-				key,
-				target.Interface(),
-				Merge(u.DecodeOptions, opts),
-			)
-
-			errPtr = reflect.New(
-				reflect.TypeOf((*error)(nil)).Elem(),
-			)
-		)
-
-		if err != nil {
-			errPtr.Elem().Set(reflect.ValueOf(err))
-		}
-
-		return []reflect.Value{
-			component,
-			errPtr.Elem(),
-		}
-	}
-}
-
 // Unmarshal generates and returns a constructor function that unmarshals an object from
 // Viper.  The object's type will be the same as the prototype.
 //
 // Provide is generally preferred to this function, but Unmarshal is more flexible
 // and can be used with fx.Annotated.
 func Unmarshal(prototype interface{}, opts ...viper.DecoderConfigOption) interface{} {
-	component, target := unmarshalTarget(prototype)
+	t := NewTarget(prototype)
 	return reflect.MakeFunc(
-		unmarshalFuncOf(component),
-		unmarshalStub(component, target, opts...),
+		t.ComponentFuncOf(reflect.TypeOf(ProvideIn{})),
+		func(args []reflect.Value) []reflect.Value {
+			u := args[0].Interface().(ProvideIn)
+			err := u.Viper.Unmarshal(
+				t.unmarshalTo.Interface(),
+				Merge(u.DecodeOptions, opts),
+			)
+
+			return []reflect.Value{
+				t.component,
+				NewErrorValue(err),
+			}
+		},
 	).Interface()
 }
 
@@ -131,10 +37,22 @@ func Unmarshal(prototype interface{}, opts ...viper.DecoderConfigOption) interfa
 // Generally, ProvideKey is simpler and preferred.  Use this function when more control
 // is needed over the component, such as putting it into a group or using a different component name.
 func UnmarshalKey(key string, prototype interface{}, opts ...viper.DecoderConfigOption) interface{} {
-	component, target := unmarshalTarget(prototype)
+	t := NewTarget(prototype)
 	return reflect.MakeFunc(
-		unmarshalFuncOf(component),
-		unmarshalKeyStub(key, component, target, opts...),
+		t.ComponentFuncOf(reflect.TypeOf(ProvideIn{})),
+		func(args []reflect.Value) []reflect.Value {
+			u := args[0].Interface().(ProvideIn)
+			err := u.Viper.UnmarshalKey(
+				key,
+				t.unmarshalTo.Interface(),
+				Merge(u.DecodeOptions, opts),
+			)
+
+			return []reflect.Value{
+				t.component,
+				NewErrorValue(err),
+			}
+		},
 	).Interface()
 }
 

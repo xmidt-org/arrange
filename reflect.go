@@ -117,7 +117,9 @@ func (t Target) ComponentType() reflect.Type {
 }
 
 // UnmarshalTo returns the target of unmarshaling, which will always be
-// a pointer to the object returned by Component.
+// a pointer.  If the component is a value, this method returns a pointer
+// to that value.  If the component is a pointer, this method returns that
+// same pointer.
 func (t Target) UnmarshalTo() interface{} {
 	return t.unmarshalTo.Interface()
 }

@@ -39,7 +39,8 @@ type Target struct {
 // set to the same values as the prototype prior to unmarshaling.  The component
 // will be a struct value of the same type, i.e. not a pointer to a struct.
 //
-//   NewTarget(Config{Timeout: 15 * time.Second})
+//   NewTarget(Config{})
+//   NewTarget(Config{Timeout: 15 * time.Second}) // a default value for Timeout
 //
 // can be used with:
 //
@@ -53,7 +54,9 @@ type Target struct {
 // allocated with fields set to the same values as the prototype prior to
 // unmarshaling.  The component will be pointer to this new struct.
 //
-//   NewTarget(&Config{Timeout: 15 * time.Second})
+//   NewTarget(&Config{})
+//   NewTarget(new(Config))
+//   NewTarget(&Config{Timeout: 15 * time.Second}) // a default value for Timeout
 //
 // can be used with:
 //
@@ -82,6 +85,8 @@ type Target struct {
 //       },
 //     ),
 //   )
+//
+// If the prototype does not refer to a struct, the results of this function are undefined.
 func NewTarget(prototype interface{}) (t Target) {
 	pvalue := reflect.ValueOf(prototype)
 	if pvalue.Kind() == reflect.Ptr {

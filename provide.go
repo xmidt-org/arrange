@@ -15,7 +15,15 @@ import (
 func Unmarshal(prototype interface{}, opts ...viper.DecoderConfigOption) interface{} {
 	t := NewTarget(prototype)
 	return reflect.MakeFunc(
-		t.ComponentFuncOf(reflect.TypeOf(ProvideIn{})),
+		reflect.FuncOf(
+			// function inputs:
+			[]reflect.Type{reflect.TypeOf(ProvideIn{})},
+
+			// function outputs:
+			[]reflect.Type{t.ComponentType(), ErrorType()},
+
+			false, // not variadic
+		),
 		func(args []reflect.Value) []reflect.Value {
 			u := args[0].Interface().(ProvideIn)
 			err := u.Viper.Unmarshal(
@@ -39,7 +47,15 @@ func Unmarshal(prototype interface{}, opts ...viper.DecoderConfigOption) interfa
 func UnmarshalKey(key string, prototype interface{}, opts ...viper.DecoderConfigOption) interface{} {
 	t := NewTarget(prototype)
 	return reflect.MakeFunc(
-		t.ComponentFuncOf(reflect.TypeOf(ProvideIn{})),
+		reflect.FuncOf(
+			// function inputs:
+			[]reflect.Type{reflect.TypeOf(ProvideIn{})},
+
+			// function outputs:
+			[]reflect.Type{t.ComponentType(), ErrorType()},
+
+			false, // not variadic
+		),
 		func(args []reflect.Value) []reflect.Value {
 			u := args[0].Interface().(ProvideIn)
 			err := u.Viper.UnmarshalKey(

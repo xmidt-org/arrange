@@ -23,7 +23,13 @@ func NewErrorValue(err error) reflect.Value {
 	return errPtr.Elem()
 }
 
-// Target describes a sink for an unmarshal operation
+// Target describes a sink for an unmarshal operation.
+//
+// Viper requires a pointer to be passed to its UnmarshalXXX functions.  However,
+// this package uses a prototype pattern whereby a caller may specify a pointer
+// or a value.  A target bridges that gap by storing the results of reflection
+// from NewTarget to give a consistent way of referring to the actual object
+// that should be unmarshaled as opposed to the object produced for dependency injection.
 type Target struct {
 	component   reflect.Value
 	unmarshalTo reflect.Value

@@ -1,10 +1,8 @@
 package arrangehttp
 
 import (
-	"context"
 	"net"
 	"net/http"
-	"reflect"
 	"time"
 
 	"github.com/gorilla/mux"
@@ -12,12 +10,6 @@ import (
 	"github.com/xmidt-org/arrange"
 	"go.uber.org/fx"
 )
-
-var routerType reflect.Type = reflect.TypeOf((*mux.Router)(nil))
-
-func RouterType() reflect.Type {
-	return routerType
-}
 
 type ServerFactory interface {
 	NewServer() (*http.Server, Listen, error)
@@ -35,7 +27,7 @@ type ServerConfig struct {
 	Tls               *ServerTls
 }
 
-func (sc ServerConfig) NewServer() (server *http.Server, listen Listen, err error) {
+func (sc ServerConfig) NewServer() (server *http.Server, l Listen, err error) {
 	server = &http.Server{
 		Addr:              sc.Address,
 		ReadTimeout:       sc.ReadTimeout,
@@ -47,7 +39,7 @@ func (sc ServerConfig) NewServer() (server *http.Server, listen Listen, err erro
 
 	server.TLSConfig, err = NewServerTlsConfig(sc.Tls)
 	if err == nil {
-		listen = ListenerFactory{
+		l = ListenerFactory{
 			ListenConfig: net.ListenConfig{
 				KeepAlive: sc.KeepAlive,
 			},
@@ -100,88 +92,52 @@ func (s *S) newTarget() arrange.Target {
 	return arrange.NewTarget(prototype)
 }
 
-func (s *S) newRouter(factory ServerFactory, shutdowner fx.Shutdowner) (router *mux.Router, hook fx.Hook, err error) {
-	var server *http.Server
-	var listen Listen
-	server, listen, err = factory.NewServer()
+func (s *S) newRouter(f ServerFactory, in ServerIn) (*mux.Router, error) {
+	server, listen, err := f.NewServer()
 	if err != nil {
-		return
+		return nil, err
 	}
 
-	for i := 0; i < len(s.so); i++ {
-		if err = s.so[i](server); err != nil {
-			return
+	for _, f := range s.so {
+		if err := f(server); err != nil {
+			return nil, err
 		}
 	}
 
-	router = mux.NewRouter()
-	for i := 0; i < len(s.ro); i++ {
-		if err = s.ro[i](router); err != nil {
-			return
+	router := mux.NewRouter()
+	for _, f := range s.ro {
+		if err := f(router); err != nil {
+			return nil, err
 		}
 	}
 
-	server.Handler = router
-	hook.OnStop = server.Shutdown
-	hook.OnStart = func(ctx context.Context) error {
-		listener, err := listen(ctx, server)
-		if err != nil {
-			return err
-		}
+	in.Lifecycle.Append(fx.Hook{
+		OnStart: ServerOnStart(server, listen, ShutdownOnExit(in.Shutdowner)),
+		OnStop:  server.Shutdown,
+	})
 
-		go func() {
-			defer shutdowner.Shutdown()
-			server.Serve(listener)
-		}()
-
-		return nil
-	}
-
-	return
+	return router, nil
 }
 
-func (s *S) Unmarshal(opts ...viper.DecoderConfigOption) interface{} {
-	target := s.newTarget()
-	return reflect.MakeFunc(
-		reflect.FuncOf(
-			// inputs:
-			[]reflect.Type{reflect.TypeOf(ServerIn{})},
-
-			// outputs:
-			[]reflect.Type{RouterType(), arrange.ErrorType()},
-
-			// not variadic:
-			false,
-		),
-		func(args []reflect.Value) []reflect.Value {
-			var (
-				in  = args[0].Interface().(ServerIn)
-				err = in.Viper.Unmarshal(
-					target.UnmarshalTo(),
-					arrange.Merge(in.DecodeOptions, opts),
-				)
-
-				router     *mux.Router
-				serverHook fx.Hook
+func (s *S) Unmarshal(opts ...viper.DecoderConfigOption) func(ServerIn) (*mux.Router, error) {
+	return func(in ServerIn) (*mux.Router, error) {
+		var (
+			target = s.newTarget()
+			err    = in.Viper.Unmarshal(
+				target.UnmarshalTo(),
+				arrange.Merge(in.DecodeOptions, opts),
 			)
+		)
 
-			if err == nil {
-				router, serverHook, err = s.newRouter(
-					target.Component().(ServerFactory),
-					in.Shutdowner,
-				)
-			}
+		if err != nil {
+			return nil, err
+		}
 
-			if err == nil {
-				in.Lifecycle.Append(serverHook)
-			}
-
-			return []reflect.Value{
-				reflect.ValueOf(router),
-				arrange.NewErrorValue(err),
-			}
-		},
-	).Interface()
+		return s.newRouter(
+			target.Component().(ServerFactory),
+			in,
+		)
+	}
 }
 
 func (s *S) Provide(opts ...viper.DecoderConfigOption) fx.Option {
@@ -190,49 +146,26 @@ func (s *S) Provide(opts ...viper.DecoderConfigOption) fx.Option {
 	)
 }
 
-func (s *S) UnmarshalKey(key string, opts ...viper.DecoderConfigOption) interface{} {
-	target := s.newTarget()
-	return reflect.MakeFunc(
-		reflect.FuncOf(
-			// inputs:
-			[]reflect.Type{reflect.TypeOf(ServerIn{})},
-
-			// outputs:
-			[]reflect.Type{RouterType(), arrange.ErrorType()},
-
-			// not variadic:
-			false,
-		),
-		func(args []reflect.Value) []reflect.Value {
-			var (
-				in  = args[0].Interface().(ServerIn)
-				err = in.Viper.UnmarshalKey(
-					key,
-					target.UnmarshalTo(),
-					arrange.Merge(in.DecodeOptions, opts),
-				)
-
-				router     *mux.Router
-				serverHook fx.Hook
+func (s *S) UnmarshalKey(key string, opts ...viper.DecoderConfigOption) func(ServerIn) (*mux.Router, error) {
+	return func(in ServerIn) (*mux.Router, error) {
+		var (
+			target = s.newTarget()
+			err    = in.Viper.UnmarshalKey(
+				key,
+				target.UnmarshalTo(),
+				arrange.Merge(in.DecodeOptions, opts),
 			)
+		)
 
-			if err == nil {
-				router, serverHook, err = s.newRouter(
-					target.Component().(ServerFactory),
-					in.Shutdowner,
-				)
-			}
+		if err != nil {
+			return nil, err
+		}
 
-			if err == nil {
-				in.Lifecycle.Append(serverHook)
-			}
-
-			return []reflect.Value{
-				reflect.ValueOf(router),
-				arrange.NewErrorValue(err),
-			}
-		},
-	).Interface()
+		return s.newRouter(
+			target.Component().(ServerFactory),
+			in,
+		)
+	}
 }
 
 func (s *S) ProvideKey(key string, opts ...viper.DecoderConfigOption) fx.Option {

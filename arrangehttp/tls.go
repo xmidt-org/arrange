@@ -9,7 +9,7 @@ import (
 )
 
 var (
-	ErrTlsCertificateRequired         = errors.New("Both a certificateFile and keyFile are required")
+	ErrTLSCertificateRequired         = errors.New("Both a certificateFile and keyFile are required")
 	ErrUnableToAddClientCACertificate = errors.New("Unable to add client CA certificate")
 )
 
@@ -68,7 +68,8 @@ type PeerVerifyConfig struct {
 	// CommonNames lists the subject common names that at least (1) peer cert must have.  If not supplied,
 	// no checking is done on the common name.  Matching common names is case sensitive.
 	//
-	// If any common name matches, that is sufficient for the peer cert to be valid.  No further checking is done in that case.
+	// If any common name matches, that is sufficient for the peer cert to be valid.  No further
+	// checking is done in that case.
 	CommonNames []string
 }
 
@@ -123,8 +124,8 @@ func (pvc PeerVerifyConfig) verify(peerCert *x509.Certificate, _ [][]*x509.Certi
 	}
 }
 
-// ServerTls represents the set of configurable options for a serverside tls.Config associated with a server.
-type ServerTls struct {
+// ServerTLS represents the set of configurable options for a serverside tls.Config associated with a server.
+type ServerTLS struct {
 	CertificateFile         string
 	KeyFile                 string
 	ClientCACertificateFile string
@@ -135,18 +136,18 @@ type ServerTls struct {
 	PeerVerify              PeerVerifyConfig
 }
 
-// NewServerTlsConfig produces a *tls.Config from a set of configuration options.  If the supplied set of options
+// NewServerTLSConfig produces a *tls.Config from a set of configuration options.  If the supplied set of options
 // is nil, this function returns nil with no error.
 //
 // If supplied, the PeerVerifier strategies will be executed as part of peer verification.  This allows application-layer
 // logic to be injected.
-func NewServerTlsConfig(t *ServerTls, extra ...PeerVerifier) (*tls.Config, error) {
+func NewServerTLSConfig(t *ServerTLS, extra ...PeerVerifier) (*tls.Config, error) {
 	if t == nil {
 		return nil, nil
 	}
 
 	if len(t.CertificateFile) == 0 || len(t.KeyFile) == 0 {
-		return nil, ErrTlsCertificateRequired
+		return nil, ErrTLSCertificateRequired
 	}
 
 	var nextProtos []string

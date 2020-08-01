@@ -88,6 +88,7 @@ type ServerIn struct {
 type S struct {
 	so        []ServerOption
 	ro        []RouterOption
+	chain     ListenChain
 	prototype ServerFactory
 }
 
@@ -97,13 +98,23 @@ func Server(opts ...ServerOption) *S {
 	}
 }
 
-func (s *S) ServerFactory(prototype ServerFactory) *S {
-	s.prototype = prototype
+func (s *S) RouterOptions(opts ...RouterOption) *S {
+	s.ro = append(s.ro, opts...)
 	return s
 }
 
-func (s *S) RouterOptions(opts ...RouterOption) *S {
-	s.ro = append(s.ro, opts...)
+func (s *S) AppendListenConstructors(more ...ListenConstructor) *S {
+	s.chain = s.chain.Append(more...)
+	return s
+}
+
+func (s *S) ExtendListenConstructors(more ListenChain) *S {
+	s.chain = s.chain.Extend(more)
+	return s
+}
+
+func (s *S) ServerFactory(prototype ServerFactory) *S {
+	s.prototype = prototype
 	return s
 }
 

@@ -19,8 +19,8 @@ type ProvideIn struct {
 	// Viper is the required Viper component in the enclosing fx.App
 	Viper *viper.Viper
 
-	// DecodeOptions are an optional set of options from the enclosing fx.App
-	DecodeOptions []viper.DecoderConfigOption `optional:"true"`
+	// DecoderOptions are an optional set of options from the enclosing fx.App
+	DecoderOptions []viper.DecoderConfigOption `optional:"true"`
 }
 
 // Supply is an analog to fx.Supply.  This eases the injection of a viper instance

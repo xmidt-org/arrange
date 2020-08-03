@@ -28,7 +28,7 @@ func Unmarshal(prototype interface{}, opts ...viper.DecoderConfigOption) interfa
 			u := args[0].Interface().(ProvideIn)
 			err := u.Viper.Unmarshal(
 				t.unmarshalTo.Interface(),
-				Merge(u.DecodeOptions, opts),
+				Merge(u.DecoderOptions, opts),
 			)
 
 			return []reflect.Value{
@@ -61,7 +61,7 @@ func UnmarshalKey(key string, prototype interface{}, opts ...viper.DecoderConfig
 			err := u.Viper.UnmarshalKey(
 				key,
 				t.unmarshalTo.Interface(),
-				Merge(u.DecodeOptions, opts),
+				Merge(u.DecoderOptions, opts),
 			)
 
 			return []reflect.Value{

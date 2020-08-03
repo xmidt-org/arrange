@@ -218,7 +218,7 @@ func (s *S) Unmarshal(opts ...viper.DecoderConfigOption) func(ServerIn) (*mux.Ro
 			target = arrange.NewTarget(s.prototype)
 			err    = in.Viper.Unmarshal(
 				target.UnmarshalTo(),
-				arrange.Merge(in.DecodeOptions, opts),
+				arrange.Merge(in.DecoderOptions, opts),
 			)
 		)
 
@@ -290,7 +290,7 @@ func (s *S) UnmarshalKey(key string, opts ...viper.DecoderConfigOption) func(Ser
 			err    = in.Viper.UnmarshalKey(
 				key,
 				target.UnmarshalTo(),
-				arrange.Merge(in.DecodeOptions, opts),
+				arrange.Merge(in.DecoderOptions, opts),
 			)
 		)
 

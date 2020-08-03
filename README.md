@@ -1,7 +1,6 @@
 # arrange
 
-Arrange is a companion to go.uber.org/fx that adds unmarshaled components, conditional options,
-and some other goodies.  Refer to the godoc for more information and examples.
+Arrange is a companion to go.uber.org/fx that adds unmarshaled components, conditional options, and some other goodies.  Refer to the godoc for more information and examples.
 
 [![Build Status](https://travis-ci.com/xmidt-org/arrange.svg?branch=main)](https://travis-ci.com/xmidt-org/arrange)
 [![codecov.io](http://codecov.io/github/xmidt-org/arrange/coverage.svg?branch=main)](http://codecov.io/github/xmidt-org/arrange?branch=main)
@@ -14,8 +13,11 @@ and some other goodies.  Refer to the godoc for more information and examples.
 
 ## Summary
 
-Search and replace arrange with your project name. Summary should be a 
-small paragraph explanation of what this project does.
+Arrange provides an integration with [uber/fx](https://pkg.go.dev/go.uber.org/fx?tab=doc) and the following libraries:
+
+- [viper](https://pkg.go.dev/github.com/spf13/viper?tab=doc) is used for unmarshaling and driving the state of components from external configuration
+- [gorilla/mux](https://pkg.go.dev/github.com/gorilla/mux?tab=doc) is supplied for all unmarshaled servers as the root handler.  Dependency injection code can customize a mux.Router for each server, typically inside an fx.Invoke function.
+- [zap](https://pkg.go.dev/go.uber.org/zap?tab=doc) is supported as a logging infrastructure.  Arrange does not directly refer to zap, but it supply adapters that conform to zap's API pattern.
 
 ## Table of Contents
 
@@ -26,7 +28,7 @@ small paragraph explanation of what this project does.
 
 ## Code of Conduct
 
-This project and everyone participating in it are governed by the [XMiDT Code Of Conduct](https://xmidt.io/code_of_conduct/). 
+This project and everyone participating in it are governed by the [XMiDT Code Of Conduct](https://xmidt.io/code_of_conduct/).
 By participating, you agree to this Code.
 
 ## Details

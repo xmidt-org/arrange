@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 - Removed UnmarshalExact, as it is superfluous
 - Added a simple way to unmarshal multiple keys at once
 - Streamlined unmarshal/provide API
+- Added arrangehttp, with support for producing http.Server objects from external configuration
 
 ## [v0.1.0]
 - Initial creation

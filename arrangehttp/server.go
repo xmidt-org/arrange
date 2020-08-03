@@ -88,7 +88,7 @@ type ServerIn struct {
 type S struct {
 	so        []ServerOption
 	ro        []RouterOption
-	chain     ListenChain
+	chain     ListenerChain
 	prototype ServerFactory
 }
 
@@ -103,12 +103,12 @@ func (s *S) RouterOptions(opts ...RouterOption) *S {
 	return s
 }
 
-func (s *S) AppendListenConstructors(more ...ListenConstructor) *S {
+func (s *S) AppendListenerConstructors(more ...ListenerConstructor) *S {
 	s.chain = s.chain.Append(more...)
 	return s
 }
 
-func (s *S) ExtendListenConstructors(more ListenChain) *S {
+func (s *S) ExtendListenerConstructors(more ListenerChain) *S {
 	s.chain = s.chain.Extend(more)
 	return s
 }
@@ -147,8 +147,12 @@ func (s *S) newRouter(f ServerFactory, in ServerIn) (*mux.Router, error) {
 	}
 
 	in.Lifecycle.Append(fx.Hook{
-		OnStart: ServerOnStart(server, listen, ShutdownOnExit(in.Shutdowner)),
-		OnStop:  server.Shutdown,
+		OnStart: ServerOnStart(
+			server,
+			s.chain.Listen(listen),
+			ShutdownOnExit(in.Shutdowner),
+		),
+		OnStop: server.Shutdown,
 	})
 
 	return router, nil

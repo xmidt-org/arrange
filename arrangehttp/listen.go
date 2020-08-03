@@ -11,9 +11,10 @@ import (
 
 // Listen is a closure factory for net.Listener instances.  Since any applied
 // options may have changed the http.Server instance, this strategy is passed
-// that server instance.
+// that server instance.  This closure is intended to be invoked as part of
+// a lifecycle hook.
 //
-// The http.Server.Addr field is use as the address of the listener.  If the
+// The http.Server.Addr field is used as the address of the listener.  If the
 // given server has a tls.Config set, the returned listener will create TLS connections
 // with that configuration.  The server's tls.Config must be completely setup,
 // with certificates and all data structures initialized.  If the server does not
@@ -26,33 +27,32 @@ import (
 // The built-in implementation of this type is ListenerFactory.Listen.
 type Listen func(context.Context, *http.Server) (net.Listener, error)
 
-// ListenConstructor is a decorator for Listen closures.  A constructor may choose
-// to decorate the returned net.Listener and/or interact with other infrastructure
-// when the net.Listener is built.
-type ListenConstructor func(Listen) Listen
+// ListenerConstructor is a decorator for net.Listener instances.  If supplied to
+// a server builder, a constructor is applied after the Listen closure creates the listener.
+type ListenerConstructor func(net.Listener) net.Listener
 
-// ListenChain is a sequence of ListenConstructors.  A ListenChain is immutable,
+// ListenerChain is a sequence of ListenerConstructors.  A ListenerChain is immutable,
 // and will apply its constructors in order.  The zero value for this type is a valid,
 // empty chain that will not decorate anything.
-type ListenChain struct {
-	c []ListenConstructor
+type ListenerChain struct {
+	c []ListenerConstructor
 }
 
-// NewListenChain creates a chain from a sequence of constructors.  The constructors
+// NewListenerChain creates a chain from a sequence of constructors.  The constructors
 // are always applied in the order presented here.
-func NewListenChain(c ...ListenConstructor) ListenChain {
-	return ListenChain{
-		c: append([]ListenConstructor{}, c...),
+func NewListenerChain(c ...ListenerConstructor) ListenerChain {
+	return ListenerChain{
+		c: append([]ListenerConstructor{}, c...),
 	}
 }
 
-// Append adds additional ListenConstructors to this chain, and returns the new chain.
+// Append adds additional ListenerConstructors to this chain, and returns the new chain.
 // This chain is not modified.  If more has zero length, this chain is returned.
-func (lc ListenChain) Append(more ...ListenConstructor) ListenChain {
+func (lc ListenerChain) Append(more ...ListenerConstructor) ListenerChain {
 	if len(more) > 0 {
-		return ListenChain{
+		return ListenerChain{
 			c: append(
-				append([]ListenConstructor{}, lc.c...),
+				append([]ListenerConstructor{}, lc.c...),
 				more...,
 			),
 		}
@@ -61,37 +61,51 @@ func (lc ListenChain) Append(more ...ListenConstructor) ListenChain {
 	return lc
 }
 
-// Extend is like Append, except that the additional ListenConstructors come from
+// Extend is like Append, except that the additional ListenerConstructors come from
 // another chain
-func (lc ListenChain) Extend(more ListenChain) ListenChain {
+func (lc ListenerChain) Extend(more ListenerChain) ListenerChain {
 	return lc.Append(more.c...)
 }
 
 // Then decorates the given Listen strategy with all of the constructors
 // applied, in the order they were presented to this chain.
-func (lc ListenChain) Then(next Listen) Listen {
+func (lc ListenerChain) Then(next net.Listener) net.Listener {
 	// apply in reverse order, so that the order of
 	// execution matches the order supplied to this chain
-	for i := len(lc.c); i >= 0; i-- {
+	for i := len(lc.c) - 1; i >= 0; i-- {
 		next = lc.c[i](next)
 	}
 
 	return next
 }
 
-// CaptureAddr returns a ListenConstructor that sends the actual network address of
-// the created listener to a channel.  This is useful to capture the actual address
-// of a server, usually for testing, when an address such as ":0" is used.
-func CaptureAddr(ch chan<- net.Addr) ListenConstructor {
-	return func(next Listen) Listen {
+// Listen produces a Listen strategy that uses this chain to decorate the
+// returned net.Listener.  Any error prevents decoration.  Any empty ListenerChain
+// will return the next Listen undecorated.
+func (lc ListenerChain) Listen(next Listen) Listen {
+	if len(lc.c) > 0 {
 		return func(ctx context.Context, server *http.Server) (net.Listener, error) {
 			listener, err := next(ctx, server)
 			if err == nil {
-				ch <- listener.Addr()
+				listener = lc.Then(listener)
 			}
 
 			return listener, err
 		}
+	}
+
+	return next
+}
+
+// CaptureListenAddress returns a ListenerConstructor that sends the actual network address of
+// the created listener to a channel.  This is useful to capture the actual address
+// of a server, usually for testing, when an address such as ":0" is used.
+//
+// The returned contructor performs no actual decoration.
+func CaptureListenAddress(ch chan<- net.Addr) ListenerConstructor {
+	return func(next net.Listener) net.Listener {
+		ch <- next.Addr()
+		return next
 	}
 }
 
@@ -126,7 +140,8 @@ func (lf ListenerFactory) Listen(ctx context.Context, server *http.Server) (net.
 	return l, nil
 }
 
-// ServerExit is callback function run when the server exits its accept loop
+// ServerExit is callback function run when the server exits its accept loop.
+// A ServerExit function must never panic, or server cleanup will be interrupted.
 type ServerExit func()
 
 // ShutdownOnExit returns a ServerExit strategy that calls the supplied

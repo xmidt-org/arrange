@@ -1,8 +1,13 @@
 package arrangehttp
 
 import (
+	"context"
 	"net/http"
 	"time"
+
+	"github.com/spf13/viper"
+	"github.com/xmidt-org/arrange"
+	"go.uber.org/fx"
 )
 
 // ClientFactory is the interface implemented by unmarshaled configuration objects
@@ -77,6 +82,14 @@ func (cc ClientConfig) NewClient() (client *http.Client, err error) {
 // prior to its being returned to an fx.App as a component
 type ClientOption func(*http.Client) error
 
+// ClientIn is the set of dependencies required to build an *http.Client component
+type ClientIn struct {
+	arrange.ProvideIn
+
+	Lifecycle  fx.Lifecycle
+	Shutdowner fx.Shutdowner
+}
+
 // C is a Fluent Builder for creating an http.Client as an uber/fx component.
 // This type should be constructred with the Client function.
 type C struct {
@@ -104,4 +117,84 @@ func Client(opts ...ClientOption) *C {
 func (c *C) ClientFactory(prototype ClientFactory) *C {
 	c.prototype = prototype
 	return c
+}
+
+func (c *C) newClient(f ClientFactory, in ClientIn) (*http.Client, error) {
+	client, err := f.NewClient()
+	if err != nil {
+		return nil, err
+	}
+
+	for _, f := range c.co {
+		if err := f(client); err != nil {
+			return nil, err
+		}
+	}
+
+	in.Lifecycle.Append(fx.Hook{
+		OnStop: func(context.Context) error {
+			client.CloseIdleConnections()
+			return nil
+		},
+	})
+
+	return client, nil
+}
+
+func (c *C) Unmarshal(opts ...viper.DecoderConfigOption) func(ClientIn) (*http.Client, error) {
+	return func(in ClientIn) (*http.Client, error) {
+		var (
+			target = arrange.NewTarget(c.prototype)
+			err    = in.Viper.Unmarshal(
+				target.UnmarshalTo(),
+				arrange.Merge(in.DecoderOptions, opts),
+			)
+		)
+
+		if err != nil {
+			return nil, err
+		}
+
+		return c.newClient(
+			target.Component().(ClientFactory),
+			in,
+		)
+	}
+}
+
+func (c *C) Provide(opts ...viper.DecoderConfigOption) fx.Option {
+	return fx.Provide(
+		c.Unmarshal(opts...),
+	)
+}
+
+func (c *C) UnmarshalKey(key string, opts ...viper.DecoderConfigOption) func(ClientIn) (*http.Client, error) {
+	return func(in ClientIn) (*http.Client, error) {
+		var (
+			target = arrange.NewTarget(c.prototype)
+			err    = in.Viper.UnmarshalKey(
+				key,
+				target.UnmarshalTo(),
+				arrange.Merge(in.DecoderOptions, opts),
+			)
+		)
+
+		if err != nil {
+			return nil, err
+		}
+
+		return c.newClient(
+			target.Component().(ClientFactory),
+			in,
+		)
+	}
+}
+
+func (c *C) ProvideKey(key string, opts ...viper.DecoderConfigOption) fx.Option {
+	return fx.Provide(
+		fx.Annotated{
+			Name:   key,
+			Target: c.UnmarshalKey(key, opts...),
+		},
+	)
 }

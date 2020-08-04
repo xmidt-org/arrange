@@ -564,8 +564,10 @@ func testNewTLSConfigBasic(t *testing.T, certificateFile, keyFile string) {
 					KeyFile:         keyFile,
 				},
 			},
-			MinVersion: 1,
-			MaxVersion: 3,
+			MinVersion:         1,
+			MaxVersion:         3,
+			ServerName:         "foobar.com",
+			InsecureSkipVerify: true,
 		}
 	)
 
@@ -577,6 +579,8 @@ func testNewTLSConfigBasic(t *testing.T, certificateFile, keyFile string) {
 	assert.Equal(uint16(3), tlsConfig.MaxVersion)
 	assert.Equal([]string{"http/1.1"}, tlsConfig.NextProtos)
 	assert.Len(tlsConfig.Certificates, 1)
+	assert.Equal("foobar.com", tlsConfig.ServerName)
+	assert.True(tlsConfig.InsecureSkipVerify)
 	assert.NotEmpty(tlsConfig.NameToCertificate) // verify that BuildNameToCertificate was run
 	assert.Nil(tlsConfig.VerifyPeerCertificate)
 	assert.Equal(tls.NoClientCert, tlsConfig.ClientAuth)

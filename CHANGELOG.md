@@ -5,6 +5,8 @@ The format is based on [Keep a Changelog](http://keepachangelog.com/en/1.0.0/)
 and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+
+## [v0.1.2]
 - Upgrade mapstructure to v1.3.2
 - Added convenient viper.DecoderConfigOption implementations
 - Removed UnmarshalExact, as it is superfluous
@@ -15,5 +17,7 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 ## [v0.1.0]
 - Initial creation
 
-[Unreleased]: https://github.com/xmidt-org/__PROJECT__/compare/v0.1.0..HEAD
+[Unreleased]: https://github.com/xmidt-org/__PROJECT__/compare/v0.1.2..HEAD
+[v0.1.2]: https://github.com/xmidt-org/__PROJECT__/compare/0.1.1...v0.1.2
+[v0.1.1]: https://github.com/xmidt-org/__PROJECT__/compare/0.1.0...v0.1.1
 [v0.1.0]: https://github.com/xmidt-org/__PROJECT__/compare/0.0.0...v0.1.0

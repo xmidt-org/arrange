@@ -236,7 +236,7 @@ func (s *S) Unmarshal(opts ...viper.DecoderConfigOption) func(ServerIn) (*mux.Ro
 }
 
 // Provide produces an fx.Provide that does the same thing as Unmarshal.  This
-// is the typical way to leverage this package:
+// is the typical way to leverage this package to create an http.Server:
 //
 //   v := viper.New() // setup not shown
 //   fx.New(

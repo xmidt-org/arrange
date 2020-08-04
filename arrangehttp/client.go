@@ -16,9 +16,7 @@ type ClientFactory interface {
 	NewClient() (*http.Client, error)
 }
 
-// TransportConfig holds the unmarshalable configuration options for building an http.Transport.
-// For consistency with ServerConfig, this type does not contain any TLS information.  Rather,
-// TLS information must be passed to it via NewTransport.
+// TransportConfig holds the unmarshalable configuration options for building an http.Transport
 type TransportConfig struct {
 	TLSHandshakeTimeout    time.Duration
 	DisableKeepAlives      bool
@@ -119,6 +117,8 @@ func (c *C) ClientFactory(prototype ClientFactory) *C {
 	return c
 }
 
+// newClient does all the heavy lifting for creating the client, applying
+// options, and binding CloseIdleConnections to the fx lifecycle.
 func (c *C) newClient(f ClientFactory, in ClientIn) (*http.Client, error) {
 	client, err := f.NewClient()
 	if err != nil {
@@ -141,6 +141,27 @@ func (c *C) newClient(f ClientFactory, in ClientIn) (*http.Client, error) {
 	return client, nil
 }
 
+// Unmarshal uses an injected Viper instance to unmarshal the ClientFactory.  That factory
+// is then used to create an *http.Client.  The client's CloseIdleConnections method is
+// bound to the OnStop portion of the fx.App lifecycle.
+//
+// This method terminates the builder chain, and must be used inside fx.Provide:
+//
+//   v := viper.New() // setup not shown
+//   fx.New(
+//     arrange.Supply(v), // don't forget to supply the viper as a component!
+//     fx.Provide(
+//       arrangehttp.Client().Unmarshal(),
+//       func(c *http.Client) MyComponent {
+//         // use the client to create MyComponent
+//       },
+//     ),
+//     fx.Invoke(
+//       func(c *http.Client) error {
+//         // use the client as desired
+//       },
+//     ),
+//   )
 func (c *C) Unmarshal(opts ...viper.DecoderConfigOption) func(ClientIn) (*http.Client, error) {
 	return func(in ClientIn) (*http.Client, error) {
 		var (
@@ -162,12 +183,65 @@ func (c *C) Unmarshal(opts ...viper.DecoderConfigOption) func(ClientIn) (*http.C
 	}
 }
 
+// Provide produces an fx.Provide that does the same thing as Unmarshal.  This
+// is the typical way to leverage this package to create an http.Client:
+//
+//   v := viper.New() // setup not shown
+//   fx.New(
+//     arrange.Supply(v), // don't forget to supply the viper as a component!
+//     arrangehttp.Client().Provide(),
+//     fx.Provide(
+//       func(c *http.Client) MyComponent {
+//         // use the client to create MyComponent
+//       },
+//     ),
+//     fx.Invoke(
+//       func(c *http.Client) {
+//         // use the client as desired
+//       },
+//     ),
+//   )
+//
+// Use Unmarshal instead of this method when more control over the created component
+// is necessary, such as putting it in a group or naming it.
 func (c *C) Provide(opts ...viper.DecoderConfigOption) fx.Option {
 	return fx.Provide(
 		c.Unmarshal(opts...),
 	)
 }
 
+// UnmarshalKey is similar to Unmarshal, but unmarshals a particular Viper configuration
+// key rather than unmarshaling from the root.
+//
+// Assume a yaml configuration similar to:
+//
+//   clients:
+//     main:
+//       timeout: "15s"
+//       transport:
+//         disableCompression: true
+//         writeBufferSize: 8192
+//         readBufferSize: 8192
+//         forceAttemptHTTP2: true
+//
+//
+// The corresponding UnmarshalKey declaration would be:
+//
+//   v := viper.New() // read in the above YAML
+//   fx.New(
+//     arrange.Supply(v), // don't forget to supply the viper as a component!
+//     fx.Provide(
+//       arrangehttp.Client().UnmarshalKey("clients.main"),
+//     ),
+//     fx.Invoke(
+//       func(c *http.Client) error {
+//         // use the client as desired
+//       },
+//     ),
+//   )
+//
+// Note that UnmarshalKey simply provides a constructor, as with Unmarshal.  To name
+// the component, one has to use fx.Annotated.  ProvideKey does this automatically.
 func (c *C) UnmarshalKey(key string, opts ...viper.DecoderConfigOption) func(ClientIn) (*http.Client, error) {
 	return func(in ClientIn) (*http.Client, error) {
 		var (
@@ -190,6 +264,25 @@ func (c *C) UnmarshalKey(key string, opts ...viper.DecoderConfigOption) func(Cli
 	}
 }
 
+// ProvideKey unmarshals the ClientFactory from a particular Viper key.  The *http.Client
+// component is named the same as that key.
+//
+//   v := viper.New()
+//
+//   type ClientIn struct {
+//     fx.In
+//     Client *http.Client `name:"clients.main"` // note that this name is the same as the key
+//   }
+//
+//   fx.New(
+//     arrange.Supply(v),
+//     arrangehttp.Server().ProvideKey("clients.main"),
+//     fx.Invoke(
+//       func(in ClientIn) error {
+//         // in.Client will hold the provided *http.Client
+//       },
+//     ),
+//   )
 func (c *C) ProvideKey(key string, opts ...viper.DecoderConfigOption) fx.Option {
 	return fx.Provide(
 		fx.Annotated{

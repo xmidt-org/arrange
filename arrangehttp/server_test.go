@@ -93,9 +93,13 @@ func testServerConfigTLS(t *testing.T) {
 			IdleTimeout:       9234 * time.Minute,
 			MaxHeaderBytes:    3642,
 			KeepAlive:         3 * time.Minute,
-			TLS: &ServerTLS{
-				CertificateFile: certificateFile,
-				KeyFile:         keyFile,
+			TLS: &TLS{
+				Certificates: ExternalCertificates{
+					{
+						CertificateFile: certificateFile,
+						KeyFile:         keyFile,
+					},
+				},
 			},
 		}
 

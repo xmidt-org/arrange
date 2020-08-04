@@ -30,6 +30,16 @@ type PeerVerifier func(*x509.Certificate, [][]*x509.Certificate) error
 // parsing a certificate once, then invoking each PeerVerifier.
 type PeerVerifiers []PeerVerifier
 
+// Len returns the count of verifiers in this slice
+func (pvs PeerVerifiers) Len() int {
+	return len(pvs)
+}
+
+// Append tacks on more PeerVerifier strategies to this slice
+func (pvs *PeerVerifiers) Append(more ...PeerVerifier) {
+	*pvs = append(*pvs, more...)
+}
+
 // VerifyPeerCertificate may be used as the closure for crypto/tls.Config.VerifyPeerCertificate.
 // Parsing is done once, then each PeerVerifier is invoked in sequence.  Any error short-circuits
 // subsequent checks.
@@ -76,24 +86,24 @@ type PeerVerifyConfig struct {
 // Verifier produces a PeerVerifier strategy from these options.
 // If nothing is configured, this method returns nil.
 func (pvc PeerVerifyConfig) Verifier() PeerVerifier {
-	if len(pvc.DNSSuffixes) == 0 && len(pvc.CommonNames) == 0 {
-		return nil
-	}
-
-	// make a safe clone to host our closure
-	var clone PeerVerifyConfig
-	if len(pvc.DNSSuffixes) > 0 {
-		clone.DNSSuffixes = make([]string, len(pvc.DNSSuffixes))
-		for i, suffix := range pvc.DNSSuffixes {
-			clone.DNSSuffixes[i] = strings.ToLower(suffix)
+	if len(pvc.DNSSuffixes) > 0 || len(pvc.CommonNames) > 0 {
+		// make a safe clone to host our closure
+		var clone PeerVerifyConfig
+		if len(pvc.DNSSuffixes) > 0 {
+			clone.DNSSuffixes = make([]string, len(pvc.DNSSuffixes))
+			for i, suffix := range pvc.DNSSuffixes {
+				clone.DNSSuffixes[i] = strings.ToLower(suffix)
+			}
 		}
+
+		if len(pvc.CommonNames) > 0 {
+			clone.CommonNames = append(clone.CommonNames, pvc.CommonNames...)
+		}
+
+		return clone.verify
 	}
 
-	if len(pvc.CommonNames) > 0 {
-		clone.CommonNames = append(clone.CommonNames, pvc.CommonNames...)
-	}
-
-	return clone.verify
+	return nil
 }
 
 // verify is the PeerVerifier strategy that uses this configuration.
@@ -124,30 +134,129 @@ func (pvc PeerVerifyConfig) verify(peerCert *x509.Certificate, _ [][]*x509.Certi
 	}
 }
 
-// ServerTLS represents the set of configurable options for a serverside tls.Config associated with a server.
-type ServerTLS struct {
-	CertificateFile         string
-	KeyFile                 string
-	ClientCACertificateFile string
-	ServerName              string
-	NextProtos              []string
-	MinVersion              uint16
-	MaxVersion              uint16
-	PeerVerify              PeerVerifyConfig
+// ExternalCertificate represents a certificate with its key file on the filesystem.
+// A server or client may have one or more associated external certificates.
+type ExternalCertificate struct {
+	CertificateFile string
+	KeyFile         string
 }
 
-// NewServerTLSConfig produces a *tls.Config from a set of configuration options.  If the supplied set of options
-// is nil, this function returns nil with no error.
-//
-// If supplied, the PeerVerifier strategies will be executed as part of peer verification.  This allows application-layer
-// logic to be injected.
-func NewServerTLSConfig(t *ServerTLS, extra ...PeerVerifier) (*tls.Config, error) {
-	if t == nil {
-		return nil, nil
+func (ec ExternalCertificate) Load() (tls.Certificate, error) {
+	if len(ec.CertificateFile) > 0 && len(ec.KeyFile) > 0 {
+		return tls.LoadX509KeyPair(ec.CertificateFile, ec.KeyFile)
 	}
 
-	if len(t.CertificateFile) == 0 || len(t.KeyFile) == 0 {
-		return nil, ErrTLSCertificateRequired
+	return tls.Certificate{}, ErrTLSCertificateRequired
+}
+
+// ExternalCertificates is a sequence of externally available certificates
+type ExternalCertificates []ExternalCertificate
+
+// Len returns the count of externally available certificates in this slice
+func (ecs ExternalCertificates) Len() int {
+	return len(ecs)
+}
+
+// Appends adds external certificates to this sequence
+func (ecs *ExternalCertificates) Append(more ...ExternalCertificate) {
+	*ecs = append(*ecs, more...)
+}
+
+// AppendTo loads and appends each certificate in this slice.  Any error short
+// circuits and returns that error together with the slice with any successfully
+// loaded certificates.
+func (ecs ExternalCertificates) AppendTo(certs []tls.Certificate) ([]tls.Certificate, error) {
+	for _, ec := range ecs {
+		cert, err := ec.Load()
+		if err != nil {
+			return certs, err
+		}
+
+		certs = append(certs, cert)
+	}
+
+	return certs, nil
+}
+
+// ExternalCertPool is a sequence of file names containing PEM-encoded certificates
+// or certificate bundles to be added to an x509.CertPool
+type ExternalCertPool []string
+
+// Len returns the number of external files in this pool
+func (ecp ExternalCertPool) Len() int {
+	return len(ecp)
+}
+
+// Appends adds file names to this external cert pool
+func (ecp *ExternalCertPool) Append(more ...string) {
+	*ecp = append(*ecp, more...)
+}
+
+// AppendTo adds each PEM-encoded file from this external pool to the given
+// x509.CertPool.  The number of certs added is returned, and any error will
+// short circuit subsequent loading.
+func (ecp ExternalCertPool) AppendTo(pool *x509.CertPool) (int, error) {
+	var loaded int
+	for _, ec := range ecp {
+		pemCert, err := ioutil.ReadFile(ec)
+		if err != nil {
+			return loaded, err
+		}
+
+		if pool.AppendCertsFromPEM(pemCert) {
+			loaded++
+		} else {
+			return loaded, ErrUnableToAddClientCACertificate
+		}
+	}
+
+	return loaded, nil
+}
+
+// TLS represents the unmarshaled tls options for either a client or a server
+type TLS struct {
+	// Certificates is the required set of certificates to present to a client.  There must
+	// be at least one entry in this slice.
+	Certificates ExternalCertificates
+
+	// RootCAs is the optional certificate pool for root certificates.  By default, the golang
+	// library uses the system certificate pool if this is unset.
+	RootCAs ExternalCertPool
+
+	// ClientCAs is the optional certificate pool for certificates expected from a client.  Configure
+	// this as part of mTLS.
+	ClientCAs ExternalCertPool
+
+	// ServerName is used by a client to validate the server's hostname.  This field is optional
+	// and has no default.
+	ServerName string
+
+	// InsecureSkipVerify indicates whether a client should validate a server's certificate(s)
+	InsecureSkipVerify bool
+
+	// NextProtos is the list of supported application protocols.  Defaults to "http/1.1" if unset.
+	NextProtos []string
+
+	// MinVersion is the minimum required TLS version
+	MinVersion uint16
+
+	// MaxVersion is the maximum required TLS version
+	MaxVersion uint16
+
+	// PeerVerify specifies the certificate validation done on client certificates.
+	// If supplied, this verifier strategy is merged with an extra PeerVerifiers
+	// supplied in application code.
+	PeerVerify *PeerVerifyConfig
+}
+
+// NewTLSConfig constructs a *tls.Config from an unmarshaled TLS instance.
+// If the supplied TLS is nil, this method returns nil with no error.
+//
+// The extra PeerVerifiers, if supplied, are used to build the tls.Config.VerifyPeerCertificate
+// strategy.
+func NewTLSConfig(t *TLS, extra ...PeerVerifier) (*tls.Config, error) {
+	if t == nil {
+		return nil, nil
 	}
 
 	var nextProtos []string
@@ -161,41 +270,49 @@ func NewServerTLSConfig(t *ServerTLS, extra ...PeerVerifier) (*tls.Config, error
 	}
 
 	tc := &tls.Config{
-		MinVersion: t.MinVersion,
-		MaxVersion: t.MaxVersion,
-		ServerName: t.ServerName,
-		NextProtos: nextProtos,
+		MinVersion:         t.MinVersion,
+		MaxVersion:         t.MaxVersion,
+		NextProtos:         nextProtos,
+		ServerName:         t.ServerName,
+		InsecureSkipVerify: t.InsecureSkipVerify,
 	}
 
 	var peerVerifiers PeerVerifiers
-	if pv := t.PeerVerify.Verifier(); pv != nil {
-		peerVerifiers = append(peerVerifiers, pv)
+	if t.PeerVerify != nil {
+		// A PeerVerifyConfig can return a nil function if nothing is configured
+		if v := t.PeerVerify.Verifier(); v != nil {
+			peerVerifiers.Append(v)
+		}
 	}
 
-	peerVerifiers = append(peerVerifiers, extra...)
-	if len(peerVerifiers) > 0 {
+	peerVerifiers.Append(extra...)
+	if peerVerifiers.Len() > 0 {
 		tc.VerifyPeerCertificate = peerVerifiers.VerifyPeerCertificate
 	}
 
-	if cert, err := tls.LoadX509KeyPair(t.CertificateFile, t.KeyFile); err != nil {
+	if certs, err := t.Certificates.AppendTo(nil); err != nil {
 		return nil, err
 	} else {
-		tc.Certificates = []tls.Certificate{cert}
+		tc.Certificates = certs
 	}
 
-	if len(t.ClientCACertificateFile) > 0 {
-		caCert, err := ioutil.ReadFile(t.ClientCACertificateFile)
-		if err != nil {
+	if t.RootCAs.Len() > 0 {
+		rootCAs := x509.NewCertPool()
+		if count, err := t.RootCAs.AppendTo(rootCAs); err != nil {
 			return nil, err
+		} else if count > 0 {
+			tc.RootCAs = rootCAs
 		}
+	}
 
-		caCertPool := x509.NewCertPool()
-		if !caCertPool.AppendCertsFromPEM(caCert) {
-			return nil, ErrUnableToAddClientCACertificate
+	if t.ClientCAs.Len() > 0 {
+		clientCAs := x509.NewCertPool()
+		if count, err := t.ClientCAs.AppendTo(clientCAs); err != nil {
+			return nil, err
+		} else if count > 0 {
+			tc.ClientCAs = clientCAs
+			tc.ClientAuth = tls.RequireAndVerifyClientCert
 		}
-
-		tc.ClientCAs = caCertPool
-		tc.ClientAuth = tls.RequireAndVerifyClientCert
 	}
 
 	tc.BuildNameToCertificate()

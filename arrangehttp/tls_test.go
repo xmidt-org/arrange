@@ -304,6 +304,212 @@ func TestPeerVerifyConfig(t *testing.T) {
 	t.Run("Failure", testPeerVerifyConfigFailure)
 }
 
+func testExternalCertificateSuccess(t *testing.T) {
+	var (
+		assert = assert.New(t)
+
+		ec ExternalCertificate
+	)
+
+	ec.CertificateFile, ec.KeyFile = createServerFiles(t)
+	defer os.Remove(ec.CertificateFile)
+	defer os.Remove(ec.KeyFile)
+
+	loaded, err := ec.Load()
+	assert.NoError(err)
+	assert.NotEqual(tls.Certificate{}, loaded)
+}
+
+func testExternalCertificateFailure(t *testing.T) {
+	var (
+		assert = assert.New(t)
+
+		ec ExternalCertificate
+	)
+
+	loaded, err := ec.Load()
+	assert.Error(err)
+	assert.Equal(tls.Certificate{}, loaded)
+}
+
+func TestExternalCertificate(t *testing.T) {
+	t.Run("Success", testExternalCertificateSuccess)
+	t.Run("Failure", testExternalCertificateFailure)
+}
+
+func testExternalCertificatesSuccess(t *testing.T) {
+	certificateFile, keyFile := createServerFiles(t)
+	defer os.Remove(certificateFile)
+	defer os.Remove(keyFile)
+
+	for _, length := range []int{0, 1, 2, 5} {
+		t.Run(fmt.Sprintf("len=%d", length), func(t *testing.T) {
+			var (
+				assert = assert.New(t)
+				ecs    ExternalCertificates
+			)
+
+			assert.Zero(ecs.Len())
+			for i := 0; i < length; i++ {
+				ecs.Append(ExternalCertificate{
+					CertificateFile: certificateFile,
+					KeyFile:         keyFile,
+				})
+
+				assert.Equal(i+1, ecs.Len())
+			}
+
+			loaded, err := ecs.AppendTo(nil)
+			assert.NoError(err)
+			assert.Len(loaded, length)
+
+			loaded, err = ecs.AppendTo(loaded)
+			assert.NoError(err)
+			assert.Len(loaded, 2*length)
+		})
+	}
+}
+
+func testExternalCertificatesFailure(t *testing.T) {
+	certificateFile, keyFile := createServerFiles(t)
+	defer os.Remove(certificateFile)
+	defer os.Remove(keyFile)
+
+	for _, length := range []int{1, 2, 5} {
+		t.Run(fmt.Sprintf("len=%d", length), func(t *testing.T) {
+			var (
+				assert = assert.New(t)
+				ecs    ExternalCertificates
+			)
+
+			assert.Zero(ecs.Len())
+			for i := 0; i < length-1; i++ {
+				ecs.Append(ExternalCertificate{
+					CertificateFile: certificateFile,
+					KeyFile:         keyFile,
+				})
+
+				assert.Equal(i+1, ecs.Len())
+			}
+
+			ecs.Append(ExternalCertificate{}) // this will always fail
+			assert.Equal(length, ecs.Len())
+
+			loaded, err := ecs.AppendTo(nil)
+			assert.Error(err)
+			assert.Equal(length-1, len(loaded)) // the successful loads should be appended
+
+			loaded, err = ecs.AppendTo(loaded)
+			assert.Error(err)
+			assert.Equal(2*(length-1), len(loaded)) // the successful loads should be appended
+		})
+	}
+}
+
+func TestExternalCertificates(t *testing.T) {
+	t.Run("Success", testExternalCertificatesSuccess)
+	t.Run("Failure", testExternalCertificatesFailure)
+}
+
+func testExternalCertPoolSuccess(t *testing.T) {
+	certificateFile, keyFile := createServerFiles(t)
+	defer os.Remove(certificateFile)
+	defer os.Remove(keyFile)
+
+	for _, length := range []int{0, 1, 2, 5} {
+		t.Run(fmt.Sprintf("len=%d", length), func(t *testing.T) {
+			var (
+				assert = assert.New(t)
+				ecp    ExternalCertPool
+			)
+
+			assert.Zero(ecp.Len())
+			for i := 0; i < length; i++ {
+				ecp.Append(certificateFile)
+				assert.Equal(i+1, ecp.Len())
+			}
+
+			certPool := x509.NewCertPool()
+			count, err := ecp.AppendTo(certPool)
+			assert.NoError(err)
+			assert.Equal(length, count)
+		})
+	}
+}
+
+func testExternalCertPoolMissingFile(t *testing.T) {
+	certificateFile, keyFile := createServerFiles(t)
+	defer os.Remove(certificateFile)
+	defer os.Remove(keyFile)
+
+	for _, length := range []int{1, 2, 5} {
+		t.Run(fmt.Sprintf("len=%d", length), func(t *testing.T) {
+			var (
+				assert = assert.New(t)
+				ecp    ExternalCertPool
+			)
+
+			assert.Zero(ecp.Len())
+			for i := 0; i < length-1; i++ {
+				ecp.Append(certificateFile)
+				assert.Equal(i+1, ecp.Len())
+			}
+
+			ecp.Append("missing")
+			assert.Equal(length, ecp.Len())
+
+			certPool := x509.NewCertPool()
+			count, err := ecp.AppendTo(certPool)
+			assert.Error(err)
+			assert.Equal(length-1, count) // the successes should have been added
+		})
+	}
+}
+
+func testExternalCertPoolInvalidFile(t *testing.T) {
+	certificateFile, keyFile := createServerFiles(t)
+	defer os.Remove(certificateFile)
+	defer os.Remove(keyFile)
+
+	require := require.New(t)
+	invalidFile, err := ioutil.TempFile("", "invalid.*.cert")
+	require.NoError(err)
+
+	defer os.Remove(invalidFile.Name())
+	_, err = invalidFile.WriteString("this is not valid PEM")
+	invalidFile.Close()
+	require.NoError(err)
+
+	for _, length := range []int{1, 2, 5} {
+		t.Run(fmt.Sprintf("len=%d", length), func(t *testing.T) {
+			var (
+				assert = assert.New(t)
+				ecp    ExternalCertPool
+			)
+
+			assert.Zero(ecp.Len())
+			for i := 0; i < length-1; i++ {
+				ecp.Append(certificateFile)
+				assert.Equal(i+1, ecp.Len())
+			}
+
+			ecp.Append(invalidFile.Name())
+			assert.Equal(length, ecp.Len())
+
+			certPool := x509.NewCertPool()
+			count, err := ecp.AppendTo(certPool)
+			assert.Error(err)
+			assert.Equal(length-1, count) // the successes should have been added
+		})
+	}
+}
+
+func TestExternalCertPool(t *testing.T) {
+	t.Run("Success", testExternalCertPoolSuccess)
+	t.Run("MissingFile", testExternalCertPoolMissingFile)
+	t.Run("InvalidFile", testExternalCertPoolInvalidFile)
+}
+
 func testNewTLSConfigNil(t *testing.T) {
 	assert := assert.New(t)
 
@@ -460,7 +666,7 @@ func testNewTLSConfigVerifyPeerCertificate(t *testing.T, certificateFile, keyFil
 	)
 }
 
-func testNewTLSConfigClientCACertificateFile(t *testing.T, certificateFile, keyFile string) {
+func testNewTLSConfigCertPools(t *testing.T, certificateFile, keyFile string) {
 	var (
 		assert  = assert.New(t)
 		require = require.New(t)
@@ -472,6 +678,7 @@ func testNewTLSConfigClientCACertificateFile(t *testing.T, certificateFile, keyF
 					KeyFile:         keyFile,
 				},
 			},
+			RootCAs:    ExternalCertPool{certificateFile}, // this works as a bundle also
 			ClientCAs:  ExternalCertPool{certificateFile}, // this works as a bundle also
 			MinVersion: 1,
 			MaxVersion: 3,
@@ -491,9 +698,10 @@ func testNewTLSConfigClientCACertificateFile(t *testing.T, certificateFile, keyF
 	assert.Nil(tlsConfig.VerifyPeerCertificate)
 	assert.Equal(tls.RequireAndVerifyClientCert, tlsConfig.ClientAuth)
 	assert.NotNil(tlsConfig.ClientCAs)
+	assert.NotNil(tlsConfig.RootCAs)
 }
 
-func testNewTLSConfigClientCACertificateFileMissing(t *testing.T, certificateFile, keyFile string) {
+func testNewTLSConfigClientCAsError(t *testing.T, certificateFile, keyFile string) {
 	var (
 		assert  = assert.New(t)
 		require = require.New(t)
@@ -514,22 +722,11 @@ func testNewTLSConfigClientCACertificateFileMissing(t *testing.T, certificateFil
 	require.Nil(tlsConfig)
 }
 
-func testNewTLSConfigClientCACertificateFileUnparseable(t *testing.T, certificateFile, keyFile string) {
+func testNewTLSConfigRootCAsError(t *testing.T, certificateFile, keyFile string) {
 	var (
 		assert  = assert.New(t)
 		require = require.New(t)
-	)
 
-	clientCACertificateFile, err := ioutil.TempFile("", "server*unparseable.cert")
-	require.NoError(err)
-
-	_, err = clientCACertificateFile.Write([]byte("unparseable"))
-	require.NoError(err)
-
-	defer os.Remove(clientCACertificateFile.Name())
-	clientCACertificateFile.Close()
-
-	var (
 		serverTLS = TLS{
 			Certificates: ExternalCertificates{
 				{
@@ -537,7 +734,7 @@ func testNewTLSConfigClientCACertificateFileUnparseable(t *testing.T, certificat
 					KeyFile:         keyFile,
 				},
 			},
-			ClientCAs: ExternalCertPool{clientCACertificateFile.Name()},
+			RootCAs: ExternalCertPool{"missing"},
 		}
 	)
 
@@ -567,15 +764,15 @@ func TestNewTLSConfig(t *testing.T) {
 		testNewTLSConfigVerifyPeerCertificate(t, certificateFile, keyFile)
 	})
 
-	t.Run("ClientCACertificateFile", func(t *testing.T) {
-		testNewTLSConfigClientCACertificateFile(t, certificateFile, keyFile)
+	t.Run("CertPools", func(t *testing.T) {
+		testNewTLSConfigCertPools(t, certificateFile, keyFile)
 	})
 
-	t.Run("ClientCACertificateFileMissing", func(t *testing.T) {
-		testNewTLSConfigClientCACertificateFileMissing(t, certificateFile, keyFile)
+	t.Run("RootCAsError", func(t *testing.T) {
+		testNewTLSConfigRootCAsError(t, certificateFile, keyFile)
 	})
 
-	t.Run("ClientCACertificateFileUnparseable", func(t *testing.T) {
-		testNewTLSConfigClientCACertificateFileUnparseable(t, certificateFile, keyFile)
+	t.Run("ClientCAsError", func(t *testing.T) {
+		testNewTLSConfigClientCAsError(t, certificateFile, keyFile)
 	})
 }

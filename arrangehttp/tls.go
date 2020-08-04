@@ -157,6 +157,11 @@ func (ecs ExternalCertificates) Len() int {
 	return len(ecs)
 }
 
+// Appends adds external certificates to this sequence
+func (ecs *ExternalCertificates) Append(more ...ExternalCertificate) {
+	*ecs = append(*ecs, more...)
+}
+
 // AppendTo loads and appends each certificate in this slice.  Any error short
 // circuits and returns that error together with the slice with any successfully
 // loaded certificates.
@@ -173,13 +178,18 @@ func (ecs ExternalCertificates) AppendTo(certs []tls.Certificate) ([]tls.Certifi
 	return certs, nil
 }
 
-// ExternalCertPool is a sequence of file names containing certificates to
-// be added to an x509.CertPool.  Each file name must be PEM-encoded.
+// ExternalCertPool is a sequence of file names containing PEM-encoded certificates
+// or certificate bundles to be added to an x509.CertPool
 type ExternalCertPool []string
 
 // Len returns the number of external files in this pool
 func (ecp ExternalCertPool) Len() int {
 	return len(ecp)
+}
+
+// Appends adds file names to this external cert pool
+func (ecp *ExternalCertPool) Append(more ...string) {
+	*ecp = append(*ecp, more...)
 }
 
 // AppendTo adds each PEM-encoded file from this external pool to the given

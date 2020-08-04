@@ -325,8 +325,12 @@ func testNewServerTLSConfigMissingCertificate(t *testing.T) {
 	var (
 		assert    = assert.New(t)
 		serverTLS = ServerTLS{
-			CertificateFile: "missing",
-			KeyFile:         "missing",
+			Certificates: ExternalCertificates{
+				{
+					CertificateFile: "missing",
+					KeyFile:         "missing",
+				},
+			},
 		}
 	)
 
@@ -340,11 +344,15 @@ func testNewServerTLSConfigBasic(t *testing.T, certificateFile, keyFile string) 
 		assert    = assert.New(t)
 		require   = require.New(t)
 		serverTLS = ServerTLS{
-			CertificateFile: certificateFile,
-			KeyFile:         keyFile,
-			ServerName:      "test.com",
-			MinVersion:      1,
-			MaxVersion:      3,
+			Certificates: ExternalCertificates{
+				{
+					CertificateFile: certificateFile,
+					KeyFile:         keyFile,
+				},
+			},
+			ServerName: "test.com",
+			MinVersion: 1,
+			MaxVersion: 3,
 		}
 	)
 
@@ -367,12 +375,16 @@ func testNewServerTLSConfigCustomNextProtos(t *testing.T, certificateFile, keyFi
 		assert    = assert.New(t)
 		require   = require.New(t)
 		serverTLS = ServerTLS{
-			CertificateFile: certificateFile,
-			KeyFile:         keyFile,
-			ServerName:      "test.com",
-			MinVersion:      1,
-			MaxVersion:      3,
-			NextProtos:      []string{"http", "ftp"},
+			Certificates: ExternalCertificates{
+				{
+					CertificateFile: certificateFile,
+					KeyFile:         keyFile,
+				},
+			},
+			ServerName: "test.com",
+			MinVersion: 1,
+			MaxVersion: 3,
+			NextProtos: []string{"http", "ftp"},
 		}
 	)
 
@@ -402,9 +414,13 @@ func testNewServerTLSConfigVerifyPeerCertificate(t *testing.T, certificateFile, 
 		}
 
 		serverTLS = ServerTLS{
-			CertificateFile: certificateFile,
-			KeyFile:         keyFile,
-			ServerName:      "test.com",
+			Certificates: ExternalCertificates{
+				{
+					CertificateFile: certificateFile,
+					KeyFile:         keyFile,
+				},
+			},
+			ServerName: "test.com",
 			PeerVerify: PeerVerifyConfig{
 				DNSSuffixes: []string{"example.com"},
 			},
@@ -448,8 +464,12 @@ func testNewServerTLSConfigClientCACertificateFile(t *testing.T, certificateFile
 		require = require.New(t)
 
 		serverTLS = ServerTLS{
-			CertificateFile:         certificateFile,
-			KeyFile:                 keyFile,
+			Certificates: ExternalCertificates{
+				{
+					CertificateFile: certificateFile,
+					KeyFile:         keyFile,
+				},
+			},
 			ClientCACertificateFile: certificateFile, // this works as a bundle also
 			ServerName:              "test.com",
 			MinVersion:              1,
@@ -479,8 +499,12 @@ func testNewServerTLSConfigClientCACertificateFileMissing(t *testing.T, certific
 		require = require.New(t)
 
 		serverTLS = ServerTLS{
-			CertificateFile:         certificateFile,
-			KeyFile:                 keyFile,
+			Certificates: ExternalCertificates{
+				{
+					CertificateFile: certificateFile,
+					KeyFile:         keyFile,
+				},
+			},
 			ClientCACertificateFile: "missing",
 		}
 	)
@@ -507,8 +531,12 @@ func testNewServerTLSConfigClientCACertificateFileUnparseable(t *testing.T, cert
 
 	var (
 		serverTLS = ServerTLS{
-			CertificateFile:         certificateFile,
-			KeyFile:                 keyFile,
+			Certificates: ExternalCertificates{
+				{
+					CertificateFile: certificateFile,
+					KeyFile:         keyFile,
+				},
+			},
 			ClientCACertificateFile: clientCACertificateFile.Name(),
 		}
 	)

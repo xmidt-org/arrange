@@ -96,8 +96,10 @@ type S struct {
 // binding its lifecycle to the fx.App lifecycle, and producing a *mux.Router
 // as a component for use in dependency injection.
 func Server(opts ...ServerOption) *S {
-	s := &S{
-		so: opts,
+	s := new(S)
+	if len(opts) > 0 {
+		// safe copy
+		s.so = append([]ServerOption{}, opts...)
 	}
 
 	return s.ServerFactory(ServerConfig{})

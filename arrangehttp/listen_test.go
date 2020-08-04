@@ -174,8 +174,12 @@ func testListenerFactoryTLS(t *testing.T) {
 	defer os.Remove(keyFile)
 
 	tlsConfig, err := NewServerTLSConfig(&ServerTLS{
-		CertificateFile: certificateFile,
-		KeyFile:         keyFile,
+		Certificates: ExternalCertificates{
+			{
+				CertificateFile: certificateFile,
+				KeyFile:         keyFile,
+			},
+		},
 	})
 
 	require.NoError(err)

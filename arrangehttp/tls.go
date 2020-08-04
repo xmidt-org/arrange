@@ -124,10 +124,48 @@ func (pvc PeerVerifyConfig) verify(peerCert *x509.Certificate, _ [][]*x509.Certi
 	}
 }
 
+// ExternalCertificate represents a certificate with its key file on the filesystem.
+// A server or client may have one or more associated external certificates.
+type ExternalCertificate struct {
+	CertificateFile string
+	KeyFile         string
+}
+
+func (ec ExternalCertificate) Load() (tls.Certificate, error) {
+	if len(ec.CertificateFile) > 0 && len(ec.KeyFile) > 0 {
+		return tls.LoadX509KeyPair(ec.CertificateFile, ec.KeyFile)
+	}
+
+	return tls.Certificate{}, ErrTLSCertificateRequired
+}
+
+// ExternalCertificates is a sequence of externally available certificates
+type ExternalCertificates []ExternalCertificate
+
+// Len returns the count of externally available certificates in this slice
+func (ecs ExternalCertificates) Len() int {
+	return len(ecs)
+}
+
+// Append loads and appends each certificate in this slice.  Any error short
+// circuits and returns that error together with the slice with any successfully
+// loaded certificates.
+func (ecs ExternalCertificates) Append(certs []tls.Certificate) ([]tls.Certificate, error) {
+	for _, ec := range ecs {
+		cert, err := ec.Load()
+		if err != nil {
+			return certs, err
+		}
+
+		certs = append(certs, cert)
+	}
+
+	return certs, nil
+}
+
 // ServerTLS represents the set of configurable options for a serverside tls.Config associated with a server.
 type ServerTLS struct {
-	CertificateFile         string
-	KeyFile                 string
+	Certificates            ExternalCertificates
 	ClientCACertificateFile string
 	ServerName              string
 	NextProtos              []string
@@ -146,7 +184,7 @@ func NewServerTLSConfig(t *ServerTLS, extra ...PeerVerifier) (*tls.Config, error
 		return nil, nil
 	}
 
-	if len(t.CertificateFile) == 0 || len(t.KeyFile) == 0 {
+	if t.Certificates.Len() == 0 {
 		return nil, ErrTLSCertificateRequired
 	}
 
@@ -177,10 +215,10 @@ func NewServerTLSConfig(t *ServerTLS, extra ...PeerVerifier) (*tls.Config, error
 		tc.VerifyPeerCertificate = peerVerifiers.VerifyPeerCertificate
 	}
 
-	if cert, err := tls.LoadX509KeyPair(t.CertificateFile, t.KeyFile); err != nil {
+	if certs, err := t.Certificates.Append(nil); err != nil {
 		return nil, err
 	} else {
-		tc.Certificates = []tls.Certificate{cert}
+		tc.Certificates = certs
 	}
 
 	if len(t.ClientCACertificateFile) > 0 {

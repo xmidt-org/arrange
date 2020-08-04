@@ -94,8 +94,12 @@ func testServerConfigTLS(t *testing.T) {
 			MaxHeaderBytes:    3642,
 			KeepAlive:         3 * time.Minute,
 			TLS: &ServerTLS{
-				CertificateFile: certificateFile,
-				KeyFile:         keyFile,
+				Certificates: ExternalCertificates{
+					{
+						CertificateFile: certificateFile,
+						KeyFile:         keyFile,
+					},
+				},
 			},
 		}
 

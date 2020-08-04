@@ -296,12 +296,12 @@ func TestPeerVerifyConfig(t *testing.T) {
 	t.Run("Failure", testPeerVerifyConfigFailure)
 }
 
-func testNewServerTLSConfigNil(t *testing.T) {
+func testNewTLSConfigNil(t *testing.T) {
 	assert := assert.New(t)
 
-	assert.Nil(NewServerTLSConfig(nil))
+	assert.Nil(NewTLSConfig(nil))
 	assert.Nil(
-		NewServerTLSConfig(
+		NewTLSConfig(
 			nil,
 			func(*x509.Certificate, [][]*x509.Certificate) error {
 				return nil
@@ -310,21 +310,21 @@ func testNewServerTLSConfigNil(t *testing.T) {
 	)
 }
 
-func testNewServerTLSConfigNoCertificate(t *testing.T) {
+func testNewTLSConfigNoCertificate(t *testing.T) {
 	var (
 		assert    = assert.New(t)
-		serverTLS ServerTLS
+		serverTLS TLS
 	)
 
-	tlsConfig, err := NewServerTLSConfig(&serverTLS)
-	assert.Equal(ErrTLSCertificateRequired, err)
-	assert.Nil(tlsConfig)
+	tlsConfig, err := NewTLSConfig(&serverTLS)
+	assert.NoError(err)
+	assert.NotNil(tlsConfig)
 }
 
-func testNewServerTLSConfigMissingCertificate(t *testing.T) {
+func testNewTLSConfigMissingCertificate(t *testing.T) {
 	var (
 		assert    = assert.New(t)
-		serverTLS = ServerTLS{
+		serverTLS = TLS{
 			Certificates: ExternalCertificates{
 				{
 					CertificateFile: "missing",
@@ -334,16 +334,16 @@ func testNewServerTLSConfigMissingCertificate(t *testing.T) {
 		}
 	)
 
-	tlsConfig, err := NewServerTLSConfig(&serverTLS)
+	tlsConfig, err := NewTLSConfig(&serverTLS)
 	assert.Error(err)
 	assert.Nil(tlsConfig)
 }
 
-func testNewServerTLSConfigBasic(t *testing.T, certificateFile, keyFile string) {
+func testNewTLSConfigBasic(t *testing.T, certificateFile, keyFile string) {
 	var (
 		assert    = assert.New(t)
 		require   = require.New(t)
-		serverTLS = ServerTLS{
+		serverTLS = TLS{
 			Certificates: ExternalCertificates{
 				{
 					CertificateFile: certificateFile,
@@ -355,7 +355,7 @@ func testNewServerTLSConfigBasic(t *testing.T, certificateFile, keyFile string) 
 		}
 	)
 
-	tlsConfig, err := NewServerTLSConfig(&serverTLS)
+	tlsConfig, err := NewTLSConfig(&serverTLS)
 	require.NoError(err)
 	require.NotNil(tlsConfig)
 
@@ -368,11 +368,11 @@ func testNewServerTLSConfigBasic(t *testing.T, certificateFile, keyFile string) 
 	assert.Equal(tls.NoClientCert, tlsConfig.ClientAuth)
 }
 
-func testNewServerTLSConfigCustomNextProtos(t *testing.T, certificateFile, keyFile string) {
+func testNewTLSConfigCustomNextProtos(t *testing.T, certificateFile, keyFile string) {
 	var (
 		assert    = assert.New(t)
 		require   = require.New(t)
-		serverTLS = ServerTLS{
+		serverTLS = TLS{
 			Certificates: ExternalCertificates{
 				{
 					CertificateFile: certificateFile,
@@ -385,7 +385,7 @@ func testNewServerTLSConfigCustomNextProtos(t *testing.T, certificateFile, keyFi
 		}
 	)
 
-	tlsConfig, err := NewServerTLSConfig(&serverTLS)
+	tlsConfig, err := NewTLSConfig(&serverTLS)
 	require.NoError(err)
 	require.NotNil(tlsConfig)
 
@@ -398,7 +398,7 @@ func testNewServerTLSConfigCustomNextProtos(t *testing.T, certificateFile, keyFi
 	assert.Equal(tls.NoClientCert, tlsConfig.ClientAuth)
 }
 
-func testNewServerTLSConfigVerifyPeerCertificate(t *testing.T, certificateFile, keyFile string) {
+func testNewTLSConfigVerifyPeerCertificate(t *testing.T, certificateFile, keyFile string) {
 	var (
 		assert  = assert.New(t)
 		require = require.New(t)
@@ -409,14 +409,14 @@ func testNewServerTLSConfigVerifyPeerCertificate(t *testing.T, certificateFile, 
 			SerialNumber: big.NewInt(356493746),
 		}
 
-		serverTLS = ServerTLS{
+		serverTLS = TLS{
 			Certificates: ExternalCertificates{
 				{
 					CertificateFile: certificateFile,
 					KeyFile:         keyFile,
 				},
 			},
-			PeerVerify: PeerVerifyConfig{
+			PeerVerify: &PeerVerifyConfig{
 				DNSSuffixes: []string{"example.com"},
 			},
 		}
@@ -434,7 +434,7 @@ func testNewServerTLSConfigVerifyPeerCertificate(t *testing.T, certificateFile, 
 	peerCert, err := x509.CreateCertificate(random, template, template, &key.PublicKey, key)
 	require.NoError(err)
 
-	tlsConfig, err := NewServerTLSConfig(&serverTLS, extra)
+	tlsConfig, err := NewTLSConfig(&serverTLS, extra)
 	require.NoError(err)
 	require.NotNil(tlsConfig)
 
@@ -452,12 +452,12 @@ func testNewServerTLSConfigVerifyPeerCertificate(t *testing.T, certificateFile, 
 	)
 }
 
-func testNewServerTLSConfigClientCACertificateFile(t *testing.T, certificateFile, keyFile string) {
+func testNewTLSConfigClientCACertificateFile(t *testing.T, certificateFile, keyFile string) {
 	var (
 		assert  = assert.New(t)
 		require = require.New(t)
 
-		serverTLS = ServerTLS{
+		serverTLS = TLS{
 			Certificates: ExternalCertificates{
 				{
 					CertificateFile: certificateFile,
@@ -471,7 +471,7 @@ func testNewServerTLSConfigClientCACertificateFile(t *testing.T, certificateFile
 		}
 	)
 
-	tlsConfig, err := NewServerTLSConfig(&serverTLS)
+	tlsConfig, err := NewTLSConfig(&serverTLS)
 	require.NoError(err)
 	require.NotNil(tlsConfig)
 
@@ -485,12 +485,12 @@ func testNewServerTLSConfigClientCACertificateFile(t *testing.T, certificateFile
 	assert.NotNil(tlsConfig.ClientCAs)
 }
 
-func testNewServerTLSConfigClientCACertificateFileMissing(t *testing.T, certificateFile, keyFile string) {
+func testNewTLSConfigClientCACertificateFileMissing(t *testing.T, certificateFile, keyFile string) {
 	var (
 		assert  = assert.New(t)
 		require = require.New(t)
 
-		serverTLS = ServerTLS{
+		serverTLS = TLS{
 			Certificates: ExternalCertificates{
 				{
 					CertificateFile: certificateFile,
@@ -501,12 +501,12 @@ func testNewServerTLSConfigClientCACertificateFileMissing(t *testing.T, certific
 		}
 	)
 
-	tlsConfig, err := NewServerTLSConfig(&serverTLS)
+	tlsConfig, err := NewTLSConfig(&serverTLS)
 	assert.Error(err)
 	require.Nil(tlsConfig)
 }
 
-func testNewServerTLSConfigClientCACertificateFileUnparseable(t *testing.T, certificateFile, keyFile string) {
+func testNewTLSConfigClientCACertificateFileUnparseable(t *testing.T, certificateFile, keyFile string) {
 	var (
 		assert  = assert.New(t)
 		require = require.New(t)
@@ -522,7 +522,7 @@ func testNewServerTLSConfigClientCACertificateFileUnparseable(t *testing.T, cert
 	clientCACertificateFile.Close()
 
 	var (
-		serverTLS = ServerTLS{
+		serverTLS = TLS{
 			Certificates: ExternalCertificates{
 				{
 					CertificateFile: certificateFile,
@@ -533,41 +533,41 @@ func testNewServerTLSConfigClientCACertificateFileUnparseable(t *testing.T, cert
 		}
 	)
 
-	tlsConfig, err := NewServerTLSConfig(&serverTLS)
+	tlsConfig, err := NewTLSConfig(&serverTLS)
 	assert.Error(err)
 	require.Nil(tlsConfig)
 }
 
-func TestNewServerTLSConfig(t *testing.T) {
-	t.Run("Nil", testNewServerTLSConfigNil)
-	t.Run("NoCertificate", testNewServerTLSConfigNoCertificate)
-	t.Run("MissingCertificate", testNewServerTLSConfigMissingCertificate)
+func TestNewTLSConfig(t *testing.T) {
+	t.Run("Nil", testNewTLSConfigNil)
+	t.Run("NoCertificate", testNewTLSConfigNoCertificate)
+	t.Run("MissingCertificate", testNewTLSConfigMissingCertificate)
 
 	certificateFile, keyFile := createServerFiles(t)
 	defer os.Remove(certificateFile)
 	defer os.Remove(keyFile)
 
 	t.Run("Basic", func(t *testing.T) {
-		testNewServerTLSConfigBasic(t, certificateFile, keyFile)
+		testNewTLSConfigBasic(t, certificateFile, keyFile)
 	})
 
 	t.Run("CustomNextProtos", func(t *testing.T) {
-		testNewServerTLSConfigCustomNextProtos(t, certificateFile, keyFile)
+		testNewTLSConfigCustomNextProtos(t, certificateFile, keyFile)
 	})
 
 	t.Run("VerifyPeerCertificate", func(t *testing.T) {
-		testNewServerTLSConfigVerifyPeerCertificate(t, certificateFile, keyFile)
+		testNewTLSConfigVerifyPeerCertificate(t, certificateFile, keyFile)
 	})
 
 	t.Run("ClientCACertificateFile", func(t *testing.T) {
-		testNewServerTLSConfigClientCACertificateFile(t, certificateFile, keyFile)
+		testNewTLSConfigClientCACertificateFile(t, certificateFile, keyFile)
 	})
 
 	t.Run("ClientCACertificateFileMissing", func(t *testing.T) {
-		testNewServerTLSConfigClientCACertificateFileMissing(t, certificateFile, keyFile)
+		testNewTLSConfigClientCACertificateFileMissing(t, certificateFile, keyFile)
 	})
 
 	t.Run("ClientCACertificateFileUnparseable", func(t *testing.T) {
-		testNewServerTLSConfigClientCACertificateFileUnparseable(t, certificateFile, keyFile)
+		testNewTLSConfigClientCACertificateFileUnparseable(t, certificateFile, keyFile)
 	})
 }

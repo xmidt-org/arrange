@@ -173,7 +173,7 @@ func testListenerFactoryTLS(t *testing.T) {
 	defer os.Remove(certificateFile)
 	defer os.Remove(keyFile)
 
-	tlsConfig, err := NewServerTLSConfig(&ServerTLS{
+	tlsConfig, err := NewTLSConfig(&TLS{
 		Certificates: ExternalCertificates{
 			{
 				CertificateFile: certificateFile,

@@ -33,7 +33,7 @@ type TransportConfig struct {
 
 // NewTransport creates an http.Transport using this unmarshaled configuration
 // together with TLS information
-func (tc TransportConfig) NewTransport(t *ClientTLS) (transport *http.Transport, err error) {
+func (tc TransportConfig) NewTransport(t *TLS) (transport *http.Transport, err error) {
 	transport = &http.Transport{
 		TLSHandshakeTimeout:    tc.TLSHandshakeTimeout,
 		DisableKeepAlives:      tc.DisableKeepAlives,
@@ -51,7 +51,7 @@ func (tc TransportConfig) NewTransport(t *ClientTLS) (transport *http.Transport,
 		ForceAttemptHTTP2:      tc.ForceAttemptHTTP2,
 	}
 
-	transport.TLSClientConfig, err = NewClientTLSConfig(t)
+	transport.TLSClientConfig, err = NewTLSConfig(t)
 	return
 }
 
@@ -60,7 +60,7 @@ func (tc TransportConfig) NewTransport(t *ClientTLS) (transport *http.Transport,
 type ClientConfig struct {
 	Timeout   time.Duration
 	Transport TransportConfig
-	TLS       *ClientTLS
+	TLS       *TLS
 }
 
 // NewClient produces an http.Client given these unmarshaled configuration options

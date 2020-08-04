@@ -37,7 +37,7 @@ type ServerConfig struct {
 	IdleTimeout       time.Duration
 	MaxHeaderBytes    int
 	KeepAlive         time.Duration
-	TLS               *ServerTLS
+	TLS               *TLS
 }
 
 func (sc ServerConfig) NewServer() (server *http.Server, l Listen, err error) {
@@ -50,7 +50,7 @@ func (sc ServerConfig) NewServer() (server *http.Server, l Listen, err error) {
 		MaxHeaderBytes:    sc.MaxHeaderBytes,
 	}
 
-	server.TLSConfig, err = NewServerTLSConfig(sc.TLS)
+	server.TLSConfig, err = NewTLSConfig(sc.TLS)
 	if err == nil {
 		l = ListenerFactory{
 			ListenConfig: net.ListenConfig{

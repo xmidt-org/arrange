@@ -269,10 +269,13 @@ func NewTLSConfig(t *TLS, extra ...PeerVerifier) (*tls.Config, error) {
 
 	var peerVerifiers PeerVerifiers
 	if t.PeerVerify != nil {
-		peerVerifiers.Append(t.PeerVerify.Verifier())
+		// A PeerVerifyConfig can return a nil function if nothing is configured
+		if v := t.PeerVerify.Verifier(); v != nil {
+			peerVerifiers.Append(v)
+		}
 	}
 
-	peerVerifiers = append(peerVerifiers, extra...)
+	peerVerifiers.Append(extra...)
 	if peerVerifiers.Len() > 0 {
 		tc.VerifyPeerCertificate = peerVerifiers.VerifyPeerCertificate
 	}

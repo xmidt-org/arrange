@@ -77,12 +77,15 @@ func testPeerVerifiersSuccess(t *testing.T) {
 				verifiers    PeerVerifiers
 			)
 
+			assert.Zero(verifiers.Len())
 			for i := 0; i < n; i++ {
-				verifiers = append(verifiers, func(actual *x509.Certificate, _ [][]*x509.Certificate) error {
+				verifiers.Append(func(actual *x509.Certificate, _ [][]*x509.Certificate) error {
 					executeCount++
 					assert.Equal(template.SerialNumber, actual.SerialNumber)
 					return nil
 				})
+
+				assert.Equal(i+1, verifiers.Len())
 			}
 
 			assert.NoError(
@@ -118,19 +121,24 @@ func testPeerVerifiersFailure(t *testing.T) {
 				verifiers    PeerVerifiers
 			)
 
+			assert.Zero(verifiers.Len())
 			for i := 0; i < n-1; i++ {
-				verifiers = append(verifiers, func(actual *x509.Certificate, _ [][]*x509.Certificate) error {
+				verifiers.Append(func(actual *x509.Certificate, _ [][]*x509.Certificate) error {
 					executeCount++
 					assert.Equal(template.SerialNumber, actual.SerialNumber)
 					return nil
 				})
+
+				assert.Equal(i+1, verifiers.Len())
 			}
 
-			verifiers = append(verifiers, func(actual *x509.Certificate, _ [][]*x509.Certificate) error {
+			verifiers.Append(func(actual *x509.Certificate, _ [][]*x509.Certificate) error {
 				executeCount++
 				assert.Equal(template.SerialNumber, actual.SerialNumber)
 				return expectedErr
 			})
+
+			assert.Equal(n, verifiers.Len())
 
 			assert.Equal(
 				expectedErr,

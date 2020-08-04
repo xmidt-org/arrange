@@ -77,7 +77,24 @@ func (cc ClientConfig) NewClient() (client *http.Client, err error) {
 }
 
 // ClientOption is a functional option type that can mutate an http.Client
-// prior to its being returned to an fx.App as a component
+// prior to its being returned to an fx.App as a component.  A client option
+// can supply application-specific customization that doesn't come from
+// external configuration:
+//
+//   v := viper.New()
+//   fx.New(
+//     arrange.Supply(v),
+//     arrangehttp.Client(func(c *http.Client) error {
+//       c.CheckRedirect = func(r *http.Request, via []*http.Request) error {
+//         // custom application logic for redirects goes here
+//       }
+//     }).Provide(),
+//     fx.Provide(
+//       func(c *http.Client) MyComponent {
+//         // this client will have custom redirect logic
+//       },
+//     ),
+//   )
 type ClientOption func(*http.Client) error
 
 // ClientIn is the set of dependencies required to build an *http.Client component

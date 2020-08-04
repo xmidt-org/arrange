@@ -64,14 +64,48 @@ func (sc ServerConfig) NewServer() (server *http.Server, l Listen, err error) {
 }
 
 // ServerOption is a functional option that is allowed to mutate an http.Server
-// prior to binding it to an uber/fx App
+// prior to binding it to an uber/fx App.  Server options can supply application
+// logic that doesn't come from external configuration:
+//
+//   v := viper.New()
+//   fx.New(
+//     arrange.Supply(v),
+//     arrangehttp.Server(func(s *http.Server) error {
+//       s.ConnState = func(c net.Conn, cs http.ConnState) {
+//         // custom application connection state handling, e.g. logging
+//       }
+//
+//       return nil
+//     }).Provide(),
+//     fx.Provide(
+//       func(r *mux.Router) MyComponent {
+//         // although the http.Server is not a component, this mux.Router
+//         // will be the handler for the server with a custom ConnState
+//       },
+//     ),
+//   )
 type ServerOption func(*http.Server) error
 
 // RouterOption is a functional option that can mutate a mux.Router prior to
-// it being returned as a component in an uber/fx App.  A RouterOption does not
-// participate in dependency injection; rather, its purpose is to establish
-// custom settings that do not depend on components, such as any global middleware
-// or settings such as SkipClean.
+// it being returned as a component in an uber/fx App.  Router options can
+// supply custom application tailoring to a router that doesn't come
+// from external configuration:
+//
+//   v := viper.New()
+//   fx.New(
+//     arrange.Supply(v),
+//     arrangehttp.Server().
+//       RouterOptions(func(r *mux.Router) error {
+//         r.StrictSlash(true)
+//         r.Use(myGlobalMiddleware)
+//         return nil
+//     }).Provide(),
+//     fx.Provide(
+//       func(r *mux.Router) MyComponent {
+//         // this router will have some global middleware and strict slash turned on
+//       },
+//     ),
+//   )
 type RouterOption func(*mux.Router) error
 
 // ServerIn describes the set of dependencies for creating a mux.Router and,

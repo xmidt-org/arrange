@@ -163,15 +163,57 @@ func (ecs ExternalCertificates) Append(certs []tls.Certificate) ([]tls.Certifica
 	return certs, nil
 }
 
+// ExternalCertPool is a sequence of file names containing certificates to
+// be added to an x509.CertPool.  Each file name must be PEM-encoded.
+type ExternalCertPool []string
+
+// Len returns the number of external files in this pool
+func (ecp ExternalCertPool) Len() int {
+	return len(ecp)
+}
+
+// Append adds each PEM-encoded file from this external pool to the given
+// x509.CertPool.  The number of certs added is returned, and any error will
+// short circuit subsequent loading.
+func (ecp ExternalCertPool) Append(pool *x509.CertPool) (int, error) {
+	var loaded int
+	for _, ec := range ecp {
+		pemCert, err := ioutil.ReadFile(ec)
+		if err != nil {
+			return loaded, err
+		}
+
+		if pool.AppendCertsFromPEM(pemCert) {
+			loaded++
+		} else {
+			return loaded, ErrUnableToAddClientCACertificate
+		}
+	}
+
+	return loaded, nil
+}
+
 // ServerTLS represents the set of configurable options for a serverside tls.Config associated with a server.
 type ServerTLS struct {
-	Certificates            ExternalCertificates
-	ClientCACertificateFile string
-	ServerName              string
-	NextProtos              []string
-	MinVersion              uint16
-	MaxVersion              uint16
-	PeerVerify              PeerVerifyConfig
+	// Certificates is the required set of certificates to present to a client.  There must
+	// be at least one entry in this slice.
+	Certificates ExternalCertificates
+
+	// ClientCAs is the optional certificate pool for certificates expected from a client.  Configure
+	// this as part of mTLS.
+	ClientCAs ExternalCertPool
+
+	// NextProtos is the list of supported application protocols.  Defaults to "http/1.1" if unset.
+	NextProtos []string
+
+	// MinVersion is the minimum required TLS version
+	MinVersion uint16
+
+	// MaxVersion is the maximum required TLS version
+	MaxVersion uint16
+
+	// PeerVerify specifies the certificate validation done on client certificates
+	PeerVerify PeerVerifyConfig
 }
 
 // NewServerTLSConfig produces a *tls.Config from a set of configuration options.  If the supplied set of options
@@ -201,7 +243,6 @@ func NewServerTLSConfig(t *ServerTLS, extra ...PeerVerifier) (*tls.Config, error
 	tc := &tls.Config{
 		MinVersion: t.MinVersion,
 		MaxVersion: t.MaxVersion,
-		ServerName: t.ServerName,
 		NextProtos: nextProtos,
 	}
 
@@ -221,21 +262,104 @@ func NewServerTLSConfig(t *ServerTLS, extra ...PeerVerifier) (*tls.Config, error
 		tc.Certificates = certs
 	}
 
-	if len(t.ClientCACertificateFile) > 0 {
-		caCert, err := ioutil.ReadFile(t.ClientCACertificateFile)
-		if err != nil {
-			return nil, err
-		}
+	clientCAs := x509.NewCertPool()
+	count, err := t.ClientCAs.Append(clientCAs)
+	if err != nil {
+		return nil, err
+	}
 
-		caCertPool := x509.NewCertPool()
-		if !caCertPool.AppendCertsFromPEM(caCert) {
-			return nil, ErrUnableToAddClientCACertificate
-		}
-
-		tc.ClientCAs = caCertPool
+	if count > 0 {
+		tc.ClientCAs = clientCAs
 		tc.ClientAuth = tls.RequireAndVerifyClientCert
 	}
 
 	tc.BuildNameToCertificate()
+	return tc, nil
+}
+
+// ClientTLS represents the set of configuration options for a client-side tls.Config
+type ClientTLS struct {
+	// Certificates is the optional set of certificates to present to a server.
+	// NOTE: Unlike ServerTLS, this field is optional.
+	Certificates ExternalCertificates
+
+	// RootCAs are the root certificates for validating the server.  Defaults to the
+	// system root CA if unset.
+	RootCAs ExternalCertPool
+
+	// ServerName is used to verify the server hostname.  There is no default.
+	ServerName string
+
+	// NextProtos is the list of supported application protocols.  Defaults to "http/1.1" if unset.
+	NextProtos []string
+
+	// MinVersion is the minimum required TLS version
+	MinVersion uint16
+
+	// MaxVersion is the maximum required TLS version
+	MaxVersion uint16
+
+	// InsecureSkipVerify controls whether server certificates are validated.
+	// This should rarely be set, usually only during testing.
+	InsecureSkipVerify bool
+
+	// PeerVerify specifies the certificate validation done on server certificates
+	PeerVerify PeerVerifyConfig
+}
+
+// NewClientTLSConfig produces a *tls.Config from a set of configuration options.  If the supplied set of options
+// is nil, this function returns nil with no error.
+//
+// If supplied, the PeerVerifier strategies will be executed as part of peer verification.  This allows application-layer
+// logic to be injected.
+func NewClientTLSConfig(t *ClientTLS, extra ...PeerVerifier) (*tls.Config, error) {
+	if t == nil {
+		return nil, nil
+	}
+
+	var nextProtos []string
+	if len(t.NextProtos) > 0 {
+		for _, np := range t.NextProtos {
+			nextProtos = append(nextProtos, np)
+		}
+	} else {
+		// assume http/1.1 by default
+		nextProtos = append(nextProtos, "http/1.1")
+	}
+
+	tc := &tls.Config{
+		MinVersion:         t.MinVersion,
+		MaxVersion:         t.MaxVersion,
+		ServerName:         t.ServerName,
+		NextProtos:         nextProtos,
+		InsecureSkipVerify: t.InsecureSkipVerify,
+	}
+
+	var peerVerifiers PeerVerifiers
+	if pv := t.PeerVerify.Verifier(); pv != nil {
+		peerVerifiers = append(peerVerifiers, pv)
+	}
+
+	peerVerifiers = append(peerVerifiers, extra...)
+	if len(peerVerifiers) > 0 {
+		tc.VerifyPeerCertificate = peerVerifiers.VerifyPeerCertificate
+	}
+
+	if certs, err := t.Certificates.Append(nil); err != nil {
+		return nil, err
+	} else {
+		tc.Certificates = certs
+	}
+
+	rootCAs := x509.NewCertPool()
+	count, err := t.RootCAs.Append(rootCAs)
+	if err != nil {
+		return nil, err
+	}
+
+	if count > 0 {
+		tc.RootCAs = rootCAs
+	}
+
 	return tc, nil
 }

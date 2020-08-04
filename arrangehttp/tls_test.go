@@ -350,7 +350,6 @@ func testNewServerTLSConfigBasic(t *testing.T, certificateFile, keyFile string) 
 					KeyFile:         keyFile,
 				},
 			},
-			ServerName: "test.com",
 			MinVersion: 1,
 			MaxVersion: 3,
 		}
@@ -360,7 +359,6 @@ func testNewServerTLSConfigBasic(t *testing.T, certificateFile, keyFile string) 
 	require.NoError(err)
 	require.NotNil(tlsConfig)
 
-	assert.Equal("test.com", tlsConfig.ServerName)
 	assert.Equal(uint16(1), tlsConfig.MinVersion)
 	assert.Equal(uint16(3), tlsConfig.MaxVersion)
 	assert.Equal([]string{"http/1.1"}, tlsConfig.NextProtos)
@@ -381,7 +379,6 @@ func testNewServerTLSConfigCustomNextProtos(t *testing.T, certificateFile, keyFi
 					KeyFile:         keyFile,
 				},
 			},
-			ServerName: "test.com",
 			MinVersion: 1,
 			MaxVersion: 3,
 			NextProtos: []string{"http", "ftp"},
@@ -392,7 +389,6 @@ func testNewServerTLSConfigCustomNextProtos(t *testing.T, certificateFile, keyFi
 	require.NoError(err)
 	require.NotNil(tlsConfig)
 
-	assert.Equal("test.com", tlsConfig.ServerName)
 	assert.Equal(uint16(1), tlsConfig.MinVersion)
 	assert.Equal(uint16(3), tlsConfig.MaxVersion)
 	assert.Equal([]string{"http", "ftp"}, tlsConfig.NextProtos)
@@ -420,7 +416,6 @@ func testNewServerTLSConfigVerifyPeerCertificate(t *testing.T, certificateFile, 
 					KeyFile:         keyFile,
 				},
 			},
-			ServerName: "test.com",
 			PeerVerify: PeerVerifyConfig{
 				DNSSuffixes: []string{"example.com"},
 			},
@@ -443,7 +438,6 @@ func testNewServerTLSConfigVerifyPeerCertificate(t *testing.T, certificateFile, 
 	require.NoError(err)
 	require.NotNil(tlsConfig)
 
-	assert.Equal("test.com", tlsConfig.ServerName)
 	assert.Zero(tlsConfig.MinVersion)
 	assert.Zero(tlsConfig.MaxVersion)
 	assert.Equal([]string{"http/1.1"}, tlsConfig.NextProtos)
@@ -470,11 +464,10 @@ func testNewServerTLSConfigClientCACertificateFile(t *testing.T, certificateFile
 					KeyFile:         keyFile,
 				},
 			},
-			ClientCACertificateFile: certificateFile, // this works as a bundle also
-			ServerName:              "test.com",
-			MinVersion:              1,
-			MaxVersion:              3,
-			NextProtos:              []string{"http", "ftp"},
+			ClientCAs:  ExternalCertPool{certificateFile}, // this works as a bundle also
+			MinVersion: 1,
+			MaxVersion: 3,
+			NextProtos: []string{"http", "ftp"},
 		}
 	)
 
@@ -482,7 +475,6 @@ func testNewServerTLSConfigClientCACertificateFile(t *testing.T, certificateFile
 	require.NoError(err)
 	require.NotNil(tlsConfig)
 
-	assert.Equal("test.com", tlsConfig.ServerName)
 	assert.Equal(uint16(1), tlsConfig.MinVersion)
 	assert.Equal(uint16(3), tlsConfig.MaxVersion)
 	assert.Equal([]string{"http", "ftp"}, tlsConfig.NextProtos)
@@ -505,7 +497,7 @@ func testNewServerTLSConfigClientCACertificateFileMissing(t *testing.T, certific
 					KeyFile:         keyFile,
 				},
 			},
-			ClientCACertificateFile: "missing",
+			ClientCAs: ExternalCertPool{"missing"},
 		}
 	)
 
@@ -537,7 +529,7 @@ func testNewServerTLSConfigClientCACertificateFileUnparseable(t *testing.T, cert
 					KeyFile:         keyFile,
 				},
 			},
-			ClientCACertificateFile: clientCACertificateFile.Name(),
+			ClientCAs: ExternalCertPool{clientCACertificateFile.Name()},
 		}
 	)
 

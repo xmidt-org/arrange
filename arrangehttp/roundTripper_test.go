@@ -189,6 +189,7 @@ func TestRoundTripperChain(t *testing.T) {
 	)
 
 	defer server.Close()
+
 	t.Run("New", func(t *testing.T) { testRoundTripperChainNew(t, server.URL) })
 	t.Run("Append", func(t *testing.T) { testRoundTripperChainAppend(t, server.URL) })
 	t.Run("Extend", func(t *testing.T) { testRoundTripperChainExtend(t, server.URL) })

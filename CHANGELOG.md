@@ -20,7 +20,7 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 - Streamlined unmarshal/provide API
 - Added arrangehttp, with support for producing http.Server objects from external configuration
 
-## [v0.1.0]
+## v0.1.0
 - Initial creation
 
 [Unreleased]: https://github.com/xmidt-org/arrange/compare/v0.1.3..HEAD

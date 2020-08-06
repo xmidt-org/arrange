@@ -2,6 +2,15 @@ package arrangehttp
 
 import "net/http"
 
+// RoundTripperFunc is a function type that implements http.RoundTripper.
+// Useful for simple decoration and testing.
+type RoundTripperFunc func(*http.Request) (*http.Response, error)
+
+// RoundTrip implements http.RoundTripper
+func (rtf RoundTripperFunc) RoundTrip(r *http.Request) (*http.Response, error) {
+	return rtf(r)
+}
+
 // RoundTripperConstructor is a strategy for decorating an http.RoundTripper.
 // Typical use cases are metrics and logging.
 type RoundTripperConstructor func(http.RoundTripper) http.RoundTripper

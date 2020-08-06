@@ -5,6 +5,9 @@ The format is based on [Keep a Changelog](http://keepachangelog.com/en/1.0.0/)
 and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+- http.RoundTripper decoration to support metrics and logging
+
+## [v0.1.3]
 - Added http.Client support to arrangehttp
 - Simpler TLS configuration
 - Some better examples in godoc
@@ -17,10 +20,8 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 - Streamlined unmarshal/provide API
 - Added arrangehttp, with support for producing http.Server objects from external configuration
 
-## [v0.1.0]
+## v0.1.0
 - Initial creation
 
-[Unreleased]: https://github.com/xmidt-org/__PROJECT__/compare/v0.1.2..HEAD
-[v0.1.2]: https://github.com/xmidt-org/__PROJECT__/compare/0.1.1...v0.1.2
-[v0.1.1]: https://github.com/xmidt-org/__PROJECT__/compare/0.1.0...v0.1.1
-[v0.1.0]: https://github.com/xmidt-org/__PROJECT__/compare/0.0.0...v0.1.0
+[Unreleased]: https://github.com/xmidt-org/arrange/compare/v0.1.2..HEAD
+[v0.1.2]: https://github.com/xmidt-org/arrange/compare/v0.1.0...v0.1.2

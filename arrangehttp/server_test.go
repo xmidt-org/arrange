@@ -170,10 +170,10 @@ func testServerListenerConstructors(t *testing.T) {
 		arrange.Supply(v),
 		fx.Provide(
 			Server().
-				AppendListenerConstructors(
+				Use(
 					CaptureListenAddress(address1),
 				).
-				ExtendListenerConstructors(
+				UseChain(
 					NewListenerChain(CaptureListenAddress(address2)),
 				).
 				Unmarshal(),
@@ -245,7 +245,7 @@ func testServerUnmarshal(t *testing.T) {
 		fx.Provide(
 			Server(serverOption).
 				RouterOptions(routerOption).
-				AppendListenerConstructors(CaptureListenAddress(address)).
+				Use(CaptureListenAddress(address)).
 				Unmarshal(),
 		),
 		fx.Invoke(
@@ -427,7 +427,7 @@ func testServerProvide(t *testing.T) {
 		arrange.Supply(v),
 		Server(serverOption).
 			RouterOptions(routerOption).
-			AppendListenerConstructors(CaptureListenAddress(address)).
+			Use(CaptureListenAddress(address)).
 			Provide(),
 		fx.Invoke(
 			func(r *mux.Router) {
@@ -515,7 +515,7 @@ servers:
 		fx.Provide(
 			Server(serverOption).
 				RouterOptions(routerOption).
-				AppendListenerConstructors(CaptureListenAddress(address)).
+				Use(CaptureListenAddress(address)).
 				UnmarshalKey("servers.main"),
 		),
 		fx.Invoke(
@@ -641,7 +641,7 @@ servers:
 		arrange.Supply(v),
 		Server(serverOption).
 			RouterOptions(routerOption).
-			AppendListenerConstructors(CaptureListenAddress(address)).
+			Use(CaptureListenAddress(address)).
 			ProvideKey("servers.main"),
 		fx.Invoke(
 			func(r RouterIn) {

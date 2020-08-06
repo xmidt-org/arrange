@@ -109,6 +109,7 @@ type ClientIn struct {
 // This type should be constructred with the Client function.
 type C struct {
 	co        []ClientOption
+	chain     RoundTripperChain
 	prototype ClientFactory
 }
 
@@ -123,6 +124,19 @@ func Client(opts ...ClientOption) *C {
 	}
 
 	return c.ClientFactory(ClientConfig{})
+}
+
+// Use supplies constructors that will be used to decorate any RoundTripper
+// set on the http.Client after the factory has created it.
+func (c *C) Use(more ...RoundTripperConstructor) *C {
+	c.chain = c.chain.Append(more...)
+	return c
+}
+
+// UseChain is similar to Use, but appends constructors from a chain
+func (c *C) UseChain(more RoundTripperChain) *C {
+	c.chain = c.chain.Extend(more)
+	return c
 }
 
 // ClientFactory sets the prototype factory that is unmarshaled from Viper.
@@ -148,6 +162,7 @@ func (c *C) newClient(f ClientFactory, in ClientIn) (*http.Client, error) {
 		}
 	}
 
+	client.Transport = c.chain.Then(client.Transport)
 	in.Lifecycle.Append(fx.Hook{
 		OnStop: func(context.Context) error {
 			client.CloseIdleConnections()

@@ -6,6 +6,7 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 - http.Roundtripper decoration to support things like metrics and logging
+- arrangehttp decorators (e.g. middleware) may now be injected
 
 ## [v0.1.3]
 - Added http.Client support to arrangehttp

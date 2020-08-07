@@ -101,8 +101,17 @@ type ClientOption func(*http.Client) error
 type ClientIn struct {
 	arrange.ProvideIn
 
-	Lifecycle  fx.Lifecycle
-	Shutdowner fx.Shutdowner
+	// Lifecycle is used to bind http.Client.CloseIdleConnections to the
+	// fx.App OnStop event
+	Lifecycle fx.Lifecycle
+
+	// ClientOptions is an optional dependency that is used for all
+	// clients in an fx.App
+	ClientOptions []ClientOption `optional:"true"`
+
+	// RoundTripperChain is an optional dependency that, if supplied, is used
+	// for all clients in an fx.App
+	RoundTripperChain RoundTripperChain `optional:"true"`
 }
 
 // C is a Fluent Builder for creating an http.Client as an uber/fx component.
@@ -156,13 +165,19 @@ func (c *C) newClient(f ClientFactory, in ClientIn) (*http.Client, error) {
 		return nil, err
 	}
 
+	for _, f := range in.ClientOptions {
+		if err := f(client); err != nil {
+			return nil, err
+		}
+	}
+
 	for _, f := range c.co {
 		if err := f(client); err != nil {
 			return nil, err
 		}
 	}
 
-	client.Transport = c.chain.Then(client.Transport)
+	client.Transport = in.RoundTripperChain.Extend(c.chain).Then(client.Transport)
 	in.Lifecycle.Append(fx.Hook{
 		OnStop: func(context.Context) error {
 			client.CloseIdleConnections()

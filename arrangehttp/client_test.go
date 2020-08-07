@@ -190,12 +190,26 @@ transport:
 		),
 		arrange.Supply(v),
 		fx.Provide(
+			func() RoundTripperChain {
+				return NewRoundTripperChain(
+					func(next http.RoundTripper) http.RoundTripper {
+						return RoundTripperFunc(func(request *http.Request) (*http.Response, error) {
+							response, err := next.RoundTrip(request)
+							if response != nil {
+								response.Header.Set("Global-Decorator", "true")
+							}
+
+							return response, err
+						})
+					},
+				)
+			},
 			Client(option).
 				Use(func(next http.RoundTripper) http.RoundTripper {
 					return RoundTripperFunc(func(request *http.Request) (*http.Response, error) {
 						response, err := next.RoundTrip(request)
 						if response != nil {
-							response.Header.Set("Decorator-1", "value")
+							response.Header.Set("Local-Decorator", "true")
 						}
 
 						return response, err
@@ -205,7 +219,7 @@ transport:
 					return RoundTripperFunc(func(request *http.Request) (*http.Response, error) {
 						response, err := next.RoundTrip(request)
 						if response != nil {
-							response.Header.Set("Decorator-2", "value")
+							response.Header.Set("Chain-Decorator", "true")
 						}
 
 						return response, err
@@ -236,8 +250,9 @@ transport:
 	require.NoError(err)
 	require.NotNil(response)
 
-	assert.Equal("value", response.Header.Get("Decorator-1"))
-	assert.Equal("value", response.Header.Get("Decorator-2"))
+	assert.Equal("true", response.Header.Get("Local-Decorator"))
+	assert.Equal("true", response.Header.Get("Chain-Decorator"))
+	assert.Equal("true", response.Header.Get("Global-Decorator"))
 
 	app.RequireStop()
 }
@@ -300,7 +315,7 @@ func testClientFactoryError(t *testing.T) {
 	assert.Error(app.Err())
 }
 
-func testClientOptionError(t *testing.T) {
+func testClientLocalOptionError(t *testing.T) {
 	var (
 		assert = assert.New(t)
 		v      = viper.New()
@@ -314,8 +329,37 @@ func testClientOptionError(t *testing.T) {
 		),
 		arrange.Supply(v),
 		fx.Provide(
-			Client(func(*http.Client) error { return errors.New("expected option error") }).
+			Client(func(*http.Client) error { return errors.New("expected local option error") }).
 				Unmarshal(),
+		),
+		fx.Populate(&client),
+	)
+
+	assert.Error(app.Err())
+}
+
+func testClientGlobalOptionError(t *testing.T) {
+	var (
+		assert = assert.New(t)
+		v      = viper.New()
+		client *http.Client
+	)
+
+	v.Set("timeout", "89s")
+	app := fx.New(
+		fx.Logger(
+			log.New(ioutil.Discard, "", 0),
+		),
+		arrange.Supply(v),
+		fx.Provide(
+			func() []ClientOption {
+				return []ClientOption{
+					func(*http.Client) error {
+						return errors.New("expected global option error")
+					},
+				}
+			},
+			Client().Unmarshal(),
 		),
 		fx.Populate(&client),
 	)
@@ -525,7 +569,8 @@ func TestClient(t *testing.T) {
 	t.Run("Unmarshal", func(t *testing.T) { testClientUnmarshal(t, server.URL) })
 	t.Run("UnmarshalError", testClientUnmarshalError)
 	t.Run("FactoryError", testClientFactoryError)
-	t.Run("OptionError", testClientOptionError)
+	t.Run("LocalOptionError", testClientLocalOptionError)
+	t.Run("GlobalOptionError", testClientGlobalOptionError)
 	t.Run("Provide", testClientProvide)
 	t.Run("UnmarshalKey", testClientUnmarshalKey)
 	t.Run("UnmarshalKeyError", testClientUnmarshalKeyError)

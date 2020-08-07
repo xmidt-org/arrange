@@ -10,7 +10,9 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"net/http/httptest"
 	"os"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -150,6 +152,51 @@ func TestServerConfig(t *testing.T) {
 	t.Run("TLS", testServerConfigTLS)
 }
 
+func TestMiddleware(t *testing.T) {
+	for _, length := range []int{0, 1, 2, 5} {
+		t.Run(fmt.Sprintf("len=%d", length), func(t *testing.T) {
+			var (
+				assert = assert.New(t)
+
+				m []func(http.Handler) http.Handler
+
+				r        = mux.NewRouter()
+				request  = httptest.NewRequest("GET", "/test", nil)
+				response = httptest.NewRecorder()
+			)
+
+			for i := 0; i < length; i++ {
+				i := i
+				m = append(m, func(next http.Handler) http.Handler {
+					return http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+						response.Header().Set(
+							fmt.Sprintf("Decorator-%d", i),
+							strconv.Itoa(i),
+						)
+
+						next.ServeHTTP(response, request)
+					})
+				})
+			}
+
+			Middleware(m...)(r)
+			r.HandleFunc("/test", func(response http.ResponseWriter, request *http.Request) {
+				response.Header().Set("Called", "true")
+			})
+
+			r.ServeHTTP(response, request)
+
+			assert.Equal("true", response.HeaderMap.Get("Called"))
+			for i := 0; i < length; i++ {
+				assert.Equal(
+					strconv.Itoa(i),
+					response.HeaderMap.Get(fmt.Sprintf("Decorator-%d", i)),
+				)
+			}
+		})
+	}
+}
+
 func testServerListenerConstructors(t *testing.T) {
 	var (
 		assert  = assert.New(t)
@@ -216,18 +263,22 @@ func testServerUnmarshal(t *testing.T) {
 		assert  = assert.New(t)
 		require = require.New(t)
 
-		address = make(chan net.Addr, 1)
+		globalAddress = make(chan net.Addr, 1)
+		localAddress  = make(chan net.Addr, 1)
 
-		serverOptionCalled = make(chan struct{})
-		serverOption       = func(s *http.Server) error {
-			defer close(serverOptionCalled)
+		globalServerOptionCalled = make(chan struct{})
+		globalRouterOptionCalled = make(chan struct{})
+
+		localServerOptionCalled = make(chan struct{})
+		localServerOption       = func(s *http.Server) error {
+			defer close(localServerOptionCalled)
 			assert.NotNil(s)
 			return nil
 		}
 
-		routerOptionCalled = make(chan struct{})
-		routerOption       = func(r *mux.Router) error {
-			defer close(routerOptionCalled)
+		localRouterOptionCalled = make(chan struct{})
+		localRouterOption       = func(r *mux.Router) error {
+			defer close(localRouterOptionCalled)
 			assert.NotNil(r)
 			return nil
 		}
@@ -243,9 +294,30 @@ func testServerUnmarshal(t *testing.T) {
 		),
 		arrange.Supply(v),
 		fx.Provide(
-			Server(serverOption).
-				RouterOptions(routerOption).
-				Use(CaptureListenAddress(address)).
+			func() ListenerChain {
+				return NewListenerChain(
+					CaptureListenAddress(globalAddress),
+				)
+			},
+			func() []ServerOption {
+				return []ServerOption{
+					func(*http.Server) error {
+						close(globalServerOptionCalled)
+						return nil
+					},
+				}
+			},
+			func() []RouterOption {
+				return []RouterOption{
+					func(*mux.Router) error {
+						close(globalRouterOptionCalled)
+						return nil
+					},
+				}
+			},
+			Server(localServerOption).
+				RouterOptions(localRouterOption).
+				Use(CaptureListenAddress(localAddress)).
 				Unmarshal(),
 		),
 		fx.Invoke(
@@ -261,22 +333,43 @@ func testServerUnmarshal(t *testing.T) {
 	defer app.Stop(context.Background())
 
 	select {
-	case <-serverOptionCalled:
+	case <-localServerOptionCalled:
 		// passing
 	case <-time.After(2 * time.Second):
-		assert.Fail("The server option was not called")
+		assert.Fail("The local server option was not called")
 	}
 
 	select {
-	case <-routerOptionCalled:
+	case <-globalServerOptionCalled:
+		// passing
+	case <-time.After(2 * time.Second):
+		assert.Fail("The global server option was not called")
+	}
+
+	select {
+	case <-localRouterOptionCalled:
 		// passing
 	case <-time.After(2 * time.Second):
 		assert.Fail("The router option was not called")
 	}
 
+	select {
+	case <-globalRouterOptionCalled:
+		// passing
+	case <-time.After(2 * time.Second):
+		assert.Fail("The global router option was not called")
+	}
+
 	var serverAddress net.Addr
 	select {
-	case serverAddress = <-address:
+	case serverAddress = <-localAddress:
+	case <-time.After(2 * time.Second):
+		assert.Fail("No server address returned")
+	}
+
+	select {
+	case globalAddress := <-globalAddress:
+		assert.Equal(serverAddress, globalAddress)
 	case <-time.After(2 * time.Second):
 		assert.Fail("No server address returned")
 	}
@@ -321,7 +414,7 @@ func testServerServerFactoryError(t *testing.T) {
 	assert.Error(app.Err())
 }
 
-func testServerServerOptionError(t *testing.T) {
+func testServerLocalServerOptionError(t *testing.T) {
 	var (
 		assert = assert.New(t)
 		router *mux.Router
@@ -345,7 +438,37 @@ func testServerServerOptionError(t *testing.T) {
 	assert.Error(app.Err())
 }
 
-func testServerRouterOptionError(t *testing.T) {
+func testServerGlobalServerOptionError(t *testing.T) {
+	var (
+		assert = assert.New(t)
+		router *mux.Router
+
+		v = viper.New()
+	)
+
+	v.Set("address", "localhost:8080")
+	app := fx.New(
+		fx.Logger(
+			log.New(ioutil.Discard, "", 0),
+		),
+		arrange.Supply(v),
+		fx.Provide(
+			func() []ServerOption {
+				return []ServerOption{
+					func(*http.Server) error {
+						return errors.New("expected server option error")
+					},
+				}
+			},
+			Server().Unmarshal(),
+		),
+		fx.Populate(&router),
+	)
+
+	assert.Error(app.Err())
+}
+
+func testServerLocalRouterOptionError(t *testing.T) {
 	var (
 		assert = assert.New(t)
 		router *mux.Router
@@ -363,6 +486,36 @@ func testServerRouterOptionError(t *testing.T) {
 			Server().
 				RouterOptions(func(*mux.Router) error { return errors.New("expected router option error") }).
 				Unmarshal(),
+		),
+		fx.Populate(&router),
+	)
+
+	assert.Error(app.Err())
+}
+
+func testServerGlobalRouterOptionError(t *testing.T) {
+	var (
+		assert = assert.New(t)
+		router *mux.Router
+
+		v = viper.New()
+	)
+
+	v.Set("address", "localhost:8080")
+	app := fx.New(
+		fx.Logger(
+			log.New(ioutil.Discard, "", 0),
+		),
+		arrange.Supply(v),
+		fx.Provide(
+			func() []RouterOption {
+				return []RouterOption{
+					func(*mux.Router) error {
+						return errors.New("expected router option error")
+					},
+				}
+			},
+			Server().Unmarshal(),
 		),
 		fx.Populate(&router),
 	)
@@ -688,8 +841,10 @@ func TestServer(t *testing.T) {
 	t.Run("Unmarshal", testServerUnmarshal)
 	t.Run("UnmarshalError", testServerUnmarshalError)
 	t.Run("FactoryError", testServerServerFactoryError)
-	t.Run("ServerOptionError", testServerServerOptionError)
-	t.Run("RouterOptionError", testServerRouterOptionError)
+	t.Run("LocalServerOptionError", testServerLocalServerOptionError)
+	t.Run("GlobalServerOptionError", testServerGlobalServerOptionError)
+	t.Run("LocalRouterOptionError", testServerLocalRouterOptionError)
+	t.Run("GlobalRouterOptionError", testServerGlobalRouterOptionError)
 	t.Run("Provide", testServerProvide)
 	t.Run("UnmarshalKey", testServerUnmarshalKey)
 	t.Run("UnmarshalKeyError", testServerUnmarshalKeyError)

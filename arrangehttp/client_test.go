@@ -1,10 +1,12 @@
 package arrangehttp
 
 import (
+	"context"
 	"errors"
 	"io/ioutil"
 	"log"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
@@ -154,7 +156,7 @@ func TestClientConfig(t *testing.T) {
 	t.Run("Error", testClientConfigError)
 }
 
-func testClientUnmarshal(t *testing.T) {
+func testClientUnmarshal(t *testing.T, testURL string) {
 	const yaml = `
 timeout: "100s"
 transport:
@@ -188,7 +190,28 @@ transport:
 		),
 		arrange.Supply(v),
 		fx.Provide(
-			Client(option).Unmarshal(),
+			Client(option).
+				Use(func(next http.RoundTripper) http.RoundTripper {
+					return RoundTripperFunc(func(request *http.Request) (*http.Response, error) {
+						response, err := next.RoundTrip(request)
+						if response != nil {
+							response.Header.Set("Decorator-1", "value")
+						}
+
+						return response, err
+					})
+				}).
+				UseChain(NewRoundTripperChain(func(next http.RoundTripper) http.RoundTripper {
+					return RoundTripperFunc(func(request *http.Request) (*http.Response, error) {
+						response, err := next.RoundTrip(request)
+						if response != nil {
+							response.Header.Set("Decorator-2", "value")
+						}
+
+						return response, err
+					})
+				})).
+				Unmarshal(),
 		),
 		fx.Populate(&client),
 	)
@@ -201,8 +224,21 @@ transport:
 		assert.Fail("The client option was not called")
 	}
 
-	// force the lifecycle to happen
 	app.RequireStart()
+	defer app.Stop(context.Background()) // in case of a failed test
+
+	require.NotNil(client)
+	request, err := http.NewRequest("GET", testURL, nil)
+	require.NoError(err)
+	require.NotNil(request)
+
+	response, err := client.Do(request)
+	require.NoError(err)
+	require.NotNil(response)
+
+	assert.Equal("value", response.Header.Get("Decorator-1"))
+	assert.Equal("value", response.Header.Get("Decorator-2"))
+
 	app.RequireStop()
 }
 
@@ -478,7 +514,15 @@ clients:
 }
 
 func TestClient(t *testing.T) {
-	t.Run("Unmarshal", testClientUnmarshal)
+	server := httptest.NewServer(
+		http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+			response.WriteHeader(299)
+		}),
+	)
+
+	defer server.Close()
+
+	t.Run("Unmarshal", func(t *testing.T) { testClientUnmarshal(t, server.URL) })
 	t.Run("UnmarshalError", testClientUnmarshalError)
 	t.Run("FactoryError", testClientFactoryError)
 	t.Run("OptionError", testClientOptionError)

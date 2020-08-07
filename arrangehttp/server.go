@@ -147,16 +147,16 @@ func (s *S) RouterOptions(opts ...RouterOption) *S {
 	return s
 }
 
-// AppendListenerConstructors adds ListenerConstructors that will decorate
-// the server's net.Listener as part of server startup
-func (s *S) AppendListenerConstructors(more ...ListenerConstructor) *S {
+// Use adds ListenerConstructors that will decorate the server's net.Listener
+// as part of server startup
+func (s *S) Use(more ...ListenerConstructor) *S {
 	s.chain = s.chain.Append(more...)
 	return s
 }
 
-// ExtendListenerConstructors adds an entire chain of constructors that will
-// decorate the server's net.Listener as part of server startup
-func (s *S) ExtendListenerConstructors(more ListenerChain) *S {
+// UseChain adds an entire chain of constructors that will decorate the server's
+// net.Listener as part of server startup
+func (s *S) UseChain(more ListenerChain) *S {
 	s.chain = s.chain.Extend(more)
 	return s
 }

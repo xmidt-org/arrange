@@ -108,13 +108,42 @@ type ServerOption func(*http.Server) error
 //   )
 type RouterOption func(*mux.Router) error
 
+// Middleware creates a RouterOption that applies the given decorators to
+// the mux.Router.  Multiple Middleware options are cumulative.
+func Middleware(m ...func(http.Handler) http.Handler) RouterOption {
+	return func(r *mux.Router) error {
+		// have to do a for loop here to get around some golang type madness
+		for _, f := range m {
+			r.Use(f)
+		}
+
+		return nil
+	}
+}
+
 // ServerIn describes the set of dependencies for creating a mux.Router and,
 // by extension, an http.Server.
 type ServerIn struct {
 	arrange.ProvideIn
 
-	Lifecycle  fx.Lifecycle
+	// Lifecycle is the required uber/fx Lifecycle to which the server will be bound.
+	// The server will start with the app starts and will gracefully shutdown when
+	// the app is stopped.
+	Lifecycle fx.Lifecycle
+
+	// Shutdowner is used to guarantee that any server which aborts its accept loop
+	// will stop the entire app.
 	Shutdowner fx.Shutdowner
+
+	// ListenerChain is an optional component that, if supplied, will apply
+	// to all servers.
+	ListenerChain ListenerChain `optional:"true"`
+
+	// ServerOptions will apply to all http.Servers, if supplied
+	ServerOptions []ServerOption `optional:"true"`
+
+	// RouterOptions will apply to all mux.Routers, if supplied
+	RouterOptions []RouterOption `optional:"true"`
 }
 
 // S is a Fluent Builder for unmarshaling an http.Server.  This type must be
@@ -178,6 +207,12 @@ func (s *S) newRouter(f ServerFactory, in ServerIn) (*mux.Router, error) {
 		return nil, err
 	}
 
+	for _, f := range in.ServerOptions {
+		if err := f(server); err != nil {
+			return nil, err
+		}
+	}
+
 	for _, f := range s.so {
 		if err := f(server); err != nil {
 			return nil, err
@@ -185,6 +220,12 @@ func (s *S) newRouter(f ServerFactory, in ServerIn) (*mux.Router, error) {
 	}
 
 	router := mux.NewRouter()
+	for _, f := range in.RouterOptions {
+		if err := f(router); err != nil {
+			return nil, err
+		}
+	}
+
 	for _, f := range s.ro {
 		if err := f(router); err != nil {
 			return nil, err
@@ -194,7 +235,7 @@ func (s *S) newRouter(f ServerFactory, in ServerIn) (*mux.Router, error) {
 	in.Lifecycle.Append(fx.Hook{
 		OnStart: ServerOnStart(
 			server,
-			s.chain.Listen(listen),
+			in.ListenerChain.Extend(s.chain).Listen(listen),
 			ShutdownOnExit(in.Shutdowner),
 		),
 		OnStop: server.Shutdown,

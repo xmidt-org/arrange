@@ -185,7 +185,7 @@ func VisitFields(root interface{}, v FieldVisitor) reflect.Value {
 	for rv.Kind() == reflect.Ptr {
 		if rv.IsNil() {
 			// can't traverse into a nil
-			return rv
+			return reflect.ValueOf(nil)
 		}
 
 		rv = rv.Elem()

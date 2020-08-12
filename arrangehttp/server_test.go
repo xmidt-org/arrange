@@ -158,7 +158,7 @@ func TestMiddleware(t *testing.T) {
 			var (
 				assert = assert.New(t)
 
-				m []func(http.Handler) http.Handler
+				m []mux.MiddlewareFunc
 
 				r        = mux.NewRouter()
 				request  = httptest.NewRequest("GET", "/test", nil)
@@ -201,9 +201,7 @@ func testServerListenerConstructors(t *testing.T) {
 	var (
 		assert  = assert.New(t)
 		require = require.New(t)
-
-		address1 = make(chan net.Addr, 1)
-		address2 = make(chan net.Addr, 1)
+		address = make(chan net.Addr, 1)
 
 		v = viper.New()
 	)
@@ -217,11 +215,8 @@ func testServerListenerConstructors(t *testing.T) {
 		arrange.Supply(v),
 		fx.Provide(
 			Server().
-				Use(
-					CaptureListenAddress(address1),
-				).
-				UseChain(
-					NewListenerChain(CaptureListenAddress(address2)),
+				Extend(
+					NewListenerChain(CaptureListenAddress(address)),
 				).
 				Unmarshal(),
 		),
@@ -239,14 +234,7 @@ func testServerListenerConstructors(t *testing.T) {
 
 	var serverAddress net.Addr
 	select {
-	case serverAddress = <-address1:
-	case <-time.After(2 * time.Second):
-		assert.Fail("No server address returned")
-	}
-
-	select {
-	case secondAddress := <-address2:
-		assert.Equal(serverAddress, secondAddress)
+	case serverAddress = <-address:
 	case <-time.After(2 * time.Second):
 		assert.Fail("No server address returned")
 	}
@@ -286,6 +274,13 @@ func testServerUnmarshal(t *testing.T) {
 		v = viper.New()
 	)
 
+	type Dependencies struct {
+		fx.In
+		GlobalServerOption  ServerOption
+		GlobalRouterOption  RouterOption
+		GlobalListenerChain ListenerChain
+	}
+
 	v.Set("address", ":0")
 	app := fxtest.New(
 		t,
@@ -299,25 +294,24 @@ func testServerUnmarshal(t *testing.T) {
 					CaptureListenAddress(globalAddress),
 				)
 			},
-			func() []ServerOption {
-				return []ServerOption{
-					func(*http.Server) error {
-						close(globalServerOptionCalled)
-						return nil
-					},
+			func() ServerOption {
+				return func(*http.Server) error {
+					close(globalServerOptionCalled)
+					return nil
 				}
 			},
-			func() []RouterOption {
-				return []RouterOption{
-					func(*mux.Router) error {
-						close(globalRouterOptionCalled)
-						return nil
-					},
+			func() RouterOption {
+				return func(*mux.Router) error {
+					close(globalRouterOptionCalled)
+					return nil
 				}
 			},
 			Server(localServerOption).
 				RouterOptions(localRouterOption).
-				Use(CaptureListenAddress(localAddress)).
+				Inject(Dependencies{}).
+				Extend(
+					NewListenerChain(CaptureListenAddress(localAddress)),
+				).
 				Unmarshal(),
 		),
 		fx.Invoke(
@@ -446,6 +440,11 @@ func testServerGlobalServerOptionError(t *testing.T) {
 		v = viper.New()
 	)
 
+	type Dependencies struct {
+		fx.In
+		Option ServerOption
+	}
+
 	v.Set("address", "localhost:8080")
 	app := fx.New(
 		fx.Logger(
@@ -453,14 +452,12 @@ func testServerGlobalServerOptionError(t *testing.T) {
 		),
 		arrange.Supply(v),
 		fx.Provide(
-			func() []ServerOption {
-				return []ServerOption{
-					func(*http.Server) error {
-						return errors.New("expected server option error")
-					},
+			func() ServerOption {
+				return func(*http.Server) error {
+					return errors.New("expected server option error")
 				}
 			},
-			Server().Unmarshal(),
+			Server().Inject(Dependencies{}).Unmarshal(),
 		),
 		fx.Populate(&router),
 	)
@@ -501,6 +498,11 @@ func testServerGlobalRouterOptionError(t *testing.T) {
 		v = viper.New()
 	)
 
+	type Dependencies struct {
+		fx.In
+		Option RouterOption
+	}
+
 	v.Set("address", "localhost:8080")
 	app := fx.New(
 		fx.Logger(
@@ -508,14 +510,12 @@ func testServerGlobalRouterOptionError(t *testing.T) {
 		),
 		arrange.Supply(v),
 		fx.Provide(
-			func() []RouterOption {
-				return []RouterOption{
-					func(*mux.Router) error {
-						return errors.New("expected router option error")
-					},
+			func() RouterOption {
+				return func(*mux.Router) error {
+					return errors.New("expected router option error")
 				}
 			},
-			Server().Unmarshal(),
+			Server().Inject(Dependencies{}).Unmarshal(),
 		),
 		fx.Populate(&router),
 	)
@@ -580,7 +580,9 @@ func testServerProvide(t *testing.T) {
 		arrange.Supply(v),
 		Server(serverOption).
 			RouterOptions(routerOption).
-			Use(CaptureListenAddress(address)).
+			Extend(
+				NewListenerChain(CaptureListenAddress(address)),
+			).
 			Provide(),
 		fx.Invoke(
 			func(r *mux.Router) {
@@ -668,7 +670,9 @@ servers:
 		fx.Provide(
 			Server(serverOption).
 				RouterOptions(routerOption).
-				Use(CaptureListenAddress(address)).
+				Extend(
+					NewListenerChain(CaptureListenAddress(address)),
+				).
 				UnmarshalKey("servers.main"),
 		),
 		fx.Invoke(
@@ -794,7 +798,9 @@ servers:
 		arrange.Supply(v),
 		Server(serverOption).
 			RouterOptions(routerOption).
-			Use(CaptureListenAddress(address)).
+			Extend(
+				NewListenerChain(CaptureListenAddress(address)),
+			).
 			ProvideKey("servers.main"),
 		fx.Invoke(
 			func(r RouterIn) {

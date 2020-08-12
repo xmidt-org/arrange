@@ -2,14 +2,24 @@ package arrange
 
 import (
 	"reflect"
+
+	"go.uber.org/fx"
 )
 
-// errorType is just the cached reflection lookup for the error type
+// errorType is the cached reflection lookup for the error type
 var errorType reflect.Type = reflect.TypeOf((*error)(nil)).Elem()
 
 // ErrorType returns the reflection type for the error interface
 func ErrorType() reflect.Type {
 	return errorType
+}
+
+// inType is the cached reflection lookup for fx.In
+var inType reflect.Type = reflect.TypeOf(fx.In{})
+
+// InType returns the reflection type of fx.In
+func InType() reflect.Type {
+	return inType
 }
 
 // NewErrorValue is a convenience for safely producing a reflect.Value from an error.
@@ -128,4 +138,108 @@ func (t Target) ComponentType() reflect.Type {
 // same pointer.
 func (t Target) UnmarshalTo() interface{} {
 	return t.unmarshalTo.Interface()
+}
+
+// VisitResult is the enumerated constant returned by a FieldVisitor
+type VisitResult int
+
+const (
+	// VisitContinue indicates that field visitation should continue as normal
+	VisitContinue VisitResult = iota
+
+	// VisitSkip indicates that the fields of an embedded struct should not be visited.
+	// If returned for any other kind of field, this is equivalent to VisitContinue.
+	VisitSkip
+
+	// VisitTerminate terminates the tree walk immediately
+	VisitTerminate
+)
+
+// FieldVisitor is a strategy for visiting each exported field of a struct
+type FieldVisitor func(reflect.StructField, reflect.Value) VisitResult
+
+// VisitFields walks the tree of struct fields.  Each embedded struct is also
+// traversed, but named struct fields are not.  Unexported fields are never traversed.
+//
+// If root is actually a reflect.Value, that value will be used or dereferenced if
+// it is a pointer.
+//
+// If root is a struct or any level of pointer to a struct, it will be dereferenced
+// and used as the starting point.
+//
+// If root is not a struct, or cannot be dereferenced to a struct, this function
+// returns an invalid value, i.e. IsValid() will return false.  Also, an invalid
+// value is returned if root is a nil pointer.
+//
+// If any traversal occurred, this function returns the actual reflect.Value representing
+// the struct that was the root of the tree traversal.
+func VisitFields(root interface{}, v FieldVisitor) reflect.Value {
+	var rv reflect.Value
+	if rt, ok := root.(reflect.Value); ok {
+		rv = rt
+	} else {
+		rv = reflect.ValueOf(root)
+	}
+
+	// dereference as much as needed
+	for rv.Kind() == reflect.Ptr {
+		if rv.IsNil() {
+			// can't traverse into a nil
+			return rv
+		}
+
+		rv = rv.Elem()
+	}
+
+	if rv.Kind() != reflect.Struct {
+		return reflect.ValueOf(nil)
+	}
+
+	stack := []reflect.Value{rv}
+	for len(stack) > 0 {
+		var (
+			end = len(stack) - 1
+			s   = stack[end]
+			st  = s.Type()
+		)
+
+		stack = stack[:end]
+		for i := 0; i < st.NumField(); i++ {
+			f := st.Field(i)
+			if len(f.PkgPath) > 0 {
+				// NOTE: don't consider unexported fields
+				continue
+			}
+
+			fv := s.Field(i)
+			if r := v(f, fv); r == VisitTerminate {
+				return rv
+			} else if f.Anonymous && r != VisitSkip {
+				stack = append(stack, fv)
+			}
+		}
+	}
+
+	return rv
+}
+
+// IsIn performs a struct field traversal to find an fx.In embedded
+// struct.  If v could not be traversed or does not embed fx.In, this
+// function returns an invalid reflect.Value and false.  Otherwise,
+// the reflect.Value representing the actual struct, possibly dereferenced,
+// is returned along with true.
+func IsIn(v interface{}) (reflect.Value, bool) {
+	result := VisitContinue
+	root := VisitFields(
+		v,
+		func(f reflect.StructField, fv reflect.Value) VisitResult {
+			if f.Anonymous && f.Type == InType() {
+				result = VisitTerminate
+			}
+
+			return result
+		},
+	)
+
+	return root, root.IsValid() && result == VisitTerminate
 }

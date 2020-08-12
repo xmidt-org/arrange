@@ -152,6 +152,164 @@ func TestServerConfig(t *testing.T) {
 	t.Run("TLS", testServerConfigTLS)
 }
 
+func testServerOptionsEmpty(t *testing.T) {
+	var (
+		assert  = assert.New(t)
+		require = require.New(t)
+		so      = ServerOptions()
+	)
+
+	require.NotNil(so)
+	assert.NoError(so(nil))
+	assert.NoError(so(new(http.Server)))
+}
+
+func testServerOptionsSuccess(t *testing.T) {
+	for count := range []int{1, 2, 5} {
+		t.Run(fmt.Sprintf("count=%d", count), func(t *testing.T) {
+			var (
+				assert  = assert.New(t)
+				require = require.New(t)
+
+				options       []ServerOption
+				expectedOrder []int
+				actualOrder   []int
+				expected      = new(http.Server)
+			)
+
+			for i := 0; i < count; i++ {
+				i := i
+				expectedOrder = append(expectedOrder, i)
+				options = append(options, func(actual *http.Server) error {
+					assert.Equal(expected, actual)
+					actualOrder = append(actualOrder, i)
+					return nil
+				})
+			}
+
+			so := ServerOptions(options...)
+			require.NotNil(so)
+			assert.NoError(so(expected))
+			assert.Equal(expectedOrder, actualOrder)
+		})
+	}
+}
+
+func testServerOptionsFailure(t *testing.T) {
+	var (
+		assert  = assert.New(t)
+		require = require.New(t)
+
+		firstCalled bool
+		expectedErr = errors.New("expected option error")
+		expected    = new(http.Server)
+		so          = ServerOptions(
+			func(actual *http.Server) error {
+				assert.Equal(expected, actual)
+				firstCalled = true
+				return nil
+			},
+			func(actual *http.Server) error {
+				assert.Equal(expected, actual)
+				return expectedErr
+			},
+			func(*http.Server) error {
+				assert.Fail("this option should not have been called")
+				return errors.New("this option should not have been called")
+			},
+		)
+	)
+
+	require.NotNil(so)
+	assert.Equal(expectedErr, so(expected))
+	assert.True(firstCalled)
+}
+
+func TestServerOptions(t *testing.T) {
+	t.Run("Empty", testServerOptionsEmpty)
+	t.Run("Success", testServerOptionsSuccess)
+	t.Run("Failure", testServerOptionsFailure)
+}
+
+func testRouterOptionsEmpty(t *testing.T) {
+	var (
+		assert  = assert.New(t)
+		require = require.New(t)
+		ro      = RouterOptions()
+	)
+
+	require.NotNil(ro)
+	assert.NoError(ro(nil))
+	assert.NoError(ro(new(mux.Router)))
+}
+
+func testRouterOptionsSuccess(t *testing.T) {
+	for count := range []int{1, 2, 5} {
+		t.Run(fmt.Sprintf("count=%d", count), func(t *testing.T) {
+			var (
+				assert  = assert.New(t)
+				require = require.New(t)
+
+				options       []RouterOption
+				expectedOrder []int
+				actualOrder   []int
+				expected      = new(mux.Router)
+			)
+
+			for i := 0; i < count; i++ {
+				i := i
+				expectedOrder = append(expectedOrder, i)
+				options = append(options, func(actual *mux.Router) error {
+					assert.Equal(expected, actual)
+					actualOrder = append(actualOrder, i)
+					return nil
+				})
+			}
+
+			ro := RouterOptions(options...)
+			require.NotNil(ro)
+			assert.NoError(ro(expected))
+			assert.Equal(expectedOrder, actualOrder)
+		})
+	}
+}
+
+func testRouterOptionsFailure(t *testing.T) {
+	var (
+		assert  = assert.New(t)
+		require = require.New(t)
+
+		firstCalled bool
+		expectedErr = errors.New("expected option error")
+		expected    = new(mux.Router)
+		ro          = RouterOptions(
+			func(actual *mux.Router) error {
+				assert.Equal(expected, actual)
+				firstCalled = true
+				return nil
+			},
+			func(actual *mux.Router) error {
+				assert.Equal(expected, actual)
+				return expectedErr
+			},
+			func(*mux.Router) error {
+				assert.Fail("this option should not have been called")
+				return errors.New("this option should not have been called")
+			},
+		)
+	)
+
+	require.NotNil(ro)
+	assert.Equal(expectedErr, ro(expected))
+	assert.True(firstCalled)
+}
+
+func TestRouterOptions(t *testing.T) {
+	t.Run("Empty", testRouterOptionsEmpty)
+	t.Run("Success", testRouterOptionsSuccess)
+	t.Run("Failure", testRouterOptionsFailure)
+}
+
 func TestMiddleware(t *testing.T) {
 	for _, length := range []int{0, 1, 2, 5} {
 		t.Run(fmt.Sprintf("len=%d", length), func(t *testing.T) {
@@ -251,8 +409,9 @@ func testServerUnmarshal(t *testing.T) {
 		assert  = assert.New(t)
 		require = require.New(t)
 
-		globalAddress = make(chan net.Addr, 1)
-		localAddress  = make(chan net.Addr, 1)
+		globalAddress1 = make(chan net.Addr, 1)
+		globalAddress2 = make(chan net.Addr, 1)
+		localAddress   = make(chan net.Addr, 1)
 
 		globalServerOptionCalled = make(chan struct{})
 		globalRouterOptionCalled = make(chan struct{})
@@ -276,9 +435,10 @@ func testServerUnmarshal(t *testing.T) {
 
 	type Dependencies struct {
 		fx.In
-		GlobalServerOption  ServerOption
-		GlobalRouterOption  RouterOption
-		GlobalListenerChain ListenerChain
+		GlobalServerOption        ServerOption
+		GlobalRouterOption        RouterOption
+		GlobalListenerConstructor ListenerConstructor
+		GlobalListenerChain       ListenerChain
 	}
 
 	v.Set("address", ":0")
@@ -291,8 +451,11 @@ func testServerUnmarshal(t *testing.T) {
 		fx.Provide(
 			func() ListenerChain {
 				return NewListenerChain(
-					CaptureListenAddress(globalAddress),
+					CaptureListenAddress(globalAddress1),
 				)
+			},
+			func() ListenerConstructor {
+				return CaptureListenAddress(globalAddress2)
 			},
 			func() ServerOption {
 				return func(*http.Server) error {
@@ -362,7 +525,14 @@ func testServerUnmarshal(t *testing.T) {
 	}
 
 	select {
-	case globalAddress := <-globalAddress:
+	case globalAddress := <-globalAddress1:
+		assert.Equal(serverAddress, globalAddress)
+	case <-time.After(2 * time.Second):
+		assert.Fail("No server address returned")
+	}
+
+	select {
+	case globalAddress := <-globalAddress2:
 		assert.Equal(serverAddress, globalAddress)
 	case <-time.After(2 * time.Second):
 		assert.Fail("No server address returned")
@@ -540,6 +710,30 @@ func testServerUnmarshalError(t *testing.T) {
 		arrange.Supply(v),
 		fx.Provide(
 			Server().Unmarshal(),
+		),
+		fx.Populate(&router),
+	)
+
+	assert.Error(app.Err())
+}
+
+func testServerUnmarshalBadInject(t *testing.T) {
+	var (
+		assert = assert.New(t)
+		router *mux.Router
+
+		v = viper.New()
+	)
+
+	v.Set("address", ":0")
+	app := fx.New(
+		fx.Logger(
+			log.New(ioutil.Discard, "", 0),
+		),
+		arrange.Supply(v),
+		fx.Provide(
+			// not a valid fx.In struct
+			Server().Inject(123).Unmarshal(),
 		),
 		fx.Populate(&router),
 	)
@@ -748,6 +942,39 @@ servers:
 	assert.Error(app.Err())
 }
 
+func testServerUnmarshalKeyBadInject(t *testing.T) {
+	const yaml = `
+servers:
+  main:
+    address: ":0"
+    readTimeout: "15s"
+`
+
+	var (
+		assert  = assert.New(t)
+		require = require.New(t)
+		router  *mux.Router
+
+		v = viper.New()
+	)
+
+	v.SetConfigType("yaml")
+	require.NoError(v.ReadConfig(strings.NewReader(yaml)))
+
+	app := fx.New(
+		fx.Logger(
+			log.New(ioutil.Discard, "", 0),
+		),
+		arrange.Supply(v),
+		fx.Provide(
+			Server().Inject("this is not an fx.In struct").UnmarshalKey("servers.main"),
+		),
+		fx.Populate(&router),
+	)
+
+	assert.Error(app.Err())
+}
+
 func testServerProvideKey(t *testing.T) {
 	const yaml = `
 servers:
@@ -846,6 +1073,7 @@ func TestServer(t *testing.T) {
 	t.Run("ListenerConstructors", testServerListenerConstructors)
 	t.Run("Unmarshal", testServerUnmarshal)
 	t.Run("UnmarshalError", testServerUnmarshalError)
+	t.Run("UnmarshalBadInject", testServerUnmarshalBadInject)
 	t.Run("FactoryError", testServerServerFactoryError)
 	t.Run("LocalServerOptionError", testServerLocalServerOptionError)
 	t.Run("GlobalServerOptionError", testServerGlobalServerOptionError)
@@ -854,5 +1082,6 @@ func TestServer(t *testing.T) {
 	t.Run("Provide", testServerProvide)
 	t.Run("UnmarshalKey", testServerUnmarshalKey)
 	t.Run("UnmarshalKeyError", testServerUnmarshalKeyError)
+	t.Run("UnmarshalKeyBadInject", testServerUnmarshalKeyBadInject)
 	t.Run("ProvideKey", testServerProvideKey)
 }

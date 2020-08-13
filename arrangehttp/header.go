@@ -11,6 +11,9 @@ var emptyHeader = Header{}
 //
 // The zero value of this type is an immutable, empty Header that
 // can be used as a sentinel value.
+//
+// All header keys are stored internally as canonicalized values.  All header
+// values will be deep copies of any values used in initialization.
 type Header struct {
 	h http.Header
 }
@@ -19,8 +22,8 @@ type Header struct {
 // key filtered through http.CanonicalNameKey.  This is useful when
 // storing an http.Header longterm, such as when decorating an http.Handler.
 //
-// If src is empty or nil, it is returned as is.  Otherwise, the returned
-// http.Header is a distinct, deep copy.
+// If src is empty or nil, an empty Header is returned.  Otherwise, the returned
+// Header is a distinct, deep copy of the source.
 func NewHeader(src http.Header) Header {
 	if len(src) > 0 {
 		cleaned := make(http.Header, len(src))
@@ -64,6 +67,8 @@ func NewHeaderFromMap(src map[string]string) Header {
 // The sequence of strings is expected to be in key/value pair order.  Duplicate
 // keys are allowed.  If the number of values is odd, the last value is a
 // header key with an empty value.
+//
+// In all other ways this function is identifical to NewHeader.
 func NewHeaders(src ...string) Header {
 	cleaned := make(http.Header, len(src)/2)
 	for i, j := 0, 1; i < len(src); i, j = i+2, j+2 {
@@ -90,7 +95,9 @@ func (h Header) Len() int {
 	return len(h.h)
 }
 
-// AddTo appends this Header's key/values to the given http.Header
+// AddTo appends this Header's key/values to the given http.Header.
+// Because a Header already contains canonicalized header keys, this
+// method is more efficient than http.Header.Add.
 func (h Header) AddTo(dst http.Header) {
 	for key, values := range h.h {
 		dst[key] = append(dst[key], values...)

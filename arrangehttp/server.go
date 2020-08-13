@@ -43,6 +43,9 @@ type ServerConfig struct {
 	TLS               *TLS
 }
 
+// NewServer is the built-in implementation of ServerFactory in this package.
+// This should serve most needs.  Nothing needs to be done to use this implementation.
+// By default, a Fluent Builder chain begun with Server() will use ServerConfig.
 func (sc ServerConfig) NewServer() (server *http.Server, l Listen, err error) {
 	server = &http.Server{
 		Addr:              sc.Address,
@@ -85,7 +88,9 @@ func RouterOption(f func(*mux.Router) error) SOption {
 	}
 }
 
-// Middleware applies middleware to the mux.Router
+// Middleware applies middleware to the mux.Router.  Note that when injecting
+// options from dependencies, you can also supply mux.MiddlewareFunc components
+// directly.
 func Middleware(m ...mux.MiddlewareFunc) SOption {
 	return RouterOption(func(r *mux.Router) error {
 		r.Use(m...)

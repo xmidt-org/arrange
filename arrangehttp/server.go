@@ -235,17 +235,8 @@ func (s *S) Inject(values ...interface{}) *S {
 	return s
 }
 
-// possibleDependency is a helper that filters out struct fields that cannot be
-// considered as dependencies
-func possibleDependency(f reflect.StructField, fv reflect.Value) bool {
-	return fv.IsValid() &&
-		fv.CanInterface() &&
-		!f.Anonymous &&
-		!(fv.IsZero() && f.Tag.Get("optional") == "true")
-}
-
-// applyDependency applies the value of an fx.In struct field
-func applyDependency(s *http.Server, r *mux.Router, c ListenerChain, d interface{}) (ListenerChain, error) {
+// applyServerDependency applies the value of an fx.In struct field
+func applyServerDependency(s *http.Server, r *mux.Router, c ListenerChain, d interface{}) (ListenerChain, error) {
 	var err error
 	switch d := d.(type) {
 	case SOption:
@@ -297,11 +288,11 @@ func (s *S) newRouter(f ServerFactory, in ServerIn, dependencies []reflect.Value
 		arrange.VisitFields(
 			d,
 			func(f reflect.StructField, fv reflect.Value) arrange.VisitResult {
-				if !possibleDependency(f, fv) {
+				if !arrange.IsDependency(f, fv) {
 					return arrange.VisitContinue
 				}
 
-				chain, err = applyDependency(server, router, chain, fv.Interface())
+				chain, err = applyServerDependency(server, router, chain, fv.Interface())
 				if err != nil {
 					return arrange.VisitTerminate
 				} else {
@@ -393,10 +384,6 @@ func (s *S) Unmarshal(opts ...viper.DecoderConfigOption) interface{} {
 					target.UnmarshalTo(),
 					arrange.Merge(in.DecoderOptions, opts),
 				)
-
-				/*
-					err = uf(in.Viper, target.UnmarshalTo(), arrange.Merge(in.DecoderOptions, opts))
-				*/
 
 				if err == nil {
 					router, err = s.newRouter(

@@ -158,6 +158,22 @@ const (
 // FieldVisitor is a strategy for visiting each exported field of a struct
 type FieldVisitor func(reflect.StructField, reflect.Value) VisitResult
 
+// IsDependency is a filter for struct fields that cannot possibly be injected
+// dependencies.  This function returns true if all of the following are true:
+//
+//   - The reflect.Value is valid (i.e. IsValid() returns true)
+//   - The reflect.Value can return an interface (i.e. CanInterface() returns true)
+//   - The struct field is not anonymous
+//   - The struct field is exported
+//   - The struct field is either not the zero value or doesn't have the optional tag set to true
+func IsDependency(f reflect.StructField, fv reflect.Value) bool {
+	return fv.IsValid() &&
+		fv.CanInterface() &&
+		!f.Anonymous && // i.e. must not be embedded
+		len(f.PkgPath) == 0 && // must be exported
+		!(fv.IsZero() && f.Tag.Get("optional") == "true")
+}
+
 // VisitFields walks the tree of struct fields.  Each embedded struct is also
 // traversed, but named struct fields are not.  Unexported fields are never traversed.
 //

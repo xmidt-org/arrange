@@ -52,7 +52,7 @@ func LoggerWriter(w io.Writer) fx.Option {
 //   l := zap.NewDevelopment() // or any zap logger
 //   fx.New(
 //     // DI container logging will go to the above logger at the INFO level
-//     arrange.LoggerFunc(l.SugaredLogger().Infof),
+//     arrange.LoggerFunc(l.Sugar().Infof),
 //
 //     // carry on ...
 //   )

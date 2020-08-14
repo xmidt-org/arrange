@@ -10,14 +10,30 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func testHeader(f func() Header, expected http.Header, t *testing.T) {
+func testHeaderBasic(f func() Header, expected http.Header, t *testing.T) {
 	var (
 		assert  = assert.New(t)
 		require = require.New(t)
 
-		actual = make(http.Header)
 		header Header
+		actual = make(http.Header)
+	)
 
+	require.NotPanics(func() {
+		header = f()
+	})
+
+	assert.Equal(len(expected), header.Len())
+	header.AddTo(actual)
+	assert.Equal(expected, actual)
+}
+
+func testHeaderAddResponse(f func() Header, expected http.Header, t *testing.T) {
+	var (
+		assert  = assert.New(t)
+		require = require.New(t)
+
+		header   Header
 		response = httptest.NewRecorder()
 		request  = httptest.NewRequest("GET", "/", nil)
 		handler  = http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
@@ -30,16 +46,53 @@ func testHeader(f func() Header, expected http.Header, t *testing.T) {
 		header = f()
 	})
 
-	assert.Equal(len(expected), header.Len())
-	header.AddTo(actual)
-	assert.Equal(expected, actual)
-
 	request.Header.Set("Test", "true")
 	decorated := header.AddResponse(handler)
 	require.NotNil(decorated)
 	decorated.ServeHTTP(response, request)
 	assert.Equal(289, response.Code)
 	assert.Equal(expected, response.HeaderMap)
+}
+
+func testHeaderAddRequest(f func() Header, expected http.Header, t *testing.T) {
+	var (
+		assert  = assert.New(t)
+		require = require.New(t)
+
+		header  Header
+		request = httptest.NewRequest("GET", "/", nil)
+
+		roundTripper http.RoundTripper = RoundTripperFunc(func(request *http.Request) (*http.Response, error) {
+			if len(expected) == 0 {
+				// allow for the nil Header case, since a nil won't compare equal to an http.Header{}
+				assert.Empty(request.Header)
+			} else {
+				assert.Equal(expected, request.Header)
+			}
+
+			return &http.Response{
+				StatusCode: 276,
+			}, nil
+		})
+	)
+
+	require.NotPanics(func() {
+		header = f()
+	})
+
+	decorated := header.AddRequest(roundTripper)
+	require.NotNil(decorated)
+	response, err := decorated.RoundTrip(request)
+	assert.NoError(err)
+	require.NotNil(response)
+	assert.Equal(276, response.StatusCode)
+
+	// check that a nil Header still results in the round tripper creating headers
+	request.Header = nil
+	response, err = decorated.RoundTrip(request)
+	assert.NoError(err)
+	require.NotNil(response)
+	assert.Equal(276, response.StatusCode)
 }
 
 func TestNewHeader(t *testing.T) {
@@ -73,11 +126,18 @@ func TestNewHeader(t *testing.T) {
 
 	for i, record := range testData {
 		t.Run(strconv.Itoa(i), func(t *testing.T) {
-			testHeader(
-				func() Header { return NewHeader(record.src) },
-				record.expected,
-				t,
-			)
+			f := func() Header { return NewHeader(record.src) }
+			t.Run("Basic", func(t *testing.T) {
+				testHeaderBasic(f, record.expected, t)
+			})
+
+			t.Run("AddResponse", func(t *testing.T) {
+				testHeaderAddResponse(f, record.expected, t)
+			})
+
+			t.Run("AddRequest", func(t *testing.T) {
+				testHeaderAddRequest(f, record.expected, t)
+			})
 		})
 	}
 }
@@ -110,11 +170,18 @@ func TestNewHeaderFromMap(t *testing.T) {
 
 	for i, record := range testData {
 		t.Run(strconv.Itoa(i), func(t *testing.T) {
-			testHeader(
-				func() Header { return NewHeaderFromMap(record.src) },
-				record.expected,
-				t,
-			)
+			f := func() Header { return NewHeaderFromMap(record.src) }
+			t.Run("Basic", func(t *testing.T) {
+				testHeaderBasic(f, record.expected, t)
+			})
+
+			t.Run("AddResponse", func(t *testing.T) {
+				testHeaderAddResponse(f, record.expected, t)
+			})
+
+			t.Run("AddRequest", func(t *testing.T) {
+				testHeaderAddRequest(f, record.expected, t)
+			})
 		})
 	}
 }
@@ -160,11 +227,18 @@ func TestNewHeaders(t *testing.T) {
 
 	for i, record := range testData {
 		t.Run(strconv.Itoa(i), func(t *testing.T) {
-			testHeader(
-				func() Header { return NewHeaders(record.src...) },
-				record.expected,
-				t,
-			)
+			f := func() Header { return NewHeaders(record.src...) }
+			t.Run("Basic", func(t *testing.T) {
+				testHeaderBasic(f, record.expected, t)
+			})
+
+			t.Run("AddResponse", func(t *testing.T) {
+				testHeaderAddResponse(f, record.expected, t)
+			})
+
+			t.Run("AddRequest", func(t *testing.T) {
+				testHeaderAddRequest(f, record.expected, t)
+			})
 		})
 	}
 }

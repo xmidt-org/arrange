@@ -74,18 +74,44 @@ func (sc ServerConfig) NewServer() (server *http.Server, l Listen, err error) {
 // is bound to the fx.App lifecycle.
 type SOption func(*http.Server, *mux.Router, ListenerChain) (ListenerChain, error)
 
+// SOptions aggregates several SOption instances into a single option
+func SOptions(options ...SOption) SOption {
+	return func(s *http.Server, r *mux.Router, c ListenerChain) (ListenerChain, error) {
+		var err error
+		for _, so := range options {
+			c, err = so(s, r, c)
+			if err != nil {
+				break
+			}
+		}
+
+		return c, err
+	}
+}
+
 // NewSOption reflects an object and tries to convert it into an SOption.  The set
 // of types allowed is flexible:
 //
-//   (1) ServerOption or a closure that accepts an *http.Server and may return an error
-//   (2) RouterOption or a closure that accepts an *mux.Router and may return an error
-//   (3) ListenerConstructor or a slice of same
-//   (4) ListenerChain
-//   (5) mux.MiddlewareFunc, a slice of same, or a closure of the same signature as mux.MiddlewareFunc
+//   (1) SOption or a slice of same
+//   (2) ServerOption or a closure that accepts an *http.Server and may return an error
+//   (3) RouterOption or a closure that accepts an *mux.Router and may return an error
+//   (4) ListenerConstructor or a slice of same
+//   (5) ListenerChain
+//   (6) mux.MiddlewareFunc, a slice of same, or a closure of the same signature as mux.MiddlewareFunc
 //
 // Any other type will produce an error.
 func NewSOption(o interface{}) (so SOption, err error) {
 	switch o := o.(type) {
+	case SOption:
+		so = o
+
+	case []SOption:
+		so = SOptions(o...)
+
+	// this really isn't necessary, but it's consistent with NewCOption
+	case func(*http.Server, *mux.Router, ListenerChain) (ListenerChain, error):
+		so = o
+
 	case ServerOption:
 		so = func(s *http.Server, _ *mux.Router, c ListenerChain) (ListenerChain, error) {
 			return c, o(s)

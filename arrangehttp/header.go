@@ -116,3 +116,20 @@ func (h Header) AddResponse(next http.Handler) http.Handler {
 		next.ServeHTTP(response, request)
 	})
 }
+
+// AddRequest is a RoundTripperConstructor that adds all headers to
+// the request.  If this Header is empty, no decoration is performed.
+func (h Header) AddRequest(next http.RoundTripper) http.RoundTripper {
+	if h.Len() == 0 {
+		return next
+	}
+
+	return RoundTripperFunc(func(request *http.Request) (*http.Response, error) {
+		if request.Header == nil {
+			request.Header = make(http.Header, h.Len())
+		}
+
+		h.AddTo(request.Header)
+		return next.RoundTrip(request)
+	})
+}

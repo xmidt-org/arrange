@@ -152,11 +152,149 @@ func TestServerConfig(t *testing.T) {
 	t.Run("TLS", testServerConfigTLS)
 }
 
+func testSOptionsSuccess(t *testing.T) {
+	for _, length := range []int{0, 1, 2, 5} {
+		t.Run(fmt.Sprintf("len=%d", length), func(t *testing.T) {
+			var (
+				assert    = assert.New(t)
+				require   = require.New(t)
+				server    = new(http.Server)
+				router    = mux.NewRouter()
+				chain     ListenerChain
+				options   []SOption
+				callCount int
+			)
+
+			for i := 0; i < length; i++ {
+				options = append(options, func(s *http.Server, r *mux.Router, c ListenerChain) (ListenerChain, error) {
+					assert.Equal(server, s)
+					assert.Equal(router, r)
+					assert.Equal(chain, c)
+					callCount++
+					return c, nil
+				})
+			}
+
+			so := SOptions(options...)
+			require.NotNil(so)
+			c, err := so(server, router, chain)
+			assert.NoError(err)
+			assert.Equal(chain, c)
+			assert.Equal(length, callCount)
+		})
+	}
+}
+
+func testSOptionsFailure(t *testing.T) {
+	var (
+		assert      = assert.New(t)
+		require     = require.New(t)
+		server      = new(http.Server)
+		router      = mux.NewRouter()
+		chain       ListenerChain
+		expectedErr = errors.New("expected option error")
+		so          = SOptions(
+			func(s *http.Server, r *mux.Router, c ListenerChain) (ListenerChain, error) {
+				assert.Equal(server, s)
+				assert.Equal(router, r)
+				assert.Equal(chain, c)
+				return c, nil
+			},
+			func(s *http.Server, r *mux.Router, c ListenerChain) (ListenerChain, error) {
+				assert.Equal(server, s)
+				assert.Equal(router, r)
+				assert.Equal(chain, c)
+				return c, expectedErr
+			},
+			func(s *http.Server, r *mux.Router, c ListenerChain) (ListenerChain, error) {
+				assert.Fail("This option should not have been called")
+				return c, errors.New("This option should not have been called")
+			},
+		)
+	)
+
+	require.NotNil(so)
+	c, err := so(server, router, chain)
+	assert.Equal(expectedErr, err)
+	assert.Equal(chain, c)
+}
+
+func TestSOptions(t *testing.T) {
+	t.Run("Success", testSOptionsSuccess)
+	t.Run("Failure", testSOptionsFailure)
+}
+
 func testNewSOptionUnsupported(t *testing.T) {
 	assert := assert.New(t)
 	so, err := NewSOption("this is not supported as an SOption")
 	assert.Error(err)
 	assert.Nil(so)
+}
+
+func testNewSOptionSimple(t *testing.T) {
+	var (
+		assert          = assert.New(t)
+		require         = require.New(t)
+		called          = false
+		option  SOption = func(_ *http.Server, _ *mux.Router, c ListenerChain) (ListenerChain, error) {
+			called = true
+			return c, nil
+		}
+		so, err = NewSOption(option)
+	)
+
+	require.NoError(err)
+	require.NotNil(so)
+	_, err = so(nil, nil, NewListenerChain())
+	assert.NoError(err)
+	assert.True(called)
+}
+
+func testNewSOptionClosure(t *testing.T) {
+	var (
+		assert  = assert.New(t)
+		require = require.New(t)
+		called  = false
+		option  = func(_ *http.Server, _ *mux.Router, c ListenerChain) (ListenerChain, error) {
+			called = true
+			return c, nil
+		}
+		so, err = NewSOption(option)
+	)
+
+	require.NoError(err)
+	require.NotNil(so)
+	_, err = so(nil, nil, NewListenerChain())
+	assert.NoError(err)
+	assert.True(called)
+}
+
+func testNewSOptionComposite(t *testing.T) {
+	var (
+		assert  = assert.New(t)
+		require = require.New(t)
+		called0 = false
+		called1 = false
+		options = []SOption{
+			func(_ *http.Server, _ *mux.Router, c ListenerChain) (ListenerChain, error) {
+				called0 = true
+				return c, nil
+			},
+			func(_ *http.Server, _ *mux.Router, c ListenerChain) (ListenerChain, error) {
+				called1 = true
+				return c, nil
+			},
+		}
+
+		so, err = NewSOption(options)
+	)
+
+	require.NoError(err)
+	require.NotNil(so)
+	_, err = so(nil, nil, NewListenerChain())
+	assert.NoError(err)
+	assert.True(called0)
+	assert.True(called1)
 }
 
 func testNewSOptionServer(t *testing.T) {
@@ -421,6 +559,9 @@ func testNewSOptionMiddleware(t *testing.T) {
 
 func TestNewSOption(t *testing.T) {
 	t.Run("Unsupported", testNewSOptionUnsupported)
+	t.Run("Simple", testNewSOptionSimple)
+	t.Run("Closure", testNewSOptionClosure)
+	t.Run("Composite", testNewSOptionComposite)
 	t.Run("Server", testNewSOptionServer)
 	t.Run("Router", testNewSOptionRouter)
 	t.Run("Listener", testNewSOptionListener)
@@ -704,7 +845,7 @@ func testServerUnmarshalError(t *testing.T) {
 	assert.Error(app.Err())
 }
 
-func testServerUnmarshalBadInject(t *testing.T) {
+func testServerUnmarshalUseError(t *testing.T) {
 	var (
 		assert = assert.New(t)
 		router *mux.Router
@@ -1015,7 +1156,7 @@ func TestServer(t *testing.T) {
 	t.Run("ListenerConstructors", testServerListenerConstructors)
 	t.Run("Unmarshal", testServerUnmarshal)
 	t.Run("UnmarshalError", testServerUnmarshalError)
-	t.Run("UnmarshalBadInject", testServerUnmarshalBadInject)
+	t.Run("UnmarshalUseError", testServerUnmarshalUseError)
 	t.Run("FactoryError", testServerServerFactoryError)
 	t.Run("LocalServerOptionError", testServerLocalSOptionError)
 	t.Run("GlobalServerOptionError", testServerGlobalSOptionError)

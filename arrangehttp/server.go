@@ -74,45 +74,97 @@ func (sc ServerConfig) NewServer() (server *http.Server, l Listen, err error) {
 // is bound to the fx.App lifecycle.
 type SOption func(*http.Server, *mux.Router, ListenerChain) (ListenerChain, error)
 
-// ServerOption is a convenience for an SOption that just modifies the http.Server
-func ServerOption(f func(*http.Server) error) SOption {
-	return func(s *http.Server, _ *mux.Router, c ListenerChain) (ListenerChain, error) {
-		return c, f(s)
+// NewSOption reflects an object and tries to convert it into an SOption.  The set
+// of types allowed is flexible:
+//
+//   (1) ServerOption or a closure that accepts an *http.Server and may return an error
+//   (2) RouterOption or a closure that accepts an *mux.Router and may return an error
+//   (3) ListenerConstructor or a slice of same
+//   (4) ListenerChain
+//   (5) mux.MiddlewareFunc, a slice of same, or a closure of the same signature as mux.MiddlewareFunc
+//
+// Any other type will produce an error.
+func NewSOption(o interface{}) (so SOption, err error) {
+	switch o := o.(type) {
+	case ServerOption:
+		so = func(s *http.Server, _ *mux.Router, c ListenerChain) (ListenerChain, error) {
+			return c, o(s)
+		}
+
+	case func(*http.Server) error:
+		so = func(s *http.Server, _ *mux.Router, c ListenerChain) (ListenerChain, error) {
+			return c, o(s)
+		}
+
+	case func(*http.Server):
+		so = func(s *http.Server, _ *mux.Router, c ListenerChain) (ListenerChain, error) {
+			o(s)
+			return c, nil
+		}
+
+	case RouterOption:
+		so = func(_ *http.Server, r *mux.Router, c ListenerChain) (ListenerChain, error) {
+			return c, o(r)
+		}
+
+	case func(*mux.Router) error:
+		so = func(_ *http.Server, r *mux.Router, c ListenerChain) (ListenerChain, error) {
+			return c, o(r)
+		}
+
+	case func(*mux.Router):
+		so = func(_ *http.Server, r *mux.Router, c ListenerChain) (ListenerChain, error) {
+			o(r)
+			return c, nil
+		}
+
+	case ListenerConstructor:
+		so = func(_ *http.Server, _ *mux.Router, c ListenerChain) (ListenerChain, error) {
+			return c.Append(o), nil
+		}
+
+	case []ListenerConstructor:
+		so = func(_ *http.Server, _ *mux.Router, c ListenerChain) (ListenerChain, error) {
+			return c.Append(o...), nil
+		}
+
+	case ListenerChain:
+		so = func(_ *http.Server, _ *mux.Router, c ListenerChain) (ListenerChain, error) {
+			return c.Extend(o), nil
+		}
+
+	case mux.MiddlewareFunc:
+		so = func(_ *http.Server, r *mux.Router, c ListenerChain) (ListenerChain, error) {
+			r.Use(o)
+			return c, nil
+		}
+
+	case []mux.MiddlewareFunc:
+		so = func(_ *http.Server, r *mux.Router, c ListenerChain) (ListenerChain, error) {
+			r.Use(o...)
+			return c, nil
+		}
+
+	case func(http.Handler) http.Handler:
+		so = func(_ *http.Server, r *mux.Router, c ListenerChain) (ListenerChain, error) {
+			r.Use(o)
+			return c, nil
+		}
+
+	default:
+		err = fmt.Errorf("%s is not supported as an SOption", reflect.TypeOf(o))
 	}
+
+	return
 }
 
-// RouterOption is a convenience for an SOption that just modifies the mux.Router
-func RouterOption(f func(*mux.Router) error) SOption {
-	return func(_ *http.Server, r *mux.Router, c ListenerChain) (ListenerChain, error) {
-		return c, f(r)
-	}
-}
+// ServerOption is a functional option type that can be converted to an SOption.
+// This type exists primarily to make fx.Provide constructors more concise.
+type ServerOption func(*http.Server) error
 
-// Middleware applies middleware to the mux.Router.  Note that when injecting
-// options from dependencies, you can also supply mux.MiddlewareFunc components
-// directly.
-func Middleware(m ...mux.MiddlewareFunc) SOption {
-	return RouterOption(func(r *mux.Router) error {
-		r.Use(m...)
-		return nil
-	})
-}
-
-// AppendListener produces an SOption that adds ListenerConstructors that
-// will participate in decorating the server's net.Listener.
-func AppendListener(more ...ListenerConstructor) SOption {
-	return func(_ *http.Server, _ *mux.Router, c ListenerChain) (ListenerChain, error) {
-		return c.Append(more...), nil
-	}
-}
-
-// ExtendListener produces an SOption that adds another ListenerChain that
-// will participate in decorating the server's net.Listener.
-func ExtendListener(more ListenerChain) SOption {
-	return func(_ *http.Server, _ *mux.Router, c ListenerChain) (ListenerChain, error) {
-		return c.Extend(more), nil
-	}
-}
+// RouterOption is a functional option type that can be converted to an SOption.
+// This type exists primarily to make fx.Provide constructors more concise.
+type RouterOption func(*mux.Router) error
 
 // ServerIn describes the set of dependencies for creating a mux.Router and,
 // by extension, an http.Server.
@@ -141,7 +193,7 @@ type S struct {
 // Server starts a Fluent Builder method chain for creating an http.Server,
 // binding its lifecycle to the fx.App lifecycle, and producing a *mux.Router
 // as a component for use in dependency injection.
-func Server(o ...SOption) *S {
+func Server(o ...interface{}) *S {
 	return new(S).
 		ServerFactory(ServerConfig{}).
 		Use(o...)
@@ -155,118 +207,35 @@ func (s *S) ServerFactory(prototype ServerFactory) *S {
 	return s
 }
 
-// Use applies options to this builder.  These options will be evaluated
-// at construction time but before a server is bound to the fx.App lifecycle.
-func (s *S) Use(o ...SOption) *S {
-	s.options = append(s.options, o...)
-	return s
-}
+// Use applies options to this builder.  The set of types allowed are any
+// of the types that can be supplied to NewSOption as well as instances
+// of structs embedded with fx.In.
+//
+// Anything convertible to an SOption is evaluated at construction time.
+//
+// Any fx.In struct is used as an injectible set of dependencies.  Fields on
+// that struct are converted into SOptions using the same rules as NewSOption,
+// but any struct field not convertible is ignored.
+func (s *S) Use(v ...interface{}) *S {
+	for _, o := range v {
+		so, err := NewSOption(o)
+		if err == nil {
+			s.options = append(s.options, so)
+			continue
+		}
 
-// Inject applies dependencies from the surrounding fx.App to Unmarshal, UnmarshalKey,
-// Provide, or ProvideKey.  Each of the values supplied to this method must be a struct value
-// that embeds fx.In or a pointer to same.  When constructors created by this builder are
-// invoked, each of the struct fields are examined to see if they are options that this
-// builder can apply.  Other fields are ignored.
-//
-// The available options that can appear as dependency fields in structs are:
-//
-//   - SOption
-//   - []SOption
-//   - ListenerConstructor
-//   - []ListenerConstructor
-//   - ListenerChain
-//   - mux.MiddlewareFunc
-//   - []mux.MiddlewareFunc
-//
-// The fields of each dependency struct are applied in the order they are declared.
-// Thus, Inject preserves the order of things like mux.MiddlewareFuncs.
-//
-//   // MyDependencies fields will be applied in this declared order,
-//   // regardless of the order they appear in fx.New()
-//   type MyDependencies struct {
-//     fx.In // required!
-//     Logging     arrangehttp.SOption `name:"logging"`
-//     RateLimiter arrangehttp.SOption `name:"rateLimiter"`
-//     Security    arrangehttp.SOption `name:"security"`
-//   }
-//
-//   v := viper.New()
-//   fx.New(
-//     arrange.Supply(v),
-//     fx.Provide(
-//       fx.Annotated{
-//         Name: "rateLimiter",
-//         Target: func() arrangehttp.SOption {
-//           return arrangehttp.RouterOption(
-//             NewRateLimiterMiddleware(),
-//           )
-//         },
-//       },
-//       fx.Annotated{
-//         Name: "security",
-//         Target: func() arrangehttp.SOption {
-//           return arrangehttp.RouterOption(
-//             NewSecurityMiddleware(),
-//           )
-//         },
-//       },
-//       fx.Annotated{
-//         Name: "logging",
-//         Target: func() arrangehttp.SOption {
-//           return arrangehttp.RouterOption(
-//             NewLoggingMiddleware(),
-//           )
-//         },
-//       },
-//     ),
-//     // this could also be Unmarshal, UnmarshalKey, or ProvideKey
-//     arrangehttp.Server().Inject(MyDependencies{}).Provide(),
-//   )
-func (s *S) Inject(values ...interface{}) *S {
-	for _, v := range values {
-		if dependency, ok := arrange.IsIn(v); ok {
+		if dependency, ok := arrange.IsIn(o); ok {
 			s.dependencies = append(s.dependencies, dependency.Type())
-		} else {
-			// use the original type, since IsIn will often return a different type
-			s.errs = append(s.errs, fmt.Errorf("%s does not refer to a struct", reflect.TypeOf(v)))
+			continue
 		}
+
+		s.errs = append(s.errs,
+			err,
+			fmt.Errorf("%s does not refer to an fx.In struct", reflect.TypeOf(v)),
+		)
 	}
 
 	return s
-}
-
-// applyServerDependency applies the value of an fx.In struct field
-func applyServerDependency(s *http.Server, r *mux.Router, c ListenerChain, d interface{}) (ListenerChain, error) {
-	var err error
-	switch d := d.(type) {
-	case SOption:
-		c, err = d(s, r, c)
-
-	// this allows `group:"..."` injection
-	case []SOption:
-		for _, so := range d {
-			c, err = so(s, r, c)
-		}
-
-	case ListenerConstructor:
-		c = c.Append(d)
-
-	// this allows `group:"..."` injection
-	case []ListenerConstructor:
-		c = c.Append(d...)
-
-	case ListenerChain:
-		c = c.Extend(d)
-
-	case mux.MiddlewareFunc:
-		r.Use(d)
-
-	// this allows `group:"..."` injection
-	case []mux.MiddlewareFunc:
-		r.Use(d...)
-	}
-
-	return c, err
 }
 
 // newRouter does all the heavy-lifting of creating an http.Server and mux.Router and
@@ -281,33 +250,30 @@ func (s *S) newRouter(f ServerFactory, in ServerIn, dependencies []reflect.Value
 	router := mux.NewRouter()
 	server.Handler = router
 	var chain ListenerChain
+	var options []SOption
 
-	// first: apply any injected dependencies
+	// visit struct fields in dependencies, building SOptions where possible
 	for _, d := range dependencies {
-		var err error
 		arrange.VisitFields(
 			d,
 			func(f reflect.StructField, fv reflect.Value) arrange.VisitResult {
-				if !arrange.IsDependency(f, fv) {
-					return arrange.VisitContinue
+				if arrange.IsDependency(f, fv) {
+					// ignore struct fields that aren't applicable
+					// this allows callers to reuse fx.In structs for different purposes
+					if so, err := NewSOption(fv.Interface()); err == nil {
+						options = append(options, so)
+					}
 				}
 
-				chain, err = applyServerDependency(server, router, chain, fv.Interface())
-				if err != nil {
-					return arrange.VisitTerminate
-				} else {
-					return arrange.VisitContinue
-				}
+				return arrange.VisitContinue
 			},
 		)
-
-		if err != nil {
-			return nil, err
-		}
 	}
 
-	// second: apply any locally defined options
-	for _, so := range s.options {
+	// locally defined options execute after injected options, allowing
+	// local options to override global ones
+	options = append(options, s.options...)
+	for _, so := range options {
 		chain, err = so(server, router, chain)
 		if err != nil {
 			return nil, err

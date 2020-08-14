@@ -1,13 +1,15 @@
 package arrangehttp
 
 import (
-	"context"
+	"fmt"
 	"net/http"
+	"reflect"
 	"time"
 
 	"github.com/spf13/viper"
 	"github.com/xmidt-org/arrange"
 	"go.uber.org/fx"
+	"go.uber.org/multierr"
 )
 
 // ClientFactory is the interface implemented by unmarshaled configuration objects
@@ -76,26 +78,80 @@ func (cc ClientConfig) NewClient() (client *http.Client, err error) {
 	return
 }
 
-// ClientOption is a functional option type that can mutate an http.Client
-// prior to its being returned to an fx.App as a component.  A client option
-// can supply application-specific customization that doesn't come from
-// external configuration:
+// COption is a functional option for a fluent client builder
+type COption func(*http.Client) error
+
+// COptions aggregates several COption instances into a single option
+func COptions(options ...COption) COption {
+	return func(c *http.Client) error {
+		var err error
+		for _, co := range options {
+			err = co(c)
+			if err != nil {
+				break
+			}
+		}
+
+		return err
+	}
+}
+
+// NewCOption reflects an object and tries to convert it into an COption.  The set
+// of types allowed is flexible:
 //
-//   v := viper.New()
-//   fx.New(
-//     arrange.Supply(v),
-//     arrangehttp.Client(func(c *http.Client) error {
-//       c.CheckRedirect = func(r *http.Request, via []*http.Request) error {
-//         // custom application logic for redirects goes here
-//       }
-//     }).Provide(),
-//     fx.Provide(
-//       func(c *http.Client) MyComponent {
-//         // this client will have custom redirect logic
-//       },
-//     ),
-//   )
-type ClientOption func(*http.Client) error
+//   (1) COption or slice of same
+//   (2) A closure that accepts an *http.Client and optionally returns an error
+//   (3) RoundTripperConstructor or slice of same
+//   (5) RoundTripperChain
+//
+// Any other type will produce an error.
+func NewCOption(o interface{}) (co COption, err error) {
+	switch o := o.(type) {
+	case COption:
+		co = o
+
+	case []COption:
+		co = COptions(o...)
+
+	case func(*http.Client) error:
+		co = o
+
+	case func(*http.Client):
+		co = func(c *http.Client) error {
+			o(c)
+			return nil
+		}
+
+	case func(http.RoundTripper) http.RoundTripper:
+		co = func(c *http.Client) error {
+			c.Transport = NewRoundTripperChain(o).Then(c.Transport)
+			return nil
+		}
+
+	case RoundTripperConstructor:
+		co = func(c *http.Client) error {
+			c.Transport = NewRoundTripperChain(o).Then(c.Transport)
+			return nil
+		}
+
+	case []RoundTripperConstructor:
+		co = func(c *http.Client) error {
+			c.Transport = NewRoundTripperChain(o...).Then(c.Transport)
+			return nil
+		}
+
+	case RoundTripperChain:
+		co = func(c *http.Client) error {
+			c.Transport = o.Then(c.Transport)
+			return nil
+		}
+
+	default:
+		err = fmt.Errorf("%s is not supported as an COption", reflect.TypeOf(o))
+	}
+
+	return
+}
 
 // ClientIn is the set of dependencies required to build an *http.Client component
 type ClientIn struct {
@@ -104,48 +160,24 @@ type ClientIn struct {
 	// Lifecycle is used to bind http.Client.CloseIdleConnections to the
 	// fx.App OnStop event
 	Lifecycle fx.Lifecycle
-
-	// ClientOptions is an optional dependency that is used for all
-	// clients in an fx.App
-	ClientOptions []ClientOption `optional:"true"`
-
-	// RoundTripperChain is an optional dependency that, if supplied, is used
-	// for all clients in an fx.App
-	RoundTripperChain RoundTripperChain `optional:"true"`
 }
 
 // C is a Fluent Builder for creating an http.Client as an uber/fx component.
 // This type should be constructred with the Client function.
 type C struct {
-	co        []ClientOption
-	chain     RoundTripperChain
-	prototype ClientFactory
+	errs         []error
+	options      []COption
+	dependencies []reflect.Type
+	prototype    ClientFactory
 }
 
 // Client begins a Fluent Builder chain for constructing an http.Client from
 // unmarshaled configuration and introducing that http.Client as a component
 // for an enclosing uber/fx app.
-func Client(opts ...ClientOption) *C {
-	c := new(C)
-	if len(opts) > 0 {
-		// safe copy
-		c.co = append([]ClientOption{}, opts...)
-	}
-
-	return c.ClientFactory(ClientConfig{})
-}
-
-// Use supplies constructors that will be used to decorate any RoundTripper
-// set on the http.Client after the factory has created it.
-func (c *C) Use(more ...RoundTripperConstructor) *C {
-	c.chain = c.chain.Append(more...)
-	return c
-}
-
-// UseChain is similar to Use, but appends constructors from a chain
-func (c *C) UseChain(more RoundTripperChain) *C {
-	c.chain = c.chain.Extend(more)
-	return c
+func Client(o ...interface{}) *C {
+	return new(C).
+		ClientFactory(ClientConfig{}).
+		Use(o...)
 }
 
 // ClientFactory sets the prototype factory that is unmarshaled from Viper.
@@ -157,77 +189,132 @@ func (c *C) ClientFactory(prototype ClientFactory) *C {
 	return c
 }
 
+// Use applies options to this builder.  The set of types allowed are any
+// of the types that can be supplied to NewCOption as well as instances
+// of structs embedded with fx.In.
+//
+// Anything convertible to an COption is evaluated at construction time.
+//
+// Any fx.In struct is used as an injectible set of dependencies.  Fields on
+// that struct are converted into COptions using the same rules as NewCOption,
+// but any struct field not convertible is ignored.
+func (c *C) Use(v ...interface{}) *C {
+	for _, o := range v {
+		co, err := NewCOption(o)
+		if err == nil {
+			c.options = append(c.options, co)
+			continue
+		}
+
+		if dependency, ok := arrange.IsIn(o); ok {
+			c.dependencies = append(c.dependencies, dependency.Type())
+			continue
+		}
+
+		c.errs = append(c.errs,
+			err,
+			fmt.Errorf("%s does not refer to an fx.In struct", reflect.TypeOf(v)),
+		)
+	}
+
+	return c
+}
+
 // newClient does all the heavy lifting for creating the client, applying
 // options, and binding CloseIdleConnections to the fx lifecycle.
-func (c *C) newClient(f ClientFactory, in ClientIn) (*http.Client, error) {
+func (c *C) newClient(f ClientFactory, in ClientIn, dependencies []reflect.Value) (*http.Client, error) {
 	client, err := f.NewClient()
 	if err != nil {
 		return nil, err
 	}
 
-	for _, f := range in.ClientOptions {
-		if err := f(client); err != nil {
+	var options []COption
+
+	// visit struct fields in dependencies, building COptions where possible
+	for _, d := range dependencies {
+		arrange.VisitFields(
+			d,
+			func(f reflect.StructField, fv reflect.Value) arrange.VisitResult {
+				if arrange.IsDependency(f, fv) {
+					// ignore struct fields that aren't applicable
+					// this allows callers to reuse fx.In structs for different purposes
+					if co, err := NewCOption(fv.Interface()); err == nil {
+						options = append(options, co)
+					}
+				}
+
+				return arrange.VisitContinue
+			},
+		)
+	}
+
+	// locally defined options execute after injected options, allowing
+	// local options to override global ones
+	options = append(options, c.options...)
+	for _, co := range options {
+		err = co(client)
+		if err != nil {
 			return nil, err
 		}
 	}
-
-	for _, f := range c.co {
-		if err := f(client); err != nil {
-			return nil, err
-		}
-	}
-
-	client.Transport = in.RoundTripperChain.Extend(c.chain).Then(client.Transport)
-	in.Lifecycle.Append(fx.Hook{
-		OnStop: func(context.Context) error {
-			client.CloseIdleConnections()
-			return nil
-		},
-	})
 
 	return client, nil
 }
 
-// Unmarshal uses an injected Viper instance to unmarshal the ClientFactory.  That factory
-// is then used to create an *http.Client.  The client's CloseIdleConnections method is
-// bound to the OnStop portion of the fx.App lifecycle.
-//
-// This method terminates the builder chain, and must be used inside fx.Provide:
-//
-//   v := viper.New() // setup not shown
-//   fx.New(
-//     arrange.Supply(v), // don't forget to supply the viper as a component!
-//     fx.Provide(
-//       arrangehttp.Client().Unmarshal(),
-//       func(c *http.Client) MyComponent {
-//         // use the client to create MyComponent
-//       },
-//     ),
-//     fx.Invoke(
-//       func(c *http.Client) error {
-//         // use the client as desired
-//       },
-//     ),
-//   )
-func (c *C) Unmarshal(opts ...viper.DecoderConfigOption) func(ClientIn) (*http.Client, error) {
-	return func(in ClientIn) (*http.Client, error) {
-		var (
-			target = arrange.NewTarget(c.prototype)
-			err    = in.Viper.Unmarshal(
-				target.UnmarshalTo(),
-				arrange.Merge(in.DecoderOptions, opts),
-			)
-		)
+// unmarshalFuncOf returns the function signature for an unmarshal function.
+// The first parameter will always be a ServerIn.  If more than one parameter
+// is supplied, they will all be structs expected to be injected by uber/fx.
+// The return values are always (*mux.Router, error).
+func (c *C) unmarshalFuncOf() reflect.Type {
+	return reflect.FuncOf(
+		// inputs
+		append(
+			[]reflect.Type{reflect.TypeOf(ClientIn{})},
+			c.dependencies...,
+		),
 
-		if err != nil {
-			return nil, err
-		}
+		// outputs
+		[]reflect.Type{
+			reflect.TypeOf((*http.Client)(nil)),
+			arrange.ErrorType(),
+		},
 
-		return c.newClient(
-			target.Component().(ClientFactory),
-			in,
-		)
-	}
+		false, // not variadic
+	)
+}
+
+func (c *C) Unmarshal(opts ...viper.DecoderConfigOption) interface{} {
+	return reflect.MakeFunc(
+		c.unmarshalFuncOf(),
+		func(inputs []reflect.Value) []reflect.Value {
+			var client *http.Client
+			var err error
+
+			if len(c.errs) > 0 {
+				err = multierr.Combine(c.errs...)
+			} else {
+				in := inputs[0].Interface().(ClientIn)
+				target := arrange.NewTarget(c.prototype)
+				err = in.Viper.Unmarshal(
+					target.UnmarshalTo(),
+					arrange.Merge(in.DecoderOptions, opts),
+				)
+
+				if err == nil {
+					client, err = c.newClient(
+						target.Component().(ClientFactory),
+						in,
+						inputs[1:],
+					)
+				}
+			}
+
+			return []reflect.Value{
+				reflect.ValueOf(client),
+				arrange.NewErrorValue(err),
+			}
+		},
+	).Interface()
 }
 
 // Provide produces an fx.Provide that does the same thing as Unmarshal.  This
@@ -257,58 +344,39 @@ func (c *C) Provide(opts ...viper.DecoderConfigOption) fx.Option {
 	)
 }
 
-// UnmarshalKey is similar to Unmarshal, but unmarshals a particular Viper configuration
-// key rather than unmarshaling from the root.
-//
-// Assume a yaml configuration similar to:
-//
-//   clients:
-//     main:
-//       timeout: "15s"
-//       transport:
-//         disableCompression: true
-//         writeBufferSize: 8192
-//         readBufferSize: 8192
-//         forceAttemptHTTP2: true
-//
-//
-// The corresponding UnmarshalKey declaration would be:
-//
-//   v := viper.New() // read in the above YAML
-//   fx.New(
-//     arrange.Supply(v), // don't forget to supply the viper as a component!
-//     fx.Provide(
-//       arrangehttp.Client().UnmarshalKey("clients.main"),
-//     ),
-//     fx.Invoke(
-//       func(c *http.Client) error {
-//         // use the client as desired
-//       },
-//     ),
-//   )
-//
-// Note that UnmarshalKey simply provides a constructor, as with Unmarshal.  To name
-// the component, one has to use fx.Annotated.  ProvideKey does this automatically.
-func (c *C) UnmarshalKey(key string, opts ...viper.DecoderConfigOption) func(ClientIn) (*http.Client, error) {
-	return func(in ClientIn) (*http.Client, error) {
-		var (
-			target = arrange.NewTarget(c.prototype)
-			err    = in.Viper.UnmarshalKey(
-				key,
-				target.UnmarshalTo(),
-				arrange.Merge(in.DecoderOptions, opts),
-			)
-		)
+func (c *C) UnmarshalKey(key string, opts ...viper.DecoderConfigOption) interface{} {
+	return reflect.MakeFunc(
+		c.unmarshalFuncOf(),
+		func(inputs []reflect.Value) []reflect.Value {
+			var client *http.Client
+			var err error
 
-		if err != nil {
-			return nil, err
-		}
+			if len(c.errs) > 0 {
+				err = multierr.Combine(c.errs...)
+			} else {
+				in := inputs[0].Interface().(ClientIn)
+				target := arrange.NewTarget(c.prototype)
+				err = in.Viper.UnmarshalKey(
+					key,
+					target.UnmarshalTo(),
+					arrange.Merge(in.DecoderOptions, opts),
+				)
 
-		return c.newClient(
-			target.Component().(ClientFactory),
-			in,
-		)
-	}
+				if err == nil {
+					client, err = c.newClient(
+						target.Component().(ClientFactory),
+						in,
+						inputs[1:],
+					)
+				}
+			}
+
+			return []reflect.Value{
+				reflect.ValueOf(client),
+				arrange.NewErrorValue(err),
+			}
+		},
+	).Interface()
 }
 
 // ProvideKey unmarshals the ClientFactory from a particular Viper key.  The *http.Client

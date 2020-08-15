@@ -57,7 +57,7 @@ func (sc ServerConfig) NewServer() (server *http.Server, l Listen, err error) {
 		MaxHeaderBytes:    sc.MaxHeaderBytes,
 	}
 
-	server.TLSConfig, err = arrangetls.NewTLSConfig(sc.TLS)
+	server.TLSConfig, err = sc.TLS.New()
 	if err == nil {
 		l = ListenerFactory{
 			ListenConfig: net.ListenConfig{

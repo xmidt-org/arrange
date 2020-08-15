@@ -489,35 +489,32 @@ func TestExternalCertPool(t *testing.T) {
 	t.Run("InvalidFile", testExternalCertPoolInvalidFile)
 }
 
-func testNewTLSConfigNil(t *testing.T) {
+func testConfigNil(t *testing.T) {
 	assert := assert.New(t)
+	assert.NotPanics(func() {
+		var c *Config
+		tc, err := c.New()
 
-	assert.Nil(NewTLSConfig(nil))
-	assert.Nil(
-		NewTLSConfig(
-			nil,
-			func(*x509.Certificate, [][]*x509.Certificate) error {
-				return nil
-			},
-		),
-	)
+		assert.Nil(tc)
+		assert.NoError(err)
+	})
 }
 
-func testNewTLSConfigNoCertificate(t *testing.T) {
+func testConfigNoCertificate(t *testing.T) {
 	var (
 		assert = assert.New(t)
-		config Config
+		c      Config
 	)
 
-	tlsConfig, err := NewTLSConfig(&config)
+	tc, err := c.New()
 	assert.NoError(err)
-	assert.NotNil(tlsConfig)
+	assert.NotNil(tc)
 }
 
-func testNewTLSConfigMissingCertificate(t *testing.T) {
+func testConfigMissingCertificate(t *testing.T) {
 	var (
 		assert = assert.New(t)
-		config = Config{
+		c      = Config{
 			Certificates: ExternalCertificates{
 				{
 					CertificateFile: "missing",
@@ -527,16 +524,16 @@ func testNewTLSConfigMissingCertificate(t *testing.T) {
 		}
 	)
 
-	tlsConfig, err := NewTLSConfig(&config)
+	tc, err := c.New()
 	assert.Error(err)
-	assert.Nil(tlsConfig)
+	assert.Nil(tc)
 }
 
-func testNewTLSConfigBasic(t *testing.T, CertificateFile, KeyFile string) {
+func testConfigBasic(t *testing.T) {
 	var (
 		assert  = assert.New(t)
 		require = require.New(t)
-		config  = Config{
+		c       = Config{
 			Certificates: ExternalCertificates{
 				{
 					CertificateFile: CertificateFile,
@@ -550,26 +547,26 @@ func testNewTLSConfigBasic(t *testing.T, CertificateFile, KeyFile string) {
 		}
 	)
 
-	tlsConfig, err := NewTLSConfig(&config)
+	tc, err := c.New()
 	require.NoError(err)
-	require.NotNil(tlsConfig)
+	require.NotNil(tc)
 
-	assert.Equal(uint16(1), tlsConfig.MinVersion)
-	assert.Equal(uint16(3), tlsConfig.MaxVersion)
-	assert.Equal([]string{"http/1.1"}, tlsConfig.NextProtos)
-	assert.Len(tlsConfig.Certificates, 1)
-	assert.Equal("foobar.com", tlsConfig.ServerName)
-	assert.True(tlsConfig.InsecureSkipVerify)
-	assert.NotEmpty(tlsConfig.NameToCertificate) // verify that BuildNameToCertificate was run
-	assert.Nil(tlsConfig.VerifyPeerCertificate)
-	assert.Equal(tls.NoClientCert, tlsConfig.ClientAuth)
+	assert.Equal(uint16(1), tc.MinVersion)
+	assert.Equal(uint16(3), tc.MaxVersion)
+	assert.Equal([]string{"http/1.1"}, tc.NextProtos)
+	assert.Len(tc.Certificates, 1)
+	assert.Equal("foobar.com", tc.ServerName)
+	assert.True(tc.InsecureSkipVerify)
+	assert.NotEmpty(tc.NameToCertificate) // verify that BuildNameToCertificate was run
+	assert.Nil(tc.VerifyPeerCertificate)
+	assert.Equal(tls.NoClientCert, tc.ClientAuth)
 }
 
-func testNewTLSConfigCustomNextProtos(t *testing.T, CertificateFile, KeyFile string) {
+func testConfigCustomNextProtos(t *testing.T) {
 	var (
 		assert  = assert.New(t)
 		require = require.New(t)
-		config  = Config{
+		c       = Config{
 			Certificates: ExternalCertificates{
 				{
 					CertificateFile: CertificateFile,
@@ -582,20 +579,20 @@ func testNewTLSConfigCustomNextProtos(t *testing.T, CertificateFile, KeyFile str
 		}
 	)
 
-	tlsConfig, err := NewTLSConfig(&config)
+	tc, err := c.New()
 	require.NoError(err)
-	require.NotNil(tlsConfig)
+	require.NotNil(tc)
 
-	assert.Equal(uint16(1), tlsConfig.MinVersion)
-	assert.Equal(uint16(3), tlsConfig.MaxVersion)
-	assert.Equal([]string{"http", "ftp"}, tlsConfig.NextProtos)
-	assert.Len(tlsConfig.Certificates, 1)
-	assert.NotEmpty(tlsConfig.NameToCertificate) // verify that BuildNameToCertificate was run
-	assert.Nil(tlsConfig.VerifyPeerCertificate)
-	assert.Equal(tls.NoClientCert, tlsConfig.ClientAuth)
+	assert.Equal(uint16(1), tc.MinVersion)
+	assert.Equal(uint16(3), tc.MaxVersion)
+	assert.Equal([]string{"http", "ftp"}, tc.NextProtos)
+	assert.Len(tc.Certificates, 1)
+	assert.NotEmpty(tc.NameToCertificate) // verify that BuildNameToCertificate was run
+	assert.Nil(tc.VerifyPeerCertificate)
+	assert.Equal(tls.NoClientCert, tc.ClientAuth)
 }
 
-func testNewTLSConfigVerifyPeerCertificate(t *testing.T, CertificateFile, KeyFile string) {
+func testConfigVerifyPeerCertificate(t *testing.T) {
 	var (
 		assert  = assert.New(t)
 		require = require.New(t)
@@ -606,7 +603,7 @@ func testNewTLSConfigVerifyPeerCertificate(t *testing.T, CertificateFile, KeyFil
 			SerialNumber: big.NewInt(356493746),
 		}
 
-		config = Config{
+		c = Config{
 			Certificates: ExternalCertificates{
 				{
 					CertificateFile: CertificateFile,
@@ -631,30 +628,30 @@ func testNewTLSConfigVerifyPeerCertificate(t *testing.T, CertificateFile, KeyFil
 	peerCert, err := x509.CreateCertificate(random, template, template, &key.PublicKey, key)
 	require.NoError(err)
 
-	tlsConfig, err := NewTLSConfig(&config, extra)
+	tc, err := c.New(extra)
 	require.NoError(err)
-	require.NotNil(tlsConfig)
+	require.NotNil(tc)
 
-	assert.Zero(tlsConfig.MinVersion)
-	assert.Zero(tlsConfig.MaxVersion)
-	assert.Equal([]string{"http/1.1"}, tlsConfig.NextProtos)
-	assert.Len(tlsConfig.Certificates, 1)
-	assert.NotEmpty(tlsConfig.NameToCertificate) // verify that BuildNameToCertificate was run
-	assert.Equal(tls.NoClientCert, tlsConfig.ClientAuth)
+	assert.Zero(tc.MinVersion)
+	assert.Zero(tc.MaxVersion)
+	assert.Equal([]string{"http/1.1"}, tc.NextProtos)
+	assert.Len(tc.Certificates, 1)
+	assert.NotEmpty(tc.NameToCertificate) // verify that BuildNameToCertificate was run
+	assert.Equal(tls.NoClientCert, tc.ClientAuth)
 
-	require.NotNil(tlsConfig.VerifyPeerCertificate)
+	require.NotNil(tc.VerifyPeerCertificate)
 	assert.Equal(
 		extraErr,
-		tlsConfig.VerifyPeerCertificate([][]byte{peerCert}, nil),
+		tc.VerifyPeerCertificate([][]byte{peerCert}, nil),
 	)
 }
 
-func testNewTLSConfigCertPools(t *testing.T, CertificateFile, KeyFile string) {
+func testConfigCertPools(t *testing.T) {
 	var (
 		assert  = assert.New(t)
 		require = require.New(t)
 
-		config = Config{
+		c = Config{
 			Certificates: ExternalCertificates{
 				{
 					CertificateFile: CertificateFile,
@@ -669,27 +666,27 @@ func testNewTLSConfigCertPools(t *testing.T, CertificateFile, KeyFile string) {
 		}
 	)
 
-	tlsConfig, err := NewTLSConfig(&config)
+	tc, err := c.New()
 	require.NoError(err)
-	require.NotNil(tlsConfig)
+	require.NotNil(tc)
 
-	assert.Equal(uint16(1), tlsConfig.MinVersion)
-	assert.Equal(uint16(3), tlsConfig.MaxVersion)
-	assert.Equal([]string{"http", "ftp"}, tlsConfig.NextProtos)
-	assert.Len(tlsConfig.Certificates, 1)
-	assert.NotEmpty(tlsConfig.NameToCertificate) // verify that BuildNameToCertificate was run
-	assert.Nil(tlsConfig.VerifyPeerCertificate)
-	assert.Equal(tls.RequireAndVerifyClientCert, tlsConfig.ClientAuth)
-	assert.NotNil(tlsConfig.ClientCAs)
-	assert.NotNil(tlsConfig.RootCAs)
+	assert.Equal(uint16(1), tc.MinVersion)
+	assert.Equal(uint16(3), tc.MaxVersion)
+	assert.Equal([]string{"http", "ftp"}, tc.NextProtos)
+	assert.Len(tc.Certificates, 1)
+	assert.NotEmpty(tc.NameToCertificate) // verify that BuildNameToCertificate was run
+	assert.Nil(tc.VerifyPeerCertificate)
+	assert.Equal(tls.RequireAndVerifyClientCert, tc.ClientAuth)
+	assert.NotNil(tc.ClientCAs)
+	assert.NotNil(tc.RootCAs)
 }
 
-func testNewTLSConfigClientCAsError(t *testing.T, CertificateFile, KeyFile string) {
+func testConfigClientCAsError(t *testing.T) {
 	var (
 		assert  = assert.New(t)
 		require = require.New(t)
 
-		config = Config{
+		c = Config{
 			Certificates: ExternalCertificates{
 				{
 					CertificateFile: CertificateFile,
@@ -700,17 +697,17 @@ func testNewTLSConfigClientCAsError(t *testing.T, CertificateFile, KeyFile strin
 		}
 	)
 
-	tlsConfig, err := NewTLSConfig(&config)
+	tc, err := c.New()
 	assert.Error(err)
-	require.Nil(tlsConfig)
+	require.Nil(tc)
 }
 
-func testNewTLSConfigRootCAsError(t *testing.T, CertificateFile, KeyFile string) {
+func testConfigRootCAsError(t *testing.T) {
 	var (
 		assert  = assert.New(t)
 		require = require.New(t)
 
-		config = Config{
+		c = Config{
 			Certificates: ExternalCertificates{
 				{
 					CertificateFile: CertificateFile,
@@ -721,37 +718,19 @@ func testNewTLSConfigRootCAsError(t *testing.T, CertificateFile, KeyFile string)
 		}
 	)
 
-	tlsConfig, err := NewTLSConfig(&config)
+	tc, err := c.New()
 	assert.Error(err)
-	require.Nil(tlsConfig)
+	require.Nil(tc)
 }
 
-func TestNewTLSConfig(t *testing.T) {
-	t.Run("Nil", testNewTLSConfigNil)
-	t.Run("NoCertificate", testNewTLSConfigNoCertificate)
-	t.Run("MissingCertificate", testNewTLSConfigMissingCertificate)
-
-	t.Run("Basic", func(t *testing.T) {
-		testNewTLSConfigBasic(t, CertificateFile, KeyFile)
-	})
-
-	t.Run("CustomNextProtos", func(t *testing.T) {
-		testNewTLSConfigCustomNextProtos(t, CertificateFile, KeyFile)
-	})
-
-	t.Run("VerifyPeerCertificate", func(t *testing.T) {
-		testNewTLSConfigVerifyPeerCertificate(t, CertificateFile, KeyFile)
-	})
-
-	t.Run("CertPools", func(t *testing.T) {
-		testNewTLSConfigCertPools(t, CertificateFile, KeyFile)
-	})
-
-	t.Run("RootCAsError", func(t *testing.T) {
-		testNewTLSConfigRootCAsError(t, CertificateFile, KeyFile)
-	})
-
-	t.Run("ClientCAsError", func(t *testing.T) {
-		testNewTLSConfigClientCAsError(t, CertificateFile, KeyFile)
-	})
+func TestConfig(t *testing.T) {
+	t.Run("Nil", testConfigNil)
+	t.Run("NoCertificate", testConfigNoCertificate)
+	t.Run("MissingCertificate", testConfigMissingCertificate)
+	t.Run("Basic", testConfigBasic)
+	t.Run("CustomNextProtos", testConfigCustomNextProtos)
+	t.Run("VerifyPeerCertificate", testConfigVerifyPeerCertificate)
+	t.Run("CertPools", testConfigCertPools)
+	t.Run("RootCAsError", testConfigRootCAsError)
+	t.Run("ClientCAsError", testConfigClientCAsError)
 }

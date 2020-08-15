@@ -57,7 +57,7 @@ func (tc TransportConfig) NewTransport(c *arrangetls.Config) (transport *http.Tr
 		ForceAttemptHTTP2:      tc.ForceAttemptHTTP2,
 	}
 
-	transport.TLSClientConfig, err = arrangetls.NewTLSConfig(c)
+	transport.TLSClientConfig, err = c.New()
 	return
 }
 

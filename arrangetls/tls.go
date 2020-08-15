@@ -19,6 +19,7 @@ type PeerVerifyError struct {
 	Reason      string
 }
 
+// Error satisfies the error interface.  It returns the Reason text.
 func (pve PeerVerifyError) Error() string {
 	return pve.Reason
 }
@@ -35,7 +36,7 @@ func (pvs PeerVerifiers) Len() int {
 	return len(pvs)
 }
 
-// Append tacks on more PeerVerifier strategies to this slice
+// Append adds more PeerVerifier strategies to this slice
 func (pvs *PeerVerifiers) Append(more ...PeerVerifier) {
 	*pvs = append(*pvs, more...)
 }
@@ -141,6 +142,7 @@ type ExternalCertificate struct {
 	KeyFile         string
 }
 
+// Load reads in the certificate and key files from the file system
 func (ec ExternalCertificate) Load() (tls.Certificate, error) {
 	if len(ec.CertificateFile) > 0 && len(ec.KeyFile) > 0 {
 		return tls.LoadX509KeyPair(ec.CertificateFile, ec.KeyFile)
@@ -249,12 +251,12 @@ type Config struct {
 	PeerVerify *PeerVerifyConfig
 }
 
-// NewTLSConfig constructs a *tls.Config from an unmarshaled TLS instance.
-// If the supplied TLS is nil, this method returns nil with no error.
+// New constructs a *tls.Config from this Config instance, usually unmarshaled
+// from some external source.  If this instance is nil, it returns nil with no error.
 //
 // The extra PeerVerifiers, if supplied, are used to build the tls.Config.VerifyPeerCertificate
 // strategy.
-func NewTLSConfig(c *Config, extra ...PeerVerifier) (*tls.Config, error) {
+func (c *Config) New(extra ...PeerVerifier) (*tls.Config, error) {
 	if c == nil {
 		return nil, nil
 	}
@@ -315,6 +317,8 @@ func NewTLSConfig(c *Config, extra ...PeerVerifier) (*tls.Config, error) {
 		}
 	}
 
+	// NOTE: This method is deprecated, but in order not to break
+	// older code we call it here, for now.
 	tc.BuildNameToCertificate()
 	return tc, nil
 }

@@ -169,14 +169,14 @@ func testListenerFactoryTLS(t *testing.T) {
 		}
 	)
 
-	tlsConfig, err := arrangetls.NewTLSConfig(&arrangetls.Config{
+	tlsConfig, err := (&arrangetls.Config{
 		Certificates: arrangetls.ExternalCertificates{
 			{
 				CertificateFile: CertificateFile,
 				KeyFile:         KeyFile,
 			},
 		},
-	})
+	}).New()
 
 	require.NoError(err)
 	require.NotNil(tlsConfig)

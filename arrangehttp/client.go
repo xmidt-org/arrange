@@ -164,7 +164,7 @@ type ClientIn struct {
 }
 
 // C is a Fluent Builder for creating an http.Client as an uber/fx component.
-// This type should be constructred with the Client function.
+// This type should be constructed with the Client function.
 type C struct {
 	errs         []error
 	options      []COption

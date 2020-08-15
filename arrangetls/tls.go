@@ -87,12 +87,12 @@ func (pvs PeerVerifiers) VerifyPeerCertificate(rawCerts [][]byte, verifiedChains
 	return nil
 }
 
-// SetTo conditinally configures the VerifyPeerCertificate on the supplied tls.Config.
-// If the supplied tls.Config is not nil and this sequence is not empty, tls.Config.VerifyPeerCertificate
-// is set to this sequence's method.  Otherwise, this method does nothing.
+// SetTo conditinally configures tls.Config.VerifyPeerCertificate.  If the supplied tls.Config
+// is not nil and this sequence is not empty, tls.Config.VerifyPeerCertificate is set to this
+// sequence's VerifyPeerCertificate method.  Otherwise, this method does nothing.
 //
 // Note that PeerVerifiers is immutable.  Any tls.Config.VerifyPeerCertificate that is set
-// is guaranteed not to change.
+// will be unaffected by any future use of this PeerVerifiers sequence.
 func (pvs PeerVerifiers) SetTo(tc *tls.Config) {
 	if tc != nil && len(pvs.v) > 0 {
 		tc.VerifyPeerCertificate = pvs.VerifyPeerCertificate

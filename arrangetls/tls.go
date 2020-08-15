@@ -217,8 +217,8 @@ func (ecp ExternalCertPool) AppendTo(pool *x509.CertPool) (int, error) {
 
 // Config represents the unmarshaled tls options for either a client or a server
 type Config struct {
-	// Certificates is the required set of certificates to present to a client.  There must
-	// be at least one entry in this slice.
+	// Certificates is the set of certificates to present to a client.  This field is
+	// required for servers, and optional for clients.
 	Certificates ExternalCertificates
 
 	// RootCAs is the optional certificate pool for root certificates.  By default, the golang
@@ -239,14 +239,14 @@ type Config struct {
 	// NextProtos is the list of supported application protocols.  Defaults to "http/1.1" if unset.
 	NextProtos []string
 
-	// MinVersion is the minimum required TLS version
+	// MinVersion is the minimum required TLS version.  If unset, the internal crypto/tls default is used.
 	MinVersion uint16
 
-	// MaxVersion is the maximum required TLS version
+	// MaxVersion is the maximum required TLS version.  If unset, the internal crypto/tls default is used.
 	MaxVersion uint16
 
 	// PeerVerify specifies the certificate validation done on client certificates.
-	// If supplied, this verifier strategy is merged with an extra PeerVerifiers
+	// If supplied, this verifier strategy is merged with any extra PeerVerifiers
 	// supplied in application code.
 	PeerVerify *PeerVerifyConfig
 }

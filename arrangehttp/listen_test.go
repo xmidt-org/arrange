@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"net"
 	"net/http"
-	"os"
 	"testing"
 	"time"
 
@@ -170,15 +169,11 @@ func testListenerFactoryTLS(t *testing.T) {
 		}
 	)
 
-	certificateFile, keyFile := createServerFiles(t)
-	defer os.Remove(certificateFile)
-	defer os.Remove(keyFile)
-
 	tlsConfig, err := arrangetls.NewTLSConfig(&arrangetls.Config{
 		Certificates: arrangetls.ExternalCertificates{
 			{
-				CertificateFile: certificateFile,
-				KeyFile:         keyFile,
+				CertificateFile: CertificateFile,
+				KeyFile:         KeyFile,
 			},
 		},
 	})

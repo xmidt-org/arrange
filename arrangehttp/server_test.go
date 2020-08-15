@@ -11,7 +11,6 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"strconv"
 	"strings"
 	"testing"
@@ -86,8 +85,6 @@ func testServerConfigTLS(t *testing.T) {
 		assert  = assert.New(t)
 		require = require.New(t)
 
-		certificateFile, keyFile = createServerFiles(t)
-
 		serverConfig = ServerConfig{
 			Address:           ":0",
 			ReadTimeout:       72 * time.Second,
@@ -99,8 +96,8 @@ func testServerConfigTLS(t *testing.T) {
 			TLS: &arrangetls.Config{
 				Certificates: arrangetls.ExternalCertificates{
 					{
-						CertificateFile: certificateFile,
-						KeyFile:         keyFile,
+						CertificateFile: CertificateFile,
+						KeyFile:         KeyFile,
 					},
 				},
 			},
@@ -109,9 +106,6 @@ func testServerConfigTLS(t *testing.T) {
 		router  = mux.NewRouter()
 		address = make(chan net.Addr, 1)
 	)
-
-	defer os.Remove(certificateFile)
-	defer os.Remove(keyFile)
 
 	server, listen, err := serverConfig.NewServer()
 	require.NoError(err)

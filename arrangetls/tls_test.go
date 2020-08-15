@@ -41,12 +41,12 @@ func testPeerVerifiersUnparseableCertificate(t *testing.T) {
 	var (
 		assert                 = assert.New(t)
 		unparseableCertificate = []byte("this is an unparseable certificate")
-		verifiers              = PeerVerifiers{
+		verifiers              = NewPeerVerifiers(
 			func(actual *x509.Certificate, _ [][]*x509.Certificate) error {
 				assert.Fail("no verifiers should have been called")
 				return errors.New("no verifiers should have been called")
 			},
-		}
+		)
 	)
 
 	assert.Error(
@@ -74,27 +74,64 @@ func testPeerVerifiersSuccess(t *testing.T) {
 			var (
 				assert       = assert.New(t)
 				executeCount int
-				verifiers    PeerVerifiers
+				pvs          PeerVerifiers
 			)
 
-			assert.Zero(verifiers.Len())
 			for i := 0; i < n; i++ {
-				verifiers.Append(func(actual *x509.Certificate, _ [][]*x509.Certificate) error {
+				pvs = pvs.Append(func(actual *x509.Certificate, _ [][]*x509.Certificate) error {
 					executeCount++
 					assert.Equal(template.SerialNumber, actual.SerialNumber)
 					return nil
 				})
-
-				assert.Equal(i+1, verifiers.Len())
 			}
 
 			assert.NoError(
-				verifiers.VerifyPeerCertificate([][]byte{peerCert}, nil),
+				pvs.VerifyPeerCertificate([][]byte{peerCert}, nil),
 			)
 
 			assert.Equal(n, executeCount)
 		})
 	}
+}
+
+func testPeerVerifiersExtend(t *testing.T) {
+	var (
+		assert   = assert.New(t)
+		require  = require.New(t)
+		random   = rand.New(rand.NewSource(1234))
+		template = &x509.Certificate{
+			SerialNumber: big.NewInt(94782236446),
+		}
+	)
+
+	key, err := rsa.GenerateKey(random, 512)
+	require.NoError(err)
+
+	peerCert, err := x509.CreateCertificate(random, template, template, &key.PublicKey, key)
+	require.NoError(err)
+
+	called0 := false
+	called1 := false
+	pvs := NewPeerVerifiers(
+		func(actual *x509.Certificate, _ [][]*x509.Certificate) error {
+			assert.Equal(template.SerialNumber, actual.SerialNumber)
+			called0 = true
+			return nil
+		},
+	).Extend(NewPeerVerifiers(
+		func(actual *x509.Certificate, _ [][]*x509.Certificate) error {
+			assert.Equal(template.SerialNumber, actual.SerialNumber)
+			called1 = true
+			return nil
+		},
+	))
+
+	assert.NoError(
+		pvs.VerifyPeerCertificate([][]byte{peerCert}, nil),
+	)
+
+	assert.True(called0)
+	assert.True(called1)
 }
 
 func testPeerVerifiersFailure(t *testing.T) {
@@ -118,31 +155,26 @@ func testPeerVerifiersFailure(t *testing.T) {
 				assert       = assert.New(t)
 				expectedErr  = PeerVerifyError{Reason: "expected"}
 				executeCount int
-				verifiers    PeerVerifiers
+				pvs          PeerVerifiers
 			)
 
-			assert.Zero(verifiers.Len())
 			for i := 0; i < n-1; i++ {
-				verifiers.Append(func(actual *x509.Certificate, _ [][]*x509.Certificate) error {
+				pvs = pvs.Append(func(actual *x509.Certificate, _ [][]*x509.Certificate) error {
 					executeCount++
 					assert.Equal(template.SerialNumber, actual.SerialNumber)
 					return nil
 				})
-
-				assert.Equal(i+1, verifiers.Len())
 			}
 
-			verifiers.Append(func(actual *x509.Certificate, _ [][]*x509.Certificate) error {
+			pvs = pvs.Append(func(actual *x509.Certificate, _ [][]*x509.Certificate) error {
 				executeCount++
 				assert.Equal(template.SerialNumber, actual.SerialNumber)
 				return expectedErr
 			})
 
-			assert.Equal(n, verifiers.Len())
-
 			assert.Equal(
 				expectedErr,
-				verifiers.VerifyPeerCertificate([][]byte{peerCert}, nil),
+				pvs.VerifyPeerCertificate([][]byte{peerCert}, nil),
 			)
 
 			assert.Equal(n, executeCount)
@@ -154,6 +186,7 @@ func TestPeerVerifiers(t *testing.T) {
 	t.Run("Empty", testPeerVerifiersEmpty)
 	t.Run("UnparseableCertificate", testPeerVerifiersUnparseableCertificate)
 	t.Run("Success", testPeerVerifiersSuccess)
+	t.Run("Extend", testPeerVerifiersExtend)
 	t.Run("Failure", testPeerVerifiersFailure)
 }
 

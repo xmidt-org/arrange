@@ -27,25 +27,47 @@ func (pve PeerVerifyError) Error() string {
 // PeerVerifier is a verification strategy for a peer certificate.
 type PeerVerifier func(*x509.Certificate, [][]*x509.Certificate) error
 
-// PeerVerifiers is a sequence of PeerVerifier objects.  This type handles
-// parsing a certificate once, then invoking each PeerVerifier.
-type PeerVerifiers []PeerVerifier
-
-// Len returns the count of verifiers in this slice
-func (pvs PeerVerifiers) Len() int {
-	return len(pvs)
+// PeerVerifiers is an immutable sequence of PeerVerifiers.  The zero value
+// is an empty sequence.
+type PeerVerifiers struct {
+	v []PeerVerifier
 }
 
-// Append adds more PeerVerifier strategies to this slice
-func (pvs *PeerVerifiers) Append(more ...PeerVerifier) {
-	*pvs = append(*pvs, more...)
+// NewPeerVerifiers returns a PeerVerifiers given a sequence of strategies
+func NewPeerVerifiers(more ...PeerVerifier) PeerVerifiers {
+	return PeerVerifiers{
+		v: append([]PeerVerifier{}, more...),
+	}
+}
+
+// Append adds more PeerVerifier strategies to this slice and
+// returns the result.  If no PeerVerifier strategies are supplied,
+// this method returns this PeerVerifiers as is.  Otherwise, the
+// returned instance is a distinct sequence which is the concatenation
+// of this instance with this method's arguments.
+func (pvs PeerVerifiers) Append(more ...PeerVerifier) PeerVerifiers {
+	if len(more) > 0 {
+		return PeerVerifiers{
+			v: append(
+				append([]PeerVerifier{}, pvs.v...),
+				more...,
+			),
+		}
+	}
+
+	return pvs
+}
+
+// Extend adds another sequence of PeerVerifiers to this one, and returns the result
+func (pvs PeerVerifiers) Extend(more PeerVerifiers) PeerVerifiers {
+	return pvs.Append(more.v...)
 }
 
 // VerifyPeerCertificate may be used as the closure for crypto/tls.Config.VerifyPeerCertificate.
 // Parsing is done once, then each PeerVerifier is invoked in sequence.  Any error short-circuits
 // subsequent checks.
 func (pvs PeerVerifiers) VerifyPeerCertificate(rawCerts [][]byte, verifiedChains [][]*x509.Certificate) error {
-	if len(pvs) == 0 {
+	if len(pvs.v) == 0 {
 		return nil
 	}
 
@@ -55,7 +77,7 @@ func (pvs PeerVerifiers) VerifyPeerCertificate(rawCerts [][]byte, verifiedChains
 			return err
 		}
 
-		for _, pv := range pvs {
+		for _, pv := range pvs.v {
 			if err := pv(peerCert, verifiedChains); err != nil {
 				return err
 			}
@@ -63,6 +85,18 @@ func (pvs PeerVerifiers) VerifyPeerCertificate(rawCerts [][]byte, verifiedChains
 	}
 
 	return nil
+}
+
+// SetTo conditinally configures the VerifyPeerCertificate on the supplied tls.Config.
+// If the supplied tls.Config is not nil and this sequence is not empty, tls.Config.VerifyPeerCertificate
+// is set to this sequence's method.  Otherwise, this method does nothing.
+//
+// Note that PeerVerifiers is immutable.  Any tls.Config.VerifyPeerCertificate that is set
+// is guaranteed not to change.
+func (pvs PeerVerifiers) SetTo(tc *tls.Config) {
+	if tc != nil && len(pvs.v) > 0 {
+		tc.VerifyPeerCertificate = pvs.VerifyPeerCertificate
+	}
 }
 
 // PeerVerifyConfig allows common checks against a client-side certificate to be configured externally.
@@ -133,6 +167,19 @@ func (pvc PeerVerifyConfig) verify(peerCert *x509.Certificate, _ [][]*x509.Certi
 		Certificate: peerCert,
 		Reason:      "No DNS name or common name matched",
 	}
+}
+
+// AppendTo adds a peer verifier to the supplied sequence if and only if
+// this config instance is not nil and if at least one of its fields
+// is configured.
+func (pvc *PeerVerifyConfig) AppendTo(pvs PeerVerifiers) PeerVerifiers {
+	if pvc != nil {
+		if v := pvc.Verifier(); v != nil {
+			pvs = pvs.Append(v)
+		}
+	}
+
+	return pvs
 }
 
 // ExternalCertificate represents a certificate with its key file on the filesystem.
@@ -279,18 +326,10 @@ func (c *Config) New(extra ...PeerVerifier) (*tls.Config, error) {
 		InsecureSkipVerify: c.InsecureSkipVerify,
 	}
 
-	var peerVerifiers PeerVerifiers
-	if c.PeerVerify != nil {
-		// A PeerVerifyConfig can return a nil function if nothing is configured
-		if v := c.PeerVerify.Verifier(); v != nil {
-			peerVerifiers.Append(v)
-		}
-	}
-
-	peerVerifiers.Append(extra...)
-	if peerVerifiers.Len() > 0 {
-		tc.VerifyPeerCertificate = peerVerifiers.VerifyPeerCertificate
-	}
+	var pvs PeerVerifiers
+	pvs = c.PeerVerify.AppendTo(pvs)
+	pvs = pvs.Append(extra...)
+	pvs.SetTo(tc)
 
 	if certs, err := c.Certificates.AppendTo(nil); err != nil {
 		return nil, err

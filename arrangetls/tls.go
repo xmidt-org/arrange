@@ -1,4 +1,4 @@
-package arrangehttp
+package arrangetls
 
 import (
 	"crypto/tls"
@@ -213,8 +213,8 @@ func (ecp ExternalCertPool) AppendTo(pool *x509.CertPool) (int, error) {
 	return loaded, nil
 }
 
-// TLS represents the unmarshaled tls options for either a client or a server
-type TLS struct {
+// Config represents the unmarshaled tls options for either a client or a server
+type Config struct {
 	// Certificates is the required set of certificates to present to a client.  There must
 	// be at least one entry in this slice.
 	Certificates ExternalCertificates
@@ -254,14 +254,14 @@ type TLS struct {
 //
 // The extra PeerVerifiers, if supplied, are used to build the tls.Config.VerifyPeerCertificate
 // strategy.
-func NewTLSConfig(t *TLS, extra ...PeerVerifier) (*tls.Config, error) {
-	if t == nil {
+func NewTLSConfig(c *Config, extra ...PeerVerifier) (*tls.Config, error) {
+	if c == nil {
 		return nil, nil
 	}
 
 	var nextProtos []string
-	if len(t.NextProtos) > 0 {
-		for _, np := range t.NextProtos {
+	if len(c.NextProtos) > 0 {
+		for _, np := range c.NextProtos {
 			nextProtos = append(nextProtos, np)
 		}
 	} else {
@@ -270,17 +270,17 @@ func NewTLSConfig(t *TLS, extra ...PeerVerifier) (*tls.Config, error) {
 	}
 
 	tc := &tls.Config{
-		MinVersion:         t.MinVersion,
-		MaxVersion:         t.MaxVersion,
+		MinVersion:         c.MinVersion,
+		MaxVersion:         c.MaxVersion,
 		NextProtos:         nextProtos,
-		ServerName:         t.ServerName,
-		InsecureSkipVerify: t.InsecureSkipVerify,
+		ServerName:         c.ServerName,
+		InsecureSkipVerify: c.InsecureSkipVerify,
 	}
 
 	var peerVerifiers PeerVerifiers
-	if t.PeerVerify != nil {
+	if c.PeerVerify != nil {
 		// A PeerVerifyConfig can return a nil function if nothing is configured
-		if v := t.PeerVerify.Verifier(); v != nil {
+		if v := c.PeerVerify.Verifier(); v != nil {
 			peerVerifiers.Append(v)
 		}
 	}
@@ -290,24 +290,24 @@ func NewTLSConfig(t *TLS, extra ...PeerVerifier) (*tls.Config, error) {
 		tc.VerifyPeerCertificate = peerVerifiers.VerifyPeerCertificate
 	}
 
-	if certs, err := t.Certificates.AppendTo(nil); err != nil {
+	if certs, err := c.Certificates.AppendTo(nil); err != nil {
 		return nil, err
 	} else {
 		tc.Certificates = certs
 	}
 
-	if t.RootCAs.Len() > 0 {
+	if c.RootCAs.Len() > 0 {
 		rootCAs := x509.NewCertPool()
-		if count, err := t.RootCAs.AppendTo(rootCAs); err != nil {
+		if count, err := c.RootCAs.AppendTo(rootCAs); err != nil {
 			return nil, err
 		} else if count > 0 {
 			tc.RootCAs = rootCAs
 		}
 	}
 
-	if t.ClientCAs.Len() > 0 {
+	if c.ClientCAs.Len() > 0 {
 		clientCAs := x509.NewCertPool()
-		if count, err := t.ClientCAs.AppendTo(clientCAs); err != nil {
+		if count, err := c.ClientCAs.AppendTo(clientCAs); err != nil {
 			return nil, err
 		} else if count > 0 {
 			tc.ClientCAs = clientCAs

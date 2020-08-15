@@ -6,7 +6,6 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/pem"
-	"errors"
 	"io/ioutil"
 	"os"
 )
@@ -14,78 +13,71 @@ import (
 // CreateTestCertificate creates a self-signed x509 ceritificate for use in testing
 // TLS code.  A 1024-bit RSA key pair is used, and otherwise all defaults are taken.
 func CreateTestCertificate(template *x509.Certificate) (*tls.Certificate, error) {
-	key, err := rsa.GenerateKey(rand.Reader, 1024)
-	if err != nil {
-		return nil, err
-	}
-
-	derBytes, err := x509.CreateCertificate(
-		rand.Reader,
-		template,
-		template,
-		&key.PublicKey,
-		key,
+	var (
+		key      *rsa.PrivateKey
+		derBytes []byte
+		err      error
 	)
 
-	if err != nil {
-		return nil, err
+	key, err = rsa.GenerateKey(rand.Reader, 1024)
+	if err == nil {
+		derBytes, err = x509.CreateCertificate(
+			rand.Reader,
+			template,
+			template,
+			&key.PublicKey,
+			key,
+		)
 	}
 
 	return &tls.Certificate{
 		Certificate: [][]byte{derBytes},
 		PrivateKey:  key,
-	}, nil
+	}, err
 }
 
 // CreateTestServerFiles creates the certificate file and key file expected by
 // net/http.Server, which is the basic model followed by mode golang TLS code.
+//
+// The supplied certificate must have at least (1) []byte in its Certificate chain.
+// If not, this function will panic.  If it has more than (1) entry in its chain,
+// only the first entry is written to the certificate file.
 func CreateTestServerFiles(certificate *tls.Certificate) (certificateFileName, keyFileName string, err error) {
-	if len(certificate.Certificate) != 1 {
-		err = errors.New("Only (1) DER-encoded certificate is supported")
-		return
-	}
+	var (
+		certificateFile *os.File
+		keyFile         *os.File
+		keyBytes        []byte
+	)
 
-	var certificateFile *os.File
 	certificateFile, err = ioutil.TempFile("", "test-cert-*.pem")
-	if err != nil {
-		return
+	if err == nil {
+		defer certificateFile.Close()
+		keyFile, err = ioutil.TempFile("", "test-key-*.pem")
 	}
 
-	var keyFile *os.File
-	keyFile, err = ioutil.TempFile("", "test-key-*.pem")
-	if err != nil {
-		certificateFile.Close()
-		return
+	if err == nil {
+		defer keyFile.Close()
+		err = pem.Encode(certificateFile, &pem.Block{
+			Type:  "CERTIFICATE",
+			Bytes: certificate.Certificate[0],
+		})
 	}
 
-	defer certificateFile.Close()
-	defer keyFile.Close()
-
-	err = pem.Encode(certificateFile, &pem.Block{
-		Type:  "CERTIFICATE",
-		Bytes: certificate.Certificate[0],
-	})
-
-	if err != nil {
-		return
+	if err == nil {
+		keyBytes, err = x509.MarshalPKCS8PrivateKey(certificate.PrivateKey)
 	}
 
-	var keyDERBytes []byte
-	keyDERBytes, err = x509.MarshalPKCS8PrivateKey(certificate.PrivateKey)
-	if err != nil {
-		return
+	if err == nil {
+		err = pem.Encode(keyFile, &pem.Block{
+			Type:  "PRIVATE KEY",
+			Bytes: keyBytes,
+		})
 	}
 
-	err = pem.Encode(keyFile, &pem.Block{
-		Type:  "PRIVATE KEY",
-		Bytes: keyDERBytes,
-	})
-
-	if err != nil {
-		return
+	if err == nil {
+		certificateFileName = certificateFile.Name()
+		keyFileName = keyFile.Name()
 	}
 
-	certificateFileName = certificateFile.Name()
-	keyFileName = keyFile.Name()
 	return
 }

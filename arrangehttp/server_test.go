@@ -22,6 +22,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/xmidt-org/arrange"
+	"github.com/xmidt-org/arrange/arrangetls"
 	"go.uber.org/fx"
 	"go.uber.org/fx/fxtest"
 )
@@ -95,8 +96,8 @@ func testServerConfigTLS(t *testing.T) {
 			IdleTimeout:       9234 * time.Minute,
 			MaxHeaderBytes:    3642,
 			KeepAlive:         3 * time.Minute,
-			TLS: &TLS{
-				Certificates: ExternalCertificates{
+			TLS: &arrangetls.Config{
+				Certificates: arrangetls.ExternalCertificates{
 					{
 						CertificateFile: certificateFile,
 						KeyFile:         keyFile,

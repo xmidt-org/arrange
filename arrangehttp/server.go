@@ -10,6 +10,7 @@ import (
 	"github.com/gorilla/mux"
 	"github.com/spf13/viper"
 	"github.com/xmidt-org/arrange"
+	"github.com/xmidt-org/arrange/arrangetls"
 	"go.uber.org/fx"
 	"go.uber.org/multierr"
 )
@@ -40,7 +41,7 @@ type ServerConfig struct {
 	IdleTimeout       time.Duration
 	MaxHeaderBytes    int
 	KeepAlive         time.Duration
-	TLS               *TLS
+	TLS               *arrangetls.Config
 }
 
 // NewServer is the built-in implementation of ServerFactory in this package.
@@ -56,7 +57,7 @@ func (sc ServerConfig) NewServer() (server *http.Server, l Listen, err error) {
 		MaxHeaderBytes:    sc.MaxHeaderBytes,
 	}
 
-	server.TLSConfig, err = NewTLSConfig(sc.TLS)
+	server.TLSConfig, err = arrangetls.NewTLSConfig(sc.TLS)
 	if err == nil {
 		l = ListenerFactory{
 			ListenConfig: net.ListenConfig{

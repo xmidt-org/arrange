@@ -12,6 +12,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/xmidt-org/arrange/arrangetls"
 	"go.uber.org/fx"
 )
 
@@ -173,8 +174,8 @@ func testListenerFactoryTLS(t *testing.T) {
 	defer os.Remove(certificateFile)
 	defer os.Remove(keyFile)
 
-	tlsConfig, err := NewTLSConfig(&TLS{
-		Certificates: ExternalCertificates{
+	tlsConfig, err := arrangetls.NewTLSConfig(&arrangetls.Config{
+		Certificates: arrangetls.ExternalCertificates{
 			{
 				CertificateFile: certificateFile,
 				KeyFile:         keyFile,

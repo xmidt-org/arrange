@@ -17,6 +17,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/xmidt-org/arrange"
+	"github.com/xmidt-org/arrange/arrangetls"
 	"go.uber.org/fx"
 	"go.uber.org/fx/fxtest"
 )
@@ -77,12 +78,12 @@ func testTransportConfigTLS(t *testing.T) {
 
 		tc TransportConfig
 
-		clientTLS = TLS{
+		config = arrangetls.Config{
 			InsecureSkipVerify: true,
 		}
 	)
 
-	transport, err := tc.NewTransport(&clientTLS)
+	transport, err := tc.NewTransport(&config)
 	require.NoError(err)
 	require.NotNil(transport)
 	assert.NotNil(transport.TLSClientConfig)
@@ -94,8 +95,8 @@ func testTransportConfigError(t *testing.T) {
 
 		tc TransportConfig
 
-		clientTLS = TLS{
-			Certificates: ExternalCertificates{
+		config = arrangetls.Config{
+			Certificates: arrangetls.ExternalCertificates{
 				{
 					CertificateFile: "missing",
 					KeyFile:         "missing",
@@ -104,7 +105,7 @@ func testTransportConfigError(t *testing.T) {
 		}
 	)
 
-	transport, err := tc.NewTransport(&clientTLS)
+	transport, err := tc.NewTransport(&config)
 	assert.Error(err)
 	assert.NotNil(transport)
 }
@@ -137,8 +138,8 @@ func testClientConfigError(t *testing.T) {
 		assert = assert.New(t)
 
 		cc = ClientConfig{
-			TLS: &TLS{
-				Certificates: ExternalCertificates{
+			TLS: &arrangetls.Config{
+				Certificates: arrangetls.ExternalCertificates{
 					{
 						CertificateFile: "missing",
 						KeyFile:         "missing",

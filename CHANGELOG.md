@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 - fx.In detection
 - support for injecting all options into servers and clients
 - support for immutable and precomputed HTTP headers
+- moved TLS code out of arrangehttp, as that package was getting too large
+- added test utilities for generate TLS certificates for unit tests
 
 ## [v0.1.5]
 - arrangehttp decorators (e.g. middleware) may now be injected

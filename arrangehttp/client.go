@@ -8,6 +8,7 @@ import (
 
 	"github.com/spf13/viper"
 	"github.com/xmidt-org/arrange"
+	"github.com/xmidt-org/arrange/arrangetls"
 	"go.uber.org/fx"
 	"go.uber.org/multierr"
 )
@@ -38,7 +39,7 @@ type TransportConfig struct {
 
 // NewTransport creates an http.Transport using this unmarshaled configuration
 // together with TLS information
-func (tc TransportConfig) NewTransport(t *TLS) (transport *http.Transport, err error) {
+func (tc TransportConfig) NewTransport(c *arrangetls.Config) (transport *http.Transport, err error) {
 	transport = &http.Transport{
 		TLSHandshakeTimeout:    tc.TLSHandshakeTimeout,
 		DisableKeepAlives:      tc.DisableKeepAlives,
@@ -56,7 +57,7 @@ func (tc TransportConfig) NewTransport(t *TLS) (transport *http.Transport, err e
 		ForceAttemptHTTP2:      tc.ForceAttemptHTTP2,
 	}
 
-	transport.TLSClientConfig, err = NewTLSConfig(t)
+	transport.TLSClientConfig, err = c.New()
 	return
 }
 
@@ -65,7 +66,7 @@ func (tc TransportConfig) NewTransport(t *TLS) (transport *http.Transport, err e
 type ClientConfig struct {
 	Timeout   time.Duration
 	Transport TransportConfig
-	TLS       *TLS
+	TLS       *arrangetls.Config
 }
 
 // NewClient produces an http.Client given these unmarshaled configuration options
@@ -163,7 +164,7 @@ type ClientIn struct {
 }
 
 // C is a Fluent Builder for creating an http.Client as an uber/fx component.
-// This type should be constructred with the Client function.
+// This type should be constructed with the Client function.
 type C struct {
 	errs         []error
 	options      []COption

@@ -1,4 +1,4 @@
-package arrangehttp
+package arrangetls
 
 import (
 	"crypto/tls"
@@ -19,6 +19,7 @@ type PeerVerifyError struct {
 	Reason      string
 }
 
+// Error satisfies the error interface.  It returns the Reason text.
 func (pve PeerVerifyError) Error() string {
 	return pve.Reason
 }
@@ -35,7 +36,7 @@ func (pvs PeerVerifiers) Len() int {
 	return len(pvs)
 }
 
-// Append tacks on more PeerVerifier strategies to this slice
+// Append adds more PeerVerifier strategies to this slice
 func (pvs *PeerVerifiers) Append(more ...PeerVerifier) {
 	*pvs = append(*pvs, more...)
 }
@@ -141,6 +142,7 @@ type ExternalCertificate struct {
 	KeyFile         string
 }
 
+// Load reads in the certificate and key files from the file system
 func (ec ExternalCertificate) Load() (tls.Certificate, error) {
 	if len(ec.CertificateFile) > 0 && len(ec.KeyFile) > 0 {
 		return tls.LoadX509KeyPair(ec.CertificateFile, ec.KeyFile)
@@ -213,10 +215,10 @@ func (ecp ExternalCertPool) AppendTo(pool *x509.CertPool) (int, error) {
 	return loaded, nil
 }
 
-// TLS represents the unmarshaled tls options for either a client or a server
-type TLS struct {
-	// Certificates is the required set of certificates to present to a client.  There must
-	// be at least one entry in this slice.
+// Config represents the unmarshaled tls options for either a client or a server
+type Config struct {
+	// Certificates is the set of certificates to present to a client.  This field is
+	// required for servers, and optional for clients.
 	Certificates ExternalCertificates
 
 	// RootCAs is the optional certificate pool for root certificates.  By default, the golang
@@ -237,31 +239,31 @@ type TLS struct {
 	// NextProtos is the list of supported application protocols.  Defaults to "http/1.1" if unset.
 	NextProtos []string
 
-	// MinVersion is the minimum required TLS version
+	// MinVersion is the minimum required TLS version.  If unset, the internal crypto/tls default is used.
 	MinVersion uint16
 
-	// MaxVersion is the maximum required TLS version
+	// MaxVersion is the maximum required TLS version.  If unset, the internal crypto/tls default is used.
 	MaxVersion uint16
 
 	// PeerVerify specifies the certificate validation done on client certificates.
-	// If supplied, this verifier strategy is merged with an extra PeerVerifiers
+	// If supplied, this verifier strategy is merged with any extra PeerVerifiers
 	// supplied in application code.
 	PeerVerify *PeerVerifyConfig
 }
 
-// NewTLSConfig constructs a *tls.Config from an unmarshaled TLS instance.
-// If the supplied TLS is nil, this method returns nil with no error.
+// New constructs a *tls.Config from this Config instance, usually unmarshaled
+// from some external source.  If this instance is nil, it returns nil with no error.
 //
 // The extra PeerVerifiers, if supplied, are used to build the tls.Config.VerifyPeerCertificate
 // strategy.
-func NewTLSConfig(t *TLS, extra ...PeerVerifier) (*tls.Config, error) {
-	if t == nil {
+func (c *Config) New(extra ...PeerVerifier) (*tls.Config, error) {
+	if c == nil {
 		return nil, nil
 	}
 
 	var nextProtos []string
-	if len(t.NextProtos) > 0 {
-		for _, np := range t.NextProtos {
+	if len(c.NextProtos) > 0 {
+		for _, np := range c.NextProtos {
 			nextProtos = append(nextProtos, np)
 		}
 	} else {
@@ -270,17 +272,17 @@ func NewTLSConfig(t *TLS, extra ...PeerVerifier) (*tls.Config, error) {
 	}
 
 	tc := &tls.Config{
-		MinVersion:         t.MinVersion,
-		MaxVersion:         t.MaxVersion,
+		MinVersion:         c.MinVersion,
+		MaxVersion:         c.MaxVersion,
 		NextProtos:         nextProtos,
-		ServerName:         t.ServerName,
-		InsecureSkipVerify: t.InsecureSkipVerify,
+		ServerName:         c.ServerName,
+		InsecureSkipVerify: c.InsecureSkipVerify,
 	}
 
 	var peerVerifiers PeerVerifiers
-	if t.PeerVerify != nil {
+	if c.PeerVerify != nil {
 		// A PeerVerifyConfig can return a nil function if nothing is configured
-		if v := t.PeerVerify.Verifier(); v != nil {
+		if v := c.PeerVerify.Verifier(); v != nil {
 			peerVerifiers.Append(v)
 		}
 	}
@@ -290,24 +292,24 @@ func NewTLSConfig(t *TLS, extra ...PeerVerifier) (*tls.Config, error) {
 		tc.VerifyPeerCertificate = peerVerifiers.VerifyPeerCertificate
 	}
 
-	if certs, err := t.Certificates.AppendTo(nil); err != nil {
+	if certs, err := c.Certificates.AppendTo(nil); err != nil {
 		return nil, err
 	} else {
 		tc.Certificates = certs
 	}
 
-	if t.RootCAs.Len() > 0 {
+	if c.RootCAs.Len() > 0 {
 		rootCAs := x509.NewCertPool()
-		if count, err := t.RootCAs.AppendTo(rootCAs); err != nil {
+		if count, err := c.RootCAs.AppendTo(rootCAs); err != nil {
 			return nil, err
 		} else if count > 0 {
 			tc.RootCAs = rootCAs
 		}
 	}
 
-	if t.ClientCAs.Len() > 0 {
+	if c.ClientCAs.Len() > 0 {
 		clientCAs := x509.NewCertPool()
-		if count, err := t.ClientCAs.AppendTo(clientCAs); err != nil {
+		if count, err := c.ClientCAs.AppendTo(clientCAs); err != nil {
 			return nil, err
 		} else if count > 0 {
 			tc.ClientCAs = clientCAs
@@ -315,6 +317,8 @@ func NewTLSConfig(t *TLS, extra ...PeerVerifier) (*tls.Config, error) {
 		}
 	}
 
+	// NOTE: This method is deprecated, but in order not to break
+	// older code we call it here, for now.
 	tc.BuildNameToCertificate()
 	return tc, nil
 }

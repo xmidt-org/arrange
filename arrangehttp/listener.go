@@ -9,23 +9,32 @@ import (
 	"go.uber.org/fx"
 )
 
-// Listen is a closure factory for net.Listener instances.  Since any applied
+// ListenerFactory is a strategy for creating net.Listener instances.  Since any applied
 // options may have changed the http.Server instance, this strategy is passed
-// that server instance.  This closure is intended to be invoked as part of
-// a lifecycle hook.
+// that server instance.
 //
-// The http.Server.Addr field is used as the address of the listener.  If the
-// given server has a tls.Config set, the returned listener will create TLS connections
-// with that configuration.  The server's tls.Config must be completely setup,
-// with certificates and all data structures initialized.  If the server does not
-// have a tls.Config set, then a standard TCP listener is used for accepts.
+// The http.Server.Addr field should used as the address of the listener.  If the
+// given server has a tls.Config set, the returned listener should create TLS connections
+// with that configuration.
 //
 // The returned net.Listener may be decorated arbitrarily.  Callers cannot
 // assume the actual type will be *net.TCPListener, although that will always
 // be the ultimate listener that accepts connections.
 //
-// The built-in implementation of this type is ListenerFactory.Listen.
-type Listen func(context.Context, *http.Server) (net.Listener, error)
+// The built-in implementation of this type is DefaultListenerFactory.
+type ListenerFactory interface {
+	// Listen creates the appropriate net.Listener, binding to a TCP address in
+	// the process
+	Listen(context.Context, *http.Server) (net.Listener, error)
+}
+
+// ListenerFactoryFunc is a closure type that implements ListenerFactory
+type ListenerFactoryFunc func(context.Context, *http.Server) (net.Listener, error)
+
+// Listen implements ListenerFactory
+func (lff ListenerFactoryFunc) Listen(ctx context.Context, s *http.Server) (net.Listener, error) {
+	return lff(ctx, s)
+}
 
 // ListenerConstructor is a decorator for net.Listener instances.  If supplied to
 // a server builder, a constructor is applied after the Listen closure creates the listener.
@@ -79,24 +88,6 @@ func (lc ListenerChain) Then(next net.Listener) net.Listener {
 	return next
 }
 
-// Listen produces a Listen strategy that uses this chain to decorate the
-// returned net.Listener.  Any error prevents decoration.  Any empty ListenerChain
-// will return the next Listen undecorated.
-func (lc ListenerChain) Listen(next Listen) Listen {
-	if len(lc.c) > 0 {
-		return func(ctx context.Context, server *http.Server) (net.Listener, error) {
-			listener, err := next(ctx, server)
-			if err == nil {
-				listener = lc.Then(listener)
-			}
-
-			return listener, err
-		}
-	}
-
-	return next
-}
-
 // CaptureListenAddress returns a ListenerConstructor that sends the actual network address of
 // the created listener to a channel.  This is useful to capture the actual address
 // of a server, usually for testing, when an address such as ":0" is used.
@@ -109,9 +100,9 @@ func CaptureListenAddress(ch chan<- net.Addr) ListenerConstructor {
 	}
 }
 
-// ListenerFactory is a configurable factory for net.Listener instances.  This
-// type serves as a convenient built-in Listen implementation.
-type ListenerFactory struct {
+// DefaultListenerFactory is the default implementation of ListenerFactory.  The
+// zero value of this type is a valid factory.
+type DefaultListenerFactory struct {
 	// ListenConfig is the object used to create the net.Listener
 	ListenConfig net.ListenConfig
 
@@ -120,15 +111,17 @@ type ListenerFactory struct {
 	Network string
 }
 
-// Listen creates a net.Listener using this factory's configuration.  It is
-// assignable to the Listen type.
-func (lf ListenerFactory) Listen(ctx context.Context, server *http.Server) (net.Listener, error) {
-	network := lf.Network
+// Listen provides the default ListenerFactory behavior for this package.
+// It essentially does the same thing as net/http, but allows the network
+// to be configured externally and ensures that the listen address matches
+// the server address.
+func (f DefaultListenerFactory) Listen(ctx context.Context, server *http.Server) (net.Listener, error) {
+	network := f.Network
 	if len(network) == 0 {
 		network = "tcp"
 	}
 
-	l, err := lf.ListenConfig.Listen(ctx, network, server.Addr)
+	l, err := f.ListenConfig.Listen(ctx, network, server.Addr)
 	if err != nil {
 		return nil, err
 	}
@@ -153,11 +146,19 @@ func ShutdownOnExit(shutdowner fx.Shutdowner, opts ...fx.ShutdownOption) ServerE
 	}
 }
 
-// Serve executes the given server's accept loop using the supplied net.Listener.
+// Servable describes the behavior of an object that implements an accept loop.
+// *http.Server implements this interface.
+type Servable interface {
+	// Serve executes an accept loop using the given listener.  This method
+	// does not return until the listener is closed.
+	Serve(net.Listener) error
+}
+
+// Serve executes the given servable's accept loop using the supplied net.Listener.
 // This function can be run as a goroutine.
 //
 // Any onExit functions will be called when the server's accept loop exits.
-func Serve(s *http.Server, l net.Listener, onExit ...ServerExit) error {
+func Serve(s Servable, l net.Listener, onExit ...ServerExit) error {
 	defer func() {
 		for _, f := range onExit {
 			f()
@@ -169,9 +170,9 @@ func Serve(s *http.Server, l net.Listener, onExit ...ServerExit) error {
 
 // ServerOnStart returns an fx.Hook.OnStart closure that starts the given server's
 // accept loop.
-func ServerOnStart(s *http.Server, l Listen, onExit ...ServerExit) func(context.Context) error {
+func ServerOnStart(s *http.Server, f ListenerFactory, onExit ...ServerExit) func(context.Context) error {
 	return func(ctx context.Context) error {
-		listener, err := l(ctx, s)
+		listener, err := f.Listen(ctx, s)
 		if err != nil {
 			return err
 		}

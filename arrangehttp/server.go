@@ -1,6 +1,7 @@
 package arrangehttp
 
 import (
+	"context"
 	"fmt"
 	"net"
 	"net/http"
@@ -18,15 +19,13 @@ import (
 // ServerFactory is the creation strategy for both an http.Server and the
 // particular listener used for the accept loop.  This interface is implemented
 // by any unmarshaled struct which hold server configuration fields.
+//
+// An implementation may optionally implement ListenerFactory to allow control
+// over how the net.Listener for a server is created.
 type ServerFactory interface {
 	// NewServer is responsible for creating an http.Server using whatever
 	// information was unmarshaled into this instance.
-	//
-	// The Listen strategy is used to create the net.Listener for the server's
-	// accept loop.  Since various parts of this listener can be driven by configuration,
-	// for example the connection keep alive, this method must supply a non-nil Listen.
-	// See ListenerFactory for a convenient way to provide a Listen closure.
-	NewServer() (*http.Server, Listen, error)
+	NewServer() (*http.Server, error)
 }
 
 // ServerConfig is the built-in ServerFactory implementation for this package.
@@ -47,7 +46,7 @@ type ServerConfig struct {
 // NewServer is the built-in implementation of ServerFactory in this package.
 // This should serve most needs.  Nothing needs to be done to use this implementation.
 // By default, a Fluent Builder chain begun with Server() will use ServerConfig.
-func (sc ServerConfig) NewServer() (server *http.Server, l Listen, err error) {
+func (sc ServerConfig) NewServer() (server *http.Server, err error) {
 	server = &http.Server{
 		Addr:              sc.Address,
 		ReadTimeout:       sc.ReadTimeout,
@@ -58,16 +57,17 @@ func (sc ServerConfig) NewServer() (server *http.Server, l Listen, err error) {
 	}
 
 	server.TLSConfig, err = sc.TLS.New()
-	if err == nil {
-		l = ListenerFactory{
-			ListenConfig: net.ListenConfig{
-				KeepAlive: sc.KeepAlive,
-			},
-			Network: sc.Network,
-		}.Listen
-	}
-
 	return
+}
+
+// Listen is the ListenerFactory implementation driven by ServerConfig
+func (sc ServerConfig) Listen(ctx context.Context, s *http.Server) (net.Listener, error) {
+	return DefaultListenerFactory{
+		ListenConfig: net.ListenConfig{
+			KeepAlive: sc.KeepAlive,
+		},
+		Network: sc.Network,
+	}.Listen(ctx, s)
 }
 
 // SOption is a functional option used to tailor an http.Server and its dependent

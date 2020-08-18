@@ -88,6 +88,21 @@ func (lc ListenerChain) Then(next net.Listener) net.Listener {
 	return next
 }
 
+func (lc ListenerChain) Factory(next ListenerFactory) ListenerFactory {
+	if len(lc.c) > 0 {
+		return ListenerFactoryFunc(func(ctx context.Context, s *http.Server) (net.Listener, error) {
+			listener, err := next.Listen(ctx, s)
+			if err == nil {
+				listener = lc.Then(listener)
+			}
+
+			return listener, err
+		})
+	}
+
+	return next
+}
+
 // CaptureListenAddress returns a ListenerConstructor that sends the actual network address of
 // the created listener to a channel.  This is useful to capture the actual address
 // of a server, usually for testing, when an address such as ":0" is used.

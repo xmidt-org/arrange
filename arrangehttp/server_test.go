@@ -45,9 +45,8 @@ func testServerConfigBasic(t *testing.T) {
 		address = make(chan net.Addr, 1)
 	)
 
-	server, listen, err := serverConfig.NewServer()
+	server, err := serverConfig.NewServer()
 	require.NoError(err)
-	require.NotNil(listen)
 	require.NotNil(server)
 
 	assert.Equal(15*time.Second, server.ReadTimeout)
@@ -57,10 +56,11 @@ func testServerConfigBasic(t *testing.T) {
 	assert.Equal(478934, server.MaxHeaderBytes)
 
 	// check that this is a functioning server
-	listen = NewListenerChain(CaptureListenAddress(address)).Listen(listen)
+	lf := NewListenerChain(CaptureListenAddress(address)).
+		Factory(DefaultListenerFactory{})
 	server.Handler = router
 	require.NoError(
-		ServerOnStart(server, listen)(context.Background()),
+		ServerOnStart(server, lf)(context.Background()),
 	)
 
 	defer server.Close()
@@ -107,9 +107,8 @@ func testServerConfigTLS(t *testing.T) {
 		address = make(chan net.Addr, 1)
 	)
 
-	server, listen, err := serverConfig.NewServer()
+	server, err := serverConfig.NewServer()
 	require.NoError(err)
-	require.NotNil(listen)
 	require.NotNil(server)
 
 	assert.Equal(72*time.Second, server.ReadTimeout)
@@ -119,10 +118,11 @@ func testServerConfigTLS(t *testing.T) {
 	assert.Equal(3642, server.MaxHeaderBytes)
 
 	// check that this is a functioning server
-	listen = NewListenerChain(CaptureListenAddress(address)).Listen(listen)
+	lf := NewListenerChain(CaptureListenAddress(address)).
+		Factory(DefaultListenerFactory{})
 	server.Handler = router
 	require.NoError(
-		ServerOnStart(server, listen)(context.Background()),
+		ServerOnStart(server, lf)(context.Background()),
 	)
 
 	defer server.Close()
@@ -727,8 +727,8 @@ type badServerFactory struct {
 	Address string
 }
 
-func (bsf badServerFactory) NewServer() (*http.Server, Listen, error) {
-	return nil, nil, errors.New("factory error")
+func (bsf badServerFactory) NewServer() (*http.Server, error) {
+	return nil, errors.New("factory error")
 }
 
 func testServerServerFactoryError(t *testing.T) {

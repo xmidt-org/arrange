@@ -30,7 +30,7 @@ func testListenerChainNew(t *testing.T) {
 				assert  = assert.New(t)
 				require = require.New(t)
 
-				factory      ListenerFactory
+				factory      DefaultListenerFactory
 				constructors []ListenerConstructor
 			)
 
@@ -58,7 +58,7 @@ func testListenerChainAppend(t *testing.T) {
 				assert  = assert.New(t)
 				require = require.New(t)
 
-				factory      ListenerFactory
+				factory      DefaultListenerFactory
 				constructors []ListenerConstructor
 			)
 
@@ -86,7 +86,7 @@ func testListenerChainExtend(t *testing.T) {
 				assert  = assert.New(t)
 				require = require.New(t)
 
-				factory      ListenerFactory
+				factory      DefaultListenerFactory
 				constructors []ListenerConstructor
 			)
 
@@ -107,14 +107,14 @@ func testListenerChainExtend(t *testing.T) {
 	}
 }
 
-func testListenerChainListen(t *testing.T) {
+func testListenerChainFactory(t *testing.T) {
 	for _, length := range []int{0, 1, 2, 5} {
 		t.Run(fmt.Sprintf("len=%d", length), func(t *testing.T) {
 			var (
 				assert  = assert.New(t)
 				require = require.New(t)
 
-				factory      ListenerFactory
+				factory      DefaultListenerFactory
 				constructors []ListenerConstructor
 			)
 
@@ -124,8 +124,10 @@ func testListenerChainListen(t *testing.T) {
 				})
 			}
 
-			listen := NewListenerChain(constructors...).Listen(factory.Listen)
-			listener, err := listen(context.Background(), &http.Server{Addr: ":0"})
+			decorated := NewListenerChain(constructors...).Factory(factory)
+			require.NotNil(decorated)
+
+			listener, err := decorated.Listen(context.Background(), &http.Server{Addr: ":0"})
 			require.NoError(err)
 			defer listener.Close()
 			assert.NotNil(listener.Addr())
@@ -137,15 +139,15 @@ func TestListenerChain(t *testing.T) {
 	t.Run("New", testListenerChainNew)
 	t.Run("Append", testListenerChainAppend)
 	t.Run("Extend", testListenerChainExtend)
-	t.Run("Listen", testListenerChainListen)
+	t.Run("Factory", testListenerChainFactory)
 }
 
-func testListenerFactoryBasic(t *testing.T) {
+func testDefaultListenerFactoryBasic(t *testing.T) {
 	var (
 		assert  = assert.New(t)
 		require = require.New(t)
 
-		factory ListenerFactory
+		factory DefaultListenerFactory
 		server  = &http.Server{
 			Addr: ":0",
 		}
@@ -158,12 +160,12 @@ func testListenerFactoryBasic(t *testing.T) {
 	listener.Close()
 }
 
-func testListenerFactoryTLS(t *testing.T) {
+func testDefaultListenerFactoryTLS(t *testing.T) {
 	var (
 		assert  = assert.New(t)
 		require = require.New(t)
 
-		factory ListenerFactory
+		factory DefaultListenerFactory
 		server  = &http.Server{
 			Addr: ":0",
 		}
@@ -189,11 +191,11 @@ func testListenerFactoryTLS(t *testing.T) {
 	listener.Close()
 }
 
-func testListenerFactoryListenError(t *testing.T) {
+func testDefaultListenerFactoryListenError(t *testing.T) {
 	var (
 		assert = assert.New(t)
 
-		factory = ListenerFactory{
+		factory = DefaultListenerFactory{
 			Network: "this is a bad network",
 		}
 
@@ -210,10 +212,10 @@ func testListenerFactoryListenError(t *testing.T) {
 	}
 }
 
-func TestListenerFactory(t *testing.T) {
-	t.Run("Basic", testListenerFactoryBasic)
-	t.Run("TLS", testListenerFactoryTLS)
-	t.Run("ListenError", testListenerFactoryListenError)
+func TestDefaultListenerFactory(t *testing.T) {
+	t.Run("Basic", testDefaultListenerFactoryBasic)
+	t.Run("TLS", testDefaultListenerFactoryTLS)
+	t.Run("ListenError", testDefaultListenerFactoryListenError)
 }
 
 func TestCaptureListenAddress(t *testing.T) {
@@ -229,7 +231,8 @@ func TestCaptureListenAddress(t *testing.T) {
 		}
 	)
 
-	listener, err := chain.Listen(ListenerFactory{}.Listen)(context.Background(), server)
+	listener, err := chain.Factory(DefaultListenerFactory{}).
+		Listen(context.Background(), server)
 	require.NoError(err)
 
 	defer listener.Close()
@@ -275,7 +278,7 @@ func testServeNoServerExits(t *testing.T) {
 		result = make(chan error, 1)
 	)
 
-	listener, err := ListenerFactory{}.Listen(context.Background(), server)
+	listener, err := DefaultListenerFactory{}.Listen(context.Background(), server)
 	require.NoError(err)
 	defer listener.Close() // guard against a panic
 
@@ -310,7 +313,7 @@ func testServeWithServerExit(t *testing.T) {
 		}
 	)
 
-	listener, err := ListenerFactory{}.Listen(context.Background(), server)
+	listener, err := DefaultListenerFactory{}.Listen(context.Background(), server)
 	require.NoError(err)
 	defer listener.Close() // guard against a panic, as in a failed test
 
@@ -350,7 +353,7 @@ func testServerOnStartNoServerExits(t *testing.T) {
 		}
 
 		result        = make(chan error, 1)
-		serverOnStart = ServerOnStart(server, ListenerFactory{}.Listen)
+		serverOnStart = ServerOnStart(server, DefaultListenerFactory{})
 	)
 
 	require.NotNil(serverOnStart)
@@ -383,7 +386,7 @@ func testServerOnStartWithServerExit(t *testing.T) {
 		}
 
 		result        = make(chan error, 1)
-		serverOnStart = ServerOnStart(server, ListenerFactory{}.Listen, serverExit)
+		serverOnStart = ServerOnStart(server, DefaultListenerFactory{}, serverExit)
 	)
 
 	require.NotNil(serverOnStart)
@@ -423,9 +426,9 @@ func testServerOnStartListenError(t *testing.T) {
 		result        = make(chan error, 1)
 		serverOnStart = ServerOnStart(
 			server,
-			func(context.Context, *http.Server) (net.Listener, error) {
+			ListenerFactoryFunc(func(context.Context, *http.Server) (net.Listener, error) {
 				return nil, expectedErr
-			},
+			}),
 		)
 	)
 

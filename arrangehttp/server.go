@@ -228,7 +228,12 @@ func Server(o ...interface{}) *S {
 
 // ServerFactory sets a custom prototype object that will be unmarshaled
 // and used to construct the http.Server and associated Listen strategy.
-// By default, ServerConfig{} is used as the factory.
+// By default, ServerConfig{} is used as the factory.  This prototype is
+// cloned and unmarshaled using arrange.NewTarget.
+//
+// The prototype may optionally implement ListenerFactory, which will allow
+// custom listen behavior.  If the prototype doesn't implement ListenerFactory,
+// then DefaultListenerFactory is used to create the server's net.Listener.
 func (s *S) ServerFactory(prototype ServerFactory) *S {
 	s.prototype = prototype
 	return s
@@ -269,7 +274,7 @@ func (s *S) Use(v ...interface{}) *S {
 // applying any options.  If everything is successful, the http.Server is bound to the
 // fx.Lifecycle.
 func (s *S) newRouter(f ServerFactory, in ServerIn, dependencies []reflect.Value) (*mux.Router, error) {
-	server, listen, err := f.NewServer()
+	server, err := f.NewServer()
 	if err != nil {
 		return nil, err
 	}
@@ -307,11 +312,16 @@ func (s *S) newRouter(f ServerFactory, in ServerIn, dependencies []reflect.Value
 		}
 	}
 
+	lf, ok := f.(ListenerFactory)
+	if !ok {
+		lf = DefaultListenerFactory{}
+	}
+
 	// if everything's good, bind the server to the fx.App lifecycle
 	in.Lifecycle.Append(fx.Hook{
 		OnStart: ServerOnStart(
 			server,
-			chain.Listen(listen),
+			chain.Factory(lf),
 			ShutdownOnExit(in.Shutdowner),
 		),
 		OnStop: server.Shutdown,

@@ -45,9 +45,8 @@ func testServerConfigBasic(t *testing.T) {
 		address = make(chan net.Addr, 1)
 	)
 
-	server, listen, err := serverConfig.NewServer()
+	server, err := serverConfig.NewServer()
 	require.NoError(err)
-	require.NotNil(listen)
 	require.NotNil(server)
 
 	assert.Equal(15*time.Second, server.ReadTimeout)
@@ -57,10 +56,11 @@ func testServerConfigBasic(t *testing.T) {
 	assert.Equal(478934, server.MaxHeaderBytes)
 
 	// check that this is a functioning server
-	listen = NewListenerChain(CaptureListenAddress(address)).Listen(listen)
+	lf := NewListenerChain(CaptureListenAddress(address)).
+		Factory(DefaultListenerFactory{})
 	server.Handler = router
 	require.NoError(
-		ServerOnStart(server, listen)(context.Background()),
+		ServerOnStart(server, lf)(context.Background()),
 	)
 
 	defer server.Close()
@@ -107,9 +107,8 @@ func testServerConfigTLS(t *testing.T) {
 		address = make(chan net.Addr, 1)
 	)
 
-	server, listen, err := serverConfig.NewServer()
+	server, err := serverConfig.NewServer()
 	require.NoError(err)
-	require.NotNil(listen)
 	require.NotNil(server)
 
 	assert.Equal(72*time.Second, server.ReadTimeout)
@@ -119,10 +118,11 @@ func testServerConfigTLS(t *testing.T) {
 	assert.Equal(3642, server.MaxHeaderBytes)
 
 	// check that this is a functioning server
-	listen = NewListenerChain(CaptureListenAddress(address)).Listen(listen)
+	lf := NewListenerChain(CaptureListenAddress(address)).
+		Factory(DefaultListenerFactory{})
 	server.Handler = router
 	require.NoError(
-		ServerOnStart(server, listen)(context.Background()),
+		ServerOnStart(server, lf)(context.Background()),
 	)
 
 	defer server.Close()
@@ -723,12 +723,79 @@ func testServerUnmarshal(t *testing.T) {
 	response.Body.Close()
 }
 
+// CustomConfig is a ServerFactory with no ListenerFactory implementation
+type CustomConfig struct {
+}
+
+func (cc CustomConfig) NewServer() (*http.Server, error) {
+	return &http.Server{Addr: ":0"}, nil
+}
+
+func testServerUnmarshalDefaultListenerFactory(t *testing.T) {
+	var (
+		assert  = assert.New(t)
+		require = require.New(t)
+
+		address = make(chan net.Addr, 1)
+		v       = viper.New()
+	)
+
+	type Dependencies struct {
+		fx.In
+
+		L ListenerChain
+	}
+
+	v.Set("address", ":0")
+	app := fxtest.New(
+		t,
+		fx.Logger(
+			log.New(ioutil.Discard, "", 0),
+		),
+		arrange.Supply(v),
+		fx.Provide(
+			func() ListenerChain {
+				return NewListenerChain(
+					CaptureListenAddress(address),
+				)
+			},
+			Server().
+				ServerFactory(CustomConfig{}).
+				Use(Dependencies{}).
+				Unmarshal(),
+		),
+		fx.Invoke(
+			func(r *mux.Router) {
+				r.HandleFunc("/test", func(response http.ResponseWriter, _ *http.Request) {
+					response.WriteHeader(277)
+				})
+			},
+		),
+	)
+
+	app.RequireStart()
+	defer app.Stop(context.Background())
+
+	var serverAddress net.Addr
+	select {
+	case serverAddress = <-address:
+	case <-time.After(2 * time.Second):
+		assert.Fail("No server address returned")
+	}
+
+	response, err := http.Get("http://" + serverAddress.String() + "/test")
+	require.NoError(err)
+	assert.Equal(277, response.StatusCode)
+	io.Copy(ioutil.Discard, response.Body)
+	response.Body.Close()
+}
+
 type badServerFactory struct {
 	Address string
 }
 
-func (bsf badServerFactory) NewServer() (*http.Server, Listen, error) {
-	return nil, nil, errors.New("factory error")
+func (bsf badServerFactory) NewServer() (*http.Server, error) {
+	return nil, errors.New("factory error")
 }
 
 func testServerServerFactoryError(t *testing.T) {
@@ -1150,6 +1217,7 @@ servers:
 func TestServer(t *testing.T) {
 	t.Run("ListenerConstructors", testServerListenerConstructors)
 	t.Run("Unmarshal", testServerUnmarshal)
+	t.Run("UnmarshalDefaultListenerFactory", testServerUnmarshalDefaultListenerFactory)
 	t.Run("UnmarshalError", testServerUnmarshalError)
 	t.Run("UnmarshalUseError", testServerUnmarshalUseError)
 	t.Run("FactoryError", testServerServerFactoryError)

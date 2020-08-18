@@ -137,7 +137,11 @@ servers:
 		fx.In
 
 		L ListenerConstructor
-		M []mux.MiddlewareFunc `group:"middleware"`
+
+		// NOTE: the order in which middleware is applied is the
+		// same as the declarted order in this struct
+		M1 mux.MiddlewareFunc `name:"first"`
+		M2 mux.MiddlewareFunc `name:"second"`
 	}
 
 	type RouterIn struct {
@@ -165,7 +169,7 @@ servers:
 				return CaptureListenAddress(address)
 			},
 			fx.Annotated{
-				Group: "middleware",
+				Name: "first",
 				Target: func() mux.MiddlewareFunc {
 					return func(next http.Handler) http.Handler {
 						return http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
@@ -176,7 +180,7 @@ servers:
 				},
 			},
 			fx.Annotated{
-				Group: "middleware",
+				Name: "second",
 				Target: func() mux.MiddlewareFunc {
 					return func(next http.Handler) http.Handler {
 						return http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {

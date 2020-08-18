@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 - support for immutable and precomputed HTTP headers
 - moved TLS code out of arrangehttp, as that package was getting too large
 - added test utilities for generate TLS certificates for unit tests
+- separated listener creation into its own interface to make customization easier
 
 ## [v0.1.5]
 - arrangehttp decorators (e.g. middleware) may now be injected

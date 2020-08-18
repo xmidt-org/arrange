@@ -5,6 +5,8 @@ The format is based on [Keep a Changelog](http://keepachangelog.com/en/1.0.0/)
 and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+
+## [v0.1.6]
 - struct field traversal
 - fx.In detection
 - support for injecting all options into servers and clients
@@ -35,7 +37,8 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 ## v0.1.0
 - Initial creation
 
-[Unreleased]: https://github.com/xmidt-org/arrange/compare/v0.1.5..HEAD
+[Unreleased]: https://github.com/xmidt-org/arrange/compare/v0.1.6..HEAD
+[v0.1.6]: https://github.com/xmidt-org/arrange/compare/v0.1.5...v0.1.6
 [v0.1.5]: https://github.com/xmidt-org/arrange/compare/v0.1.4...v0.1.5
 [v0.1.4]: https://github.com/xmidt-org/arrange/compare/v0.1.3...v0.1.4
 [v0.1.3]: https://github.com/xmidt-org/arrange/compare/v0.1.2...v0.1.3

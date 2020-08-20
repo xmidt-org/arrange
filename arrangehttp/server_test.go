@@ -226,70 +226,122 @@ func testNewSOptionUnsupported(t *testing.T) {
 	assert.Nil(so)
 }
 
-func testNewSOptionSimple(t *testing.T) {
+func testNewSOptionBasic(t *testing.T) {
 	var (
-		assert          = assert.New(t)
-		require         = require.New(t)
-		called          = false
-		option  SOption = func(_ *http.Server, _ *mux.Router, c ListenerChain) (ListenerChain, error) {
-			called = true
-			return c, nil
-		}
-		so, err = NewSOption(option)
-	)
-
-	require.NoError(err)
-	require.NotNil(so)
-	_, err = so(nil, nil, NewListenerChain())
-	assert.NoError(err)
-	assert.True(called)
-}
-
-func testNewSOptionClosure(t *testing.T) {
-	var (
-		assert  = assert.New(t)
-		require = require.New(t)
-		called  = false
-		option  = func(_ *http.Server, _ *mux.Router, c ListenerChain) (ListenerChain, error) {
-			called = true
-			return c, nil
-		}
-		so, err = NewSOption(option)
-	)
-
-	require.NoError(err)
-	require.NotNil(so)
-	_, err = so(nil, nil, NewListenerChain())
-	assert.NoError(err)
-	assert.True(called)
-}
-
-func testNewSOptionComposite(t *testing.T) {
-	var (
-		assert  = assert.New(t)
-		require = require.New(t)
-		called0 = false
-		called1 = false
-		options = []SOption{
-			func(_ *http.Server, _ *mux.Router, c ListenerChain) (ListenerChain, error) {
-				called0 = true
-				return c, nil
+		actualServer = new(*http.Server)
+		actualRouter = new(*mux.Router)
+		actualChain  = new(ListenerChain)
+		optionErr    = errors.New("expected option error")
+		testData     = []struct {
+			option      interface{}
+			expectedErr error
+		}{
+			{
+				option: func(s *http.Server, r *mux.Router, c ListenerChain) (ListenerChain, error) {
+					*actualServer = s
+					*actualRouter = r
+					*actualChain = c
+					return c, nil
+				},
 			},
-			func(_ *http.Server, _ *mux.Router, c ListenerChain) (ListenerChain, error) {
-				called1 = true
-				return c, nil
+			{
+				option: func(s *http.Server, r *mux.Router, c ListenerChain) (ListenerChain, error) {
+					*actualServer = s
+					*actualRouter = r
+					*actualChain = c
+					return c, optionErr
+				},
+				expectedErr: optionErr,
+			},
+			{
+				option: []func(*http.Server, *mux.Router, ListenerChain) (ListenerChain, error){
+					func(s *http.Server, r *mux.Router, c ListenerChain) (ListenerChain, error) {
+						*actualServer = s
+						*actualRouter = r
+						*actualChain = c
+						return c, nil
+					},
+				},
+			},
+			{
+				option: [1]func(*http.Server, *mux.Router, ListenerChain) (ListenerChain, error){
+					func(s *http.Server, r *mux.Router, c ListenerChain) (ListenerChain, error) {
+						*actualServer = s
+						*actualRouter = r
+						*actualChain = c
+						return c, nil
+					},
+				},
+			},
+			{
+				option: SOption(func(s *http.Server, r *mux.Router, c ListenerChain) (ListenerChain, error) {
+					*actualServer = s
+					*actualRouter = r
+					*actualChain = c
+					return c, nil
+				}),
+			},
+			{
+				option: SOption(func(s *http.Server, r *mux.Router, c ListenerChain) (ListenerChain, error) {
+					*actualServer = s
+					*actualRouter = r
+					*actualChain = c
+					return c, optionErr
+				}),
+				expectedErr: optionErr,
+			},
+			{
+				option: []SOption{
+					func(s *http.Server, r *mux.Router, c ListenerChain) (ListenerChain, error) {
+						*actualServer = s
+						*actualRouter = r
+						*actualChain = c
+						return c, nil
+					},
+				},
+			},
+			{
+				option: [1]SOption{
+					func(s *http.Server, r *mux.Router, c ListenerChain) (ListenerChain, error) {
+						*actualServer = s
+						*actualRouter = r
+						*actualChain = c
+						return c, nil
+					},
+				},
 			},
 		}
-
-		so, err = NewSOption(options)
 	)
 
-	require.NoError(err)
-	require.NotNil(so)
-	_, err = so(nil, nil, NewListenerChain())
-	assert.NoError(err)
-	assert.True(called0)
-	assert.True(called1)
+	for i, record := range testData {
+		*actualServer = nil
+		*actualRouter = nil
+		*actualChain = ListenerChain{}
+		t.Run(strconv.Itoa(i), func(t *testing.T) {
+			var (
+				assert  = assert.New(t)
+				require = require.New(t)
+				server  = new(http.Server)
+				router  = new(mux.Router)
+				chain   = NewListenerChain(
+					func(next net.Listener) net.Listener {
+						return next
+					},
+				)
+
+				so, err = NewSOption(record.option)
+			)
+
+			require.NoError(err)
+			require.NotNil(so)
+
+			c, err := so(server, router, chain)
+			assert.Equal(record.expectedErr, err)
+			assert.Equal(server, *actualServer)
+			assert.Equal(router, *actualRouter)
+			assert.Equal(c, *actualChain)
+		})
+	}
 }
 
 func testNewSOptionServer(t *testing.T) {
@@ -307,6 +359,22 @@ func testNewSOptionServer(t *testing.T) {
 				}),
 			},
 			{
+				option: []ServerOption{
+					func(s *http.Server) error {
+						*actualServer = s
+						return nil
+					},
+				},
+			},
+			{
+				option: [1]ServerOption{
+					func(s *http.Server) error {
+						*actualServer = s
+						return nil
+					},
+				},
+			},
+			{
 				option: ServerOption(func(s *http.Server) error {
 					*actualServer = s
 					return optionErr
@@ -320,6 +388,22 @@ func testNewSOptionServer(t *testing.T) {
 				},
 			},
 			{
+				option: []func(s *http.Server) error{
+					func(s *http.Server) error {
+						*actualServer = s
+						return nil
+					},
+				},
+			},
+			{
+				option: [1]func(s *http.Server) error{
+					func(s *http.Server) error {
+						*actualServer = s
+						return nil
+					},
+				},
+			},
+			{
 				option: func(s *http.Server) error {
 					*actualServer = s
 					return optionErr
@@ -329,6 +413,20 @@ func testNewSOptionServer(t *testing.T) {
 			{
 				option: func(s *http.Server) {
 					*actualServer = s
+				},
+			},
+			{
+				option: []func(s *http.Server){
+					func(s *http.Server) {
+						*actualServer = s
+					},
+				},
+			},
+			{
+				option: [1]func(s *http.Server){
+					func(s *http.Server) {
+						*actualServer = s
+					},
 				},
 			},
 		}
@@ -370,6 +468,22 @@ func testNewSOptionRouter(t *testing.T) {
 				}),
 			},
 			{
+				option: []RouterOption{
+					func(r *mux.Router) error {
+						*actualRouter = r
+						return nil
+					},
+				},
+			},
+			{
+				option: [1]RouterOption{
+					func(r *mux.Router) error {
+						*actualRouter = r
+						return nil
+					},
+				},
+			},
+			{
 				option: RouterOption(func(r *mux.Router) error {
 					*actualRouter = r
 					return optionErr
@@ -383,6 +497,22 @@ func testNewSOptionRouter(t *testing.T) {
 				},
 			},
 			{
+				option: []func(r *mux.Router) error{
+					func(r *mux.Router) error {
+						*actualRouter = r
+						return nil
+					},
+				},
+			},
+			{
+				option: [1]func(r *mux.Router) error{
+					func(r *mux.Router) error {
+						*actualRouter = r
+						return nil
+					},
+				},
+			},
+			{
 				option: func(r *mux.Router) error {
 					*actualRouter = r
 					return optionErr
@@ -392,6 +522,20 @@ func testNewSOptionRouter(t *testing.T) {
 			{
 				option: func(r *mux.Router) {
 					*actualRouter = r
+				},
+			},
+			{
+				option: []func(r *mux.Router){
+					func(r *mux.Router) {
+						*actualRouter = r
+					},
+				},
+			},
+			{
+				option: [1]func(r *mux.Router){
+					func(r *mux.Router) {
+						*actualRouter = r
+					},
 				},
 			},
 		}
@@ -419,34 +563,98 @@ func testNewSOptionRouter(t *testing.T) {
 }
 
 func testNewSOptionListener(t *testing.T) {
-	var (
-		address0                     = make(chan net.Addr, 1)
-		lc0      ListenerConstructor = CaptureListenAddress(address0)
+	expected, err := net.Listen("tcp", ":0")
+	require.NoError(t, err)
+	defer expected.Close()
 
-		address1                     = make(chan net.Addr, 1)
-		lc1      ListenerConstructor = CaptureListenAddress(address1)
-
-		address2                     = make(chan net.Addr, 1)
-		lc2      ListenerConstructor = CaptureListenAddress(address2)
-
-		testData = []struct {
-			option interface{}
-			ch     []<-chan net.Addr
-		}{
-			{
-				option: lc1,
-				ch:     []<-chan net.Addr{address1},
+	testData := []struct {
+		option interface{}
+	}{
+		{
+			option: ListenerConstructor(func(next net.Listener) net.Listener {
+				return next
+			}),
+		},
+		{
+			option: []ListenerConstructor{
+				func(next net.Listener) net.Listener {
+					return next
+				},
+				func(next net.Listener) net.Listener {
+					return next
+				},
 			},
-			{
-				option: []ListenerConstructor{lc1, lc2},
-				ch:     []<-chan net.Addr{address1, address2},
+		},
+		{
+			option: [2]ListenerConstructor{
+				func(next net.Listener) net.Listener {
+					return next
+				},
+				func(next net.Listener) net.Listener {
+					return next
+				},
 			},
-			{
-				option: NewListenerChain(lc1, lc2),
-				ch:     []<-chan net.Addr{address1, address2},
+		},
+		{
+			option: func(next net.Listener) net.Listener {
+				return next
 			},
-		}
-	)
+		},
+		{
+			option: []func(net.Listener) net.Listener{
+				func(next net.Listener) net.Listener {
+					return next
+				},
+				func(next net.Listener) net.Listener {
+					return next
+				},
+			},
+		},
+		{
+			option: [2]func(net.Listener) net.Listener{
+				func(next net.Listener) net.Listener {
+					return next
+				},
+				func(next net.Listener) net.Listener {
+					return next
+				},
+			},
+		},
+		{
+			option: NewListenerChain(
+				func(next net.Listener) net.Listener {
+					return next
+				},
+				func(next net.Listener) net.Listener {
+					return next
+				},
+			),
+		},
+		{
+			option: []ListenerChain{
+				NewListenerChain(
+					func(next net.Listener) net.Listener {
+						return next
+					},
+					func(next net.Listener) net.Listener {
+						return next
+					},
+				),
+			},
+		},
+		{
+			option: [1]ListenerChain{
+				NewListenerChain(
+					func(next net.Listener) net.Listener {
+						return next
+					},
+					func(next net.Listener) net.Listener {
+						return next
+					},
+				),
+			},
+		},
+	}
 
 	for i, record := range testData {
 		t.Run(strconv.Itoa(i), func(t *testing.T) {
@@ -455,39 +663,16 @@ func testNewSOptionListener(t *testing.T) {
 				require = require.New(t)
 				server  = new(http.Server)
 				router  = mux.NewRouter()
-				chain   = NewListenerChain(lc0)
 				so, err = NewSOption(record.option)
 			)
 
 			require.NoError(err)
 			require.NotNil(so)
 
-			c, err := so(server, router, chain)
+			c, err := so(server, router, ListenerChain{})
 			require.NoError(err)
 
-			l, err := net.Listen("tcp", ":0")
-			require.NoError(err)
-			defer l.Close()
-
-			// the act of invoking the decorator will capture addresses
-			c.Then(l)
-
-			var expected net.Addr
-			select {
-			case expected = <-address0:
-				// passing
-			case <-time.After(time.Second):
-				assert.Fail("The initial chain was not used")
-			}
-
-			for _, ch := range record.ch {
-				select {
-				case actual := <-ch:
-					assert.Equal(expected, actual)
-				case <-time.After(time.Second):
-					assert.Fail("Decorator options were not used")
-				}
-			}
+			assert.Equal(expected, c.Then(expected))
 		})
 	}
 }
@@ -514,9 +699,39 @@ func testNewSOptionMiddleware(t *testing.T) {
 			},
 		},
 		{
+			option: [2]mux.MiddlewareFunc{
+				NewHeaders("Option1", "true").AddResponse,
+				NewHeaders("Option2", "true").AddResponse,
+			},
+			expected: http.Header{
+				"Option1": {"true"},
+				"Option2": {"true"},
+			},
+		},
+		{
 			option: NewHeaders("Option", "true").AddResponse,
 			expected: http.Header{
 				"Option": {"true"},
+			},
+		},
+		{
+			option: []func(http.Handler) http.Handler{
+				NewHeaders("Option1", "true").AddResponse,
+				NewHeaders("Option2", "true").AddResponse,
+			},
+			expected: http.Header{
+				"Option1": {"true"},
+				"Option2": {"true"},
+			},
+		},
+		{
+			option: [2]func(http.Handler) http.Handler{
+				NewHeaders("Option1", "true").AddResponse,
+				NewHeaders("Option2", "true").AddResponse,
+			},
+			expected: http.Header{
+				"Option1": {"true"},
+				"Option2": {"true"},
 			},
 		},
 	}
@@ -554,9 +769,7 @@ func testNewSOptionMiddleware(t *testing.T) {
 
 func TestNewSOption(t *testing.T) {
 	t.Run("Unsupported", testNewSOptionUnsupported)
-	t.Run("Simple", testNewSOptionSimple)
-	t.Run("Closure", testNewSOptionClosure)
-	t.Run("Composite", testNewSOptionComposite)
+	t.Run("Basic", testNewSOptionBasic)
 	t.Run("Server", testNewSOptionServer)
 	t.Run("Router", testNewSOptionRouter)
 	t.Run("Listener", testNewSOptionListener)

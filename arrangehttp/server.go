@@ -77,6 +77,10 @@ type SOption func(*http.Server, *mux.Router, ListenerChain) (ListenerChain, erro
 
 // SOptions aggregates several SOption instances into a single option
 func SOptions(options ...SOption) SOption {
+	if len(options) == 1 {
+		return options[0]
+	}
+
 	return func(s *http.Server, r *mux.Router, c ListenerChain) (ListenerChain, error) {
 		var err error
 		for _, so := range options {
@@ -90,99 +94,178 @@ func SOptions(options ...SOption) SOption {
 	}
 }
 
+var (
+	sOptionType             = reflect.TypeOf(SOption(nil))
+	middlewareType          = reflect.TypeOf(mux.MiddlewareFunc(nil))
+	listenerConstructorType = reflect.TypeOf(ListenerConstructor(nil))
+	routerOptionType        = reflect.TypeOf(RouterOption(nil))
+	serverOptionType        = reflect.TypeOf(ServerOption(nil))
+)
+
+// tryConvertToOptionSlice takes a reflect.Value and tries to convert into a slice
+// of an option type supported by the S builder.  For example, []SOption, []mux.MiddlewareFunc, etc.
+// Scalars that are supported are converto a slice of length 1.
+//
+// If the second return value is true, the interface{} will be castable to a slice
+// of the optionType parameter, e.g. tryConvertToOptionSlice(v, SOption(nil)) would
+// always return []SOption if successful.
+func tryConvertToOptionSlice(v reflect.Value, optionType interface{}) (interface{}, bool) {
+	ot := reflect.TypeOf(optionType)
+	switch {
+	case v.Kind() == reflect.Array:
+		// not sure anyone would use an actual array, but it's trivial to support
+		fallthrough
+
+	case v.Kind() == reflect.Slice:
+		if v.Type().Elem().ConvertibleTo(ot) {
+			s := reflect.MakeSlice(
+				reflect.SliceOf(ot), // element type
+				v.Len(),             // len
+				v.Len(),             // cap
+			)
+
+			for i := 0; i < v.Len(); i++ {
+				s.Index(i).Set(
+					v.Index(i).Convert(ot),
+				)
+			}
+
+			return s.Interface(), true
+		}
+
+	case v.Type().ConvertibleTo(ot):
+		s := reflect.MakeSlice(
+			reflect.SliceOf(ot), // element type
+			1,                   // len
+			1,                   // cap
+		)
+
+		s.Index(0).Set(
+			v.Convert(ot),
+		)
+
+		return s.Interface(), true
+	}
+
+	return nil, false
+}
+
 // NewSOption reflects an object and tries to convert it into an SOption.  The set
 // of types allowed is flexible:
 //
-//   (1) SOption or a slice of same
-//   (2) ServerOption or a closure that accepts an *http.Server and may return an error
-//   (3) RouterOption or a closure that accepts an *mux.Router and may return an error
-//   (4) ListenerConstructor or a slice of same
-//   (5) ListenerChain
-//   (6) mux.MiddlewareFunc, a slice of same, or a closure of the same signature as mux.MiddlewareFunc
+//   (1) SOption or any type convertible to an SOption
+//   (1) ServerOption or any type convertible to a ServerOption
+//   (1) RouterOption or any type convertible to a RouterOption
+//   (4) ListenerConstructor or any type convertible to a ListenerConstructor
+//   (6) mux.MiddlewareFunc or any type convertible to a mux.MiddlewareFunc (including an alice.Constructor)
+//   (7) ListenerChain
+//   (8) Any slice or array of the above, which are applied in the slice element order
 //
 // Any other type will produce an error.
 func NewSOption(o interface{}) (so SOption, err error) {
-	switch o := o.(type) {
-	case SOption:
-		so = o
+	v := reflect.ValueOf(o)
 
-	case []SOption:
-		so = SOptions(o...)
+	// handled types noted below:
 
-	// this really isn't necessary, but it's consistent with NewCOption
-	case func(*http.Server, *mux.Router, ListenerChain) (ListenerChain, error):
-		so = o
-
-	case ServerOption:
-		so = func(s *http.Server, _ *mux.Router, c ListenerChain) (ListenerChain, error) {
-			return c, o(s)
-		}
-
-	case func(*http.Server) error:
-		so = func(s *http.Server, _ *mux.Router, c ListenerChain) (ListenerChain, error) {
-			return c, o(s)
-		}
-
-	case func(*http.Server):
-		so = func(s *http.Server, _ *mux.Router, c ListenerChain) (ListenerChain, error) {
-			o(s)
-			return c, nil
-		}
-
-	case RouterOption:
-		so = func(_ *http.Server, r *mux.Router, c ListenerChain) (ListenerChain, error) {
-			return c, o(r)
-		}
-
-	case func(*mux.Router) error:
-		so = func(_ *http.Server, r *mux.Router, c ListenerChain) (ListenerChain, error) {
-			return c, o(r)
-		}
-
-	case func(*mux.Router):
-		so = func(_ *http.Server, r *mux.Router, c ListenerChain) (ListenerChain, error) {
-			o(r)
-			return c, nil
-		}
-
-	case ListenerConstructor:
-		so = func(_ *http.Server, _ *mux.Router, c ListenerChain) (ListenerChain, error) {
-			return c.Append(o), nil
-		}
-
-	case []ListenerConstructor:
-		so = func(_ *http.Server, _ *mux.Router, c ListenerChain) (ListenerChain, error) {
-			return c.Append(o...), nil
-		}
-
-	case ListenerChain:
-		so = func(_ *http.Server, _ *mux.Router, c ListenerChain) (ListenerChain, error) {
-			return c.Extend(o), nil
-		}
-
-	case mux.MiddlewareFunc:
-		so = func(_ *http.Server, r *mux.Router, c ListenerChain) (ListenerChain, error) {
-			r.Use(o)
-			return c, nil
-		}
-
-	case []mux.MiddlewareFunc:
-		so = func(_ *http.Server, r *mux.Router, c ListenerChain) (ListenerChain, error) {
-			r.Use(o...)
-			return c, nil
-		}
-
-	case func(http.Handler) http.Handler:
-		so = func(_ *http.Server, r *mux.Router, c ListenerChain) (ListenerChain, error) {
-			r.Use(o)
-			return c, nil
-		}
-
-	default:
-		err = fmt.Errorf("%s is not supported as an SOption", reflect.TypeOf(o))
+	// SOption
+	// []SOption
+	if o, ok := tryConvertToOptionSlice(v, SOption(nil)); ok {
+		return SOptions(o.([]SOption)...), nil
 	}
 
-	return
+	// func(http.Handler) http.Handler
+	// []func(http.Handler) http.Handler
+	// mux.MiddlewareFunc
+	// []mux.MiddlewareFunc
+	// alice.Constructor
+	// []alice.Constructor
+	if m, ok := tryConvertToOptionSlice(v, mux.MiddlewareFunc(nil)); ok {
+		return func(_ *http.Server, r *mux.Router, c ListenerChain) (ListenerChain, error) {
+			r.Use(m.([]mux.MiddlewareFunc)...)
+			return c, nil
+		}, nil
+	}
+
+	// func(net.Listener) net.Listener
+	// []func(net.Listener) net.Listener
+	// ListenerConstructor
+	// []ListenerConstructor
+	if lc, ok := tryConvertToOptionSlice(v, ListenerConstructor(nil)); ok {
+		return func(s *http.Server, _ *mux.Router, c ListenerChain) (ListenerChain, error) {
+			return c.Append(lc.([]ListenerConstructor)...), nil
+		}, nil
+	}
+
+	// ServerOption
+	// []ServerOption
+	// func(*http.Server) error
+	// []func(*http.Server) error
+	if o, ok := tryConvertToOptionSlice(v, ServerOption(nil)); ok {
+		return func(s *http.Server, _ *mux.Router, c ListenerChain) (ListenerChain, error) {
+			for _, f := range o.([]ServerOption) {
+				if err := f(s); err != nil {
+					return c, err
+				}
+			}
+
+			return c, nil
+		}, nil
+	}
+
+	// explicitly support a ServerOption variant that returns no error
+	// this helps reduce code noise when there are lots of options,
+	// avoiding "return nil" all over the place
+	if o, ok := tryConvertToOptionSlice(v, (func(*http.Server))(nil)); ok {
+		return func(s *http.Server, _ *mux.Router, c ListenerChain) (ListenerChain, error) {
+			for _, f := range o.([]func(*http.Server)) {
+				f(s)
+			}
+
+			return c, nil
+		}, nil
+	}
+
+	// RouterOption
+	// []RouterOption
+	// func(*mux.Router) error
+	// []func(*mux.Router) error
+	if o, ok := tryConvertToOptionSlice(v, RouterOption(nil)); ok {
+		return func(_ *http.Server, r *mux.Router, c ListenerChain) (ListenerChain, error) {
+			for _, f := range o.([]RouterOption) {
+				if err := f(r); err != nil {
+					return c, err
+				}
+			}
+
+			return c, nil
+		}, nil
+	}
+
+	// explicitly support a RouterOption variant that returns no error
+	// this helps reduce code noise when there are lots of options,
+	// avoiding "return nil" all over the place
+	if o, ok := tryConvertToOptionSlice(v, (func(*mux.Router))(nil)); ok {
+		return func(_ *http.Server, r *mux.Router, c ListenerChain) (ListenerChain, error) {
+			for _, f := range o.([]func(*mux.Router)) {
+				f(r)
+			}
+
+			return c, nil
+		}, nil
+	}
+
+	// ListenerChain
+	if o, ok := tryConvertToOptionSlice(v, ListenerChain{}); ok {
+		return func(_ *http.Server, r *mux.Router, c ListenerChain) (ListenerChain, error) {
+			for _, lc := range o.([]ListenerChain) {
+				c = c.Extend(lc)
+			}
+
+			return c, nil
+		}, nil
+	}
+
+	return nil, fmt.Errorf("%s is not supported as an SOption", reflect.TypeOf(o))
 }
 
 // ServerOption is a functional option type that can be converted to an SOption.

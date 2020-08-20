@@ -94,14 +94,6 @@ func SOptions(options ...SOption) SOption {
 	}
 }
 
-var (
-	sOptionType             = reflect.TypeOf(SOption(nil))
-	middlewareType          = reflect.TypeOf(mux.MiddlewareFunc(nil))
-	listenerConstructorType = reflect.TypeOf(ListenerConstructor(nil))
-	routerOptionType        = reflect.TypeOf(RouterOption(nil))
-	serverOptionType        = reflect.TypeOf(ServerOption(nil))
-)
-
 // tryConvertToOptionSlice takes a reflect.Value and tries to convert into a slice
 // of an option type supported by the S builder.  For example, []SOption, []mux.MiddlewareFunc, etc.
 // Scalars that are supported are converto a slice of length 1.

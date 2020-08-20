@@ -17,6 +17,7 @@ func ExampleLoggerWriter() {
 	)
 
 	// Output:
+	// [Fx] SUPPLY	arrange.PrinterFunc
 	// [Fx] SUPPLY	string
 	// [Fx] PROVIDE	fx.Lifecycle <= go.uber.org/fx.New.func1()
 	// [Fx] PROVIDE	fx.Shutdowner <= go.uber.org/fx.(*App).shutdowner-fm()
@@ -38,6 +39,7 @@ func ExampleLoggerFunc() {
 	)
 
 	// Output:
+	// [Fx] SUPPLY	arrange.PrinterFunc
 	// [Fx] SUPPLY	string
 	// [Fx] PROVIDE	fx.Lifecycle <= go.uber.org/fx.New.func1()
 	// [Fx] PROVIDE	fx.Shutdowner <= go.uber.org/fx.(*App).shutdowner-fm()

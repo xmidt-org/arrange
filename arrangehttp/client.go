@@ -84,6 +84,10 @@ type COption func(*http.Client) error
 
 // COptions aggregates several COption instances into a single option
 func COptions(options ...COption) COption {
+	if len(options) == 1 {
+		return options[0]
+	}
+
 	return func(c *http.Client) error {
 		var err error
 		for _, co := range options {
@@ -100,58 +104,61 @@ func COptions(options ...COption) COption {
 // NewCOption reflects an object and tries to convert it into an COption.  The set
 // of types allowed is flexible:
 //
-//   (1) COption or slice of same
-//   (2) A closure that accepts an *http.Client and optionally returns an error
-//   (3) RoundTripperConstructor or slice of same
-//   (5) RoundTripperChain
+//   (1) COption or any type convertible to a COption
+//   (2) Any type convertible to func(*http.Client), which is basically a COption that returns no error
+//   (3) RoundTripperConstructor are any type convertible to RoundTripperConstructor
+//   (4) RoundTripperChain
+//   (5) A slice or array of any of the above, which are applied in slice element order
 //
 // Any other type will produce an error.
-func NewCOption(o interface{}) (co COption, err error) {
-	switch o := o.(type) {
-	case COption:
-		co = o
+func NewCOption(o interface{}) (COption, error) {
+	v := reflect.ValueOf(o)
 
-	case []COption:
-		co = COptions(o...)
+	// handled types noted below:
 
-	case func(*http.Client) error:
-		co = o
-
-	case func(*http.Client):
-		co = func(c *http.Client) error {
-			o(c)
-			return nil
-		}
-
-	case func(http.RoundTripper) http.RoundTripper:
-		co = func(c *http.Client) error {
-			c.Transport = NewRoundTripperChain(o).Then(c.Transport)
-			return nil
-		}
-
-	case RoundTripperConstructor:
-		co = func(c *http.Client) error {
-			c.Transport = NewRoundTripperChain(o).Then(c.Transport)
-			return nil
-		}
-
-	case []RoundTripperConstructor:
-		co = func(c *http.Client) error {
-			c.Transport = NewRoundTripperChain(o...).Then(c.Transport)
-			return nil
-		}
-
-	case RoundTripperChain:
-		co = func(c *http.Client) error {
-			c.Transport = o.Then(c.Transport)
-			return nil
-		}
-
-	default:
-		err = fmt.Errorf("%s is not supported as an COption", reflect.TypeOf(o))
+	// COption
+	// []COption
+	if o, ok := tryConvertToOptionSlice(v, COption(nil)); ok {
+		return COptions(o.([]COption)...), nil
 	}
 
-	return
+	// explicitly support a COption variant that returns no error
+	// this helps reduce code noise when there are lots of options,
+	// avoiding "return nil" all over the place
+	if o, ok := tryConvertToOptionSlice(v, (func(*http.Client))(nil)); ok {
+		return func(c *http.Client) error {
+			for _, f := range o.([]func(*http.Client)) {
+				f(c)
+			}
+
+			return nil
+		}, nil
+	}
+
+	// RoundTripperConstructor
+	// []RoundTripperConstructor
+	// func(http.RoundTripper) http.RoundTripper
+	// []func(http.RoundTripper) http.RoundTripper
+	if rc, ok := tryConvertToOptionSlice(v, RoundTripperConstructor(nil)); ok {
+		return func(c *http.Client) error {
+			c.Transport = NewRoundTripperChain(rc.([]RoundTripperConstructor)...).Then(c.Transport)
+			return nil
+		}, nil
+	}
+
+	// RoundTripperChain
+	// []RoundTripperChain
+	if rtc, ok := tryConvertToOptionSlice(v, RoundTripperChain{}); ok {
+		return func(c *http.Client) error {
+			for _, chain := range rtc.([]RoundTripperChain) {
+				c.Transport = chain.Then(c.Transport)
+			}
+
+			return nil
+		}, nil
+	}
+
+	return nil, fmt.Errorf("%s is not supported as a COption", reflect.TypeOf(o))
 }
 
 // ClientIn is the set of dependencies required to build an *http.Client component

@@ -226,88 +226,83 @@ func testNewCOptionUnsupported(t *testing.T) {
 	assert.Nil(co)
 }
 
-func testNewCOptionSimple(t *testing.T) {
+func testNewCOptionBasic(t *testing.T) {
 	var (
-		assert          = assert.New(t)
-		require         = require.New(t)
-		called          = false
-		option  COption = func(*http.Client) error {
-			called = true
-			return nil
-		}
-		co, err = NewCOption(option)
-	)
-
-	require.NoError(err)
-	require.NotNil(co)
-	err = co(nil)
-	assert.NoError(err)
-	assert.True(called)
-}
-
-func testNewCOptionClosure(t *testing.T) {
-	var (
-		assert  = assert.New(t)
-		require = require.New(t)
-		called  = false
-		option  = func(*http.Client) error {
-			called = true
-			return nil
-		}
-		co, err = NewCOption(option)
-	)
-
-	require.NoError(err)
-	require.NotNil(co)
-	err = co(nil)
-	assert.NoError(err)
-	assert.True(called)
-}
-
-func testNewCOptionClosureNoError(t *testing.T) {
-	var (
-		assert  = assert.New(t)
-		require = require.New(t)
-		called  = false
-		option  = func(*http.Client) {
-			called = true
-		}
-		co, err = NewCOption(option)
-	)
-
-	require.NoError(err)
-	require.NotNil(co)
-	err = co(nil)
-	assert.NoError(err)
-	assert.True(called)
-}
-
-func testNewCOptionComposite(t *testing.T) {
-	var (
-		assert  = assert.New(t)
-		require = require.New(t)
-		called0 = false
-		called1 = false
-		options = []COption{
-			func(*http.Client) error {
-				called0 = true
-				return nil
+		actualClient = new(*http.Client)
+		optionErr    = errors.New("expected option error")
+		testData     = []struct {
+			option      interface{}
+			expectedErr error
+		}{
+			{
+				option: func(c *http.Client) error {
+					*actualClient = c
+					return nil
+				},
 			},
-			func(*http.Client) error {
-				called1 = true
-				return nil
+			{
+				option: []func(*http.Client) error{
+					func(c *http.Client) error {
+						*actualClient = c
+						return nil
+					},
+				},
+			},
+			{
+				option: [1]func(*http.Client) error{
+					func(c *http.Client) error {
+						*actualClient = c
+						return nil
+					},
+				},
+			},
+			{
+				option: func(c *http.Client) error {
+					*actualClient = c
+					return optionErr
+				},
+				expectedErr: optionErr,
+			},
+			{
+				option: func(c *http.Client) {
+					*actualClient = c
+				},
+			},
+			{
+				option: []func(*http.Client){
+					func(c *http.Client) {
+						*actualClient = c
+					},
+				},
+			},
+			{
+				option: [1]func(*http.Client){
+					func(c *http.Client) {
+						*actualClient = c
+					},
+				},
 			},
 		}
-
-		co, err = NewCOption(options)
 	)
 
-	require.NoError(err)
-	require.NotNil(co)
-	err = co(nil)
-	assert.NoError(err)
-	assert.True(called0)
-	assert.True(called1)
+	for i, record := range testData {
+		*actualClient = nil
+		t.Run(strconv.Itoa(i), func(t *testing.T) {
+			var (
+				assert  = assert.New(t)
+				require = require.New(t)
+				client  = new(http.Client)
+				co, err = NewCOption(record.option)
+			)
+
+			require.NoError(err)
+			require.NotNil(co)
+
+			err = co(client)
+			assert.Equal(record.expectedErr, err)
+			assert.Equal(client, *actualClient)
+		})
+	}
 }
 
 func testNewCOptionRoundTripper(t *testing.T) {
@@ -338,6 +333,16 @@ func testNewCOptionRoundTripper(t *testing.T) {
 			},
 		},
 		{
+			option: [2]RoundTripperConstructor{
+				NewHeaders("Option1", "true").AddRequest,
+				NewHeaders("Option2", "true").AddRequest,
+			},
+			expected: http.Header{
+				"Option1": {"true"},
+				"Option2": {"true"},
+			},
+		},
+		{
 			option: NewRoundTripperChain(
 				NewHeaders("Option1", "true").AddRequest,
 				NewHeaders("Option2", "true").AddRequest,
@@ -345,6 +350,42 @@ func testNewCOptionRoundTripper(t *testing.T) {
 			expected: http.Header{
 				"Option1": {"true"},
 				"Option2": {"true"},
+			},
+		},
+		{
+			option: []RoundTripperChain{
+				NewRoundTripperChain(
+					NewHeaders("Option1", "true").AddRequest,
+					NewHeaders("Option2", "true").AddRequest,
+				),
+				NewRoundTripperChain(
+					NewHeaders("Option3", "true").AddRequest,
+					NewHeaders("Option4", "true").AddRequest,
+				),
+			},
+			expected: http.Header{
+				"Option1": {"true"},
+				"Option2": {"true"},
+				"Option3": {"true"},
+				"Option4": {"true"},
+			},
+		},
+		{
+			option: [2]RoundTripperChain{
+				NewRoundTripperChain(
+					NewHeaders("Option1", "true").AddRequest,
+					NewHeaders("Option2", "true").AddRequest,
+				),
+				NewRoundTripperChain(
+					NewHeaders("Option3", "true").AddRequest,
+					NewHeaders("Option4", "true").AddRequest,
+				),
+			},
+			expected: http.Header{
+				"Option1": {"true"},
+				"Option2": {"true"},
+				"Option3": {"true"},
+				"Option4": {"true"},
 			},
 		},
 	}
@@ -384,10 +425,7 @@ func testNewCOptionRoundTripper(t *testing.T) {
 
 func TestNewCOption(t *testing.T) {
 	t.Run("Unsupported", testNewCOptionUnsupported)
-	t.Run("Simple", testNewCOptionSimple)
-	t.Run("Closure", testNewCOptionClosure)
-	t.Run("ClosureNoError", testNewCOptionClosureNoError)
-	t.Run("Composite", testNewCOptionComposite)
+	t.Run("Basic", testNewCOptionBasic)
 	t.Run("RoundTripper", testNewCOptionRoundTripper)
 }
 

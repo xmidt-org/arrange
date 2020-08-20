@@ -98,15 +98,17 @@ func SOptions(options ...SOption) SOption {
 // of types allowed is flexible:
 //
 //   (1) SOption or any type convertible to an SOption
-//   (1) ServerOption or any type convertible to a ServerOption
-//   (1) RouterOption or any type convertible to a RouterOption
-//   (4) ListenerConstructor or any type convertible to a ListenerConstructor
-//   (6) mux.MiddlewareFunc or any type convertible to a mux.MiddlewareFunc (including an alice.Constructor)
-//   (7) ListenerChain
-//   (8) Any slice or array of the above, which are applied in the slice element order
+//   (2) ServerOption or any type convertible to a ServerOption
+//   (3) Any type convertible to a func(*http.Server), which is basically a ServerOption that returns no error
+//   (4) RouterOption or any type convertible to a RouterOption
+//   (5) Any type convertible to a func(*mux.Router), which is basically a RouterOption that returns no error
+//   (6) ListenerConstructor or any type convertible to a ListenerConstructor
+//   (7) mux.MiddlewareFunc or any type convertible to a mux.MiddlewareFunc (including an alice.Constructor)
+//   (8) ListenerChain
+//   (9) Any slice or array of the above, which are applied in the slice element order
 //
 // Any other type will produce an error.
-func NewSOption(o interface{}) (so SOption, err error) {
+func NewSOption(o interface{}) (SOption, error) {
 	v := reflect.ValueOf(o)
 
 	// handled types noted below:

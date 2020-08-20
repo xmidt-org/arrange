@@ -8,6 +8,7 @@ Arrange is a companion to go.uber.org/fx that adds unmarshaled components, condi
 [![Apache V2 License](http://img.shields.io/badge/license-Apache%20V2-blue.svg)](https://github.com/xmidt-org/arrange/blob/main/LICENSE)
 [![GitHub release](https://img.shields.io/github/release/xmidt-org/arrange.svg)](CHANGELOG.md)
 [![PkgGoDev](https://pkg.go.dev/badge/github.com/xmidt-org/arrange)](https://pkg.go.dev/github.com/xmidt-org/arrange)
+[![Quality Gate Status](https://sonarcloud.io/api/project_badges/measure?project=xmidt-org_arrange&metric=alert_status)](https://sonarcloud.io/dashboard?id=xmidt-org_arrange)
 
 ## Summary
 

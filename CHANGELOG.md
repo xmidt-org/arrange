@@ -6,6 +6,8 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 - added sonar integration
+- added code climate badges
+- refactored arrangehttp reflection logic around options for simplicity and consistency
 
 ## [v0.1.6]
 - struct field traversal

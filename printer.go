@@ -73,6 +73,7 @@ func LoggerWriter(w io.Writer) fx.Option {
 	)
 }
 
+// t is implemented by both *testing.T and *testing.B
 type t interface {
 	Logf(string, ...interface{})
 }

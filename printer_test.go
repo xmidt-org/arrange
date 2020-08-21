@@ -82,3 +82,19 @@ func TestLoggerFunc(t *testing.T) {
 
 	assert.True(printerCalled)
 }
+
+func TestTestLogger(t *testing.T) {
+	var (
+		assert = assert.New(t)
+		dummy  string
+	)
+
+	fxtest.New(
+		t,
+		TestLogger(t),
+		fx.Supply("test"),
+		fx.Populate(&dummy),
+	)
+
+	assert.Equal("test", dummy)
+}

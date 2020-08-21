@@ -3,6 +3,7 @@ package arrange
 import (
 	"fmt"
 	"io"
+	"log"
 	"os"
 
 	"go.uber.org/fx"
@@ -25,7 +26,8 @@ func prependArrange(template string) string {
 // a SugaredLogger's methods.
 type PrinterFunc func(string, ...interface{})
 
-// Printf implements fx.Printer
+// Printf implements fx.Printer.  Note that this method does not append
+// a newline to the output.
 func (pf PrinterFunc) Printf(template string, args ...interface{}) {
 	pf(template, args...)
 }
@@ -44,7 +46,8 @@ func PrinterWriter(w io.Writer) fx.Printer {
 	})
 }
 
-var defaultPrinter = PrinterWriter(os.Stderr)
+// defaultPrinter follows the same pattern as in the go.uber.org/fx/internal/fxlog package
+var defaultPrinter fx.Printer = log.New(os.Stderr, "", log.LstdFlags)
 
 // DefaultPrinter returns the fx.Printer that arrange uses when no printer
 // is supplied.  This outputs to os.Stderr, in keeping with uber/fx's behavior.

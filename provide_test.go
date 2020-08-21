@@ -1,6 +1,7 @@
 package arrange
 
 import (
+	"io/ioutil"
 	"strings"
 	"testing"
 	"time"
@@ -72,9 +73,44 @@ func testUnmarshalExact(t *testing.T) {
 	assert.Error(app.Err())
 }
 
+func testUnmarshalNoPrinter(t *testing.T) {
+	var (
+		assert = assert.New(t)
+		v      = viper.New()
+
+		actual TestConfig
+	)
+
+	v.Set("name", "first")
+	v.Set("age", 1)
+
+	old := defaultPrinter
+	defer func() {
+		defaultPrinter = old
+	}()
+
+	// just so we don't deal with random output
+	defaultPrinter = PrinterWriter(ioutil.Discard)
+
+	fxtest.New(
+		t,
+		Supply(v),
+		fx.Provide(
+			Unmarshal(TestConfig{}),
+		),
+		fx.Populate(&actual),
+	)
+
+	assert.Equal(
+		TestConfig{Name: "first", Age: 1},
+		actual,
+	)
+}
+
 func TestUnmarshal(t *testing.T) {
 	t.Run("Success", testUnmarshalSuccess)
 	t.Run("Exact", testUnmarshalExact)
+	t.Run("NoPrinter", testUnmarshalNoPrinter)
 }
 
 func testUnmarshalKeySuccess(t *testing.T) {

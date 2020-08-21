@@ -43,6 +43,11 @@ func TestPrinterFunc(t *testing.T) {
 	assert.Equal("test 123", output.String())
 }
 
+func TestDefaultPrinter(t *testing.T) {
+	assert := assert.New(t)
+	assert.Equal(defaultPrinter, DefaultPrinter())
+}
+
 func testPrinterWriterSuccess(t *testing.T) {
 	var (
 		assert  = assert.New(t)

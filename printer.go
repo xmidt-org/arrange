@@ -7,8 +7,6 @@ import (
 	"go.uber.org/fx"
 )
 
-var newline = []byte{'\n'}
-
 // PrinterFunc is a function type that implements fx.Printer.  This is useful
 // for passing functions as printers, such as when using go.uber.org/zap with
 // a SugaredLogger's methods.
@@ -61,11 +59,7 @@ func LoggerFunc(pf PrinterFunc) fx.Option {
 func LoggerWriter(w io.Writer) fx.Option {
 	return LoggerFunc(
 		func(template string, args ...interface{}) {
-			_, err := fmt.Fprintf(w, template, args...)
-			if err == nil {
-				_, err = w.Write(newline)
-			}
-
+			_, err := fmt.Fprintf(w, template+"\n", args...)
 			if err != nil {
 				panic(err)
 			}

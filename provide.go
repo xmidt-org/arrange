@@ -7,13 +7,16 @@ import (
 	"go.uber.org/fx"
 )
 
+// unmarshalFunc is a strategy for unmarshaling a particular value from viper
+type unmarshalFunc func(fx.Printer, *viper.Viper, []viper.DecoderConfigOption, interface{}) error
+
 // unmarshal is the common approach to dynamically creating an fx.Provide
 // constructor function to unmarshal an object and return the results
 //
 // the closure passed to this function is expected to handle unmarshaling.
 // the global decoder options are passed, and the closure can merge them
 // with any local options.
-func unmarshal(prototype interface{}, uf func(*viper.Viper, []viper.DecoderConfigOption, interface{}) error) interface{} {
+func unmarshal(prototype interface{}, uf unmarshalFunc) interface{} {
 	t := NewTarget(prototype)
 	return reflect.MakeFunc(
 		reflect.FuncOf(
@@ -27,7 +30,12 @@ func unmarshal(prototype interface{}, uf func(*viper.Viper, []viper.DecoderConfi
 		),
 		func(args []reflect.Value) []reflect.Value {
 			in := args[0].Interface().(ProvideIn)
-			err := uf(in.Viper, in.DecoderOptions, t.unmarshalTo.Interface())
+			p := in.Printer
+			if p == nil {
+				p = DefaultPrinter()
+			}
+
+			err := uf(p, in.Viper, in.DecoderOptions, t.unmarshalTo.Interface())
 			return []reflect.Value{
 				t.component,
 				NewErrorValue(err),
@@ -45,7 +53,8 @@ func unmarshal(prototype interface{}, uf func(*viper.Viper, []viper.DecoderConfi
 func Unmarshal(prototype interface{}, local ...viper.DecoderConfigOption) interface{} {
 	return unmarshal(
 		prototype,
-		func(v *viper.Viper, global []viper.DecoderConfigOption, c interface{}) error {
+		func(p fx.Printer, v *viper.Viper, global []viper.DecoderConfigOption, c interface{}) error {
+			p.Printf(prependArrange("UNMARSHAL => %T"), c)
 			return v.Unmarshal(c, Merge(global, local))
 		},
 	)
@@ -59,7 +68,8 @@ func Unmarshal(prototype interface{}, local ...viper.DecoderConfigOption) interf
 func UnmarshalKey(key string, prototype interface{}, local ...viper.DecoderConfigOption) interface{} {
 	return unmarshal(
 		prototype,
-		func(v *viper.Viper, global []viper.DecoderConfigOption, c interface{}) error {
+		func(p fx.Printer, v *viper.Viper, global []viper.DecoderConfigOption, c interface{}) error {
+			p.Printf(prependArrange("UNMARSHAL KEY\t[%s] => %T"), key, c)
 			return v.UnmarshalKey(key, c, Merge(global, local))
 		},
 	)

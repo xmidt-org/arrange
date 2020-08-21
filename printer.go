@@ -3,9 +3,23 @@ package arrange
 import (
 	"fmt"
 	"io"
+	"io/ioutil"
+	"os"
 
 	"go.uber.org/fx"
 )
+
+// Prepend creates the standard format for information output that uber/fx uses.
+// It returns a string of the form "[module] template".  This function can be used
+// in conjunction with fx.Printer to standard informational output.
+func Prepend(module, template string) string {
+	return "[" + module + "] " + template
+}
+
+// prependArrange does the standard prepending for this package
+func prependArrange(template string) string {
+	return Prepend("Arrange", template)
+}
 
 // PrinterFunc is a function type that implements fx.Printer.  This is useful
 // for passing functions as printers, such as when using go.uber.org/zap with
@@ -17,6 +31,36 @@ func (pf PrinterFunc) Printf(template string, args ...interface{}) {
 	pf(template, args...)
 }
 
+// PrinterWriter creates an fx.Printer that sends all output to the specified
+// Writer.  Each write has a newline appended.  Only one (1) write is performed
+// for each call to Printf.
+//
+// Any error from Write() results in a panic.
+func PrinterWriter(w io.Writer) fx.Printer {
+	return PrinterFunc(func(template string, args ...interface{}) {
+		_, err := fmt.Fprintf(w, template+"\n", args...)
+		if err != nil {
+			panic(err)
+		}
+	})
+}
+
+var (
+	defaultPrinter = PrinterWriter(os.Stderr)
+	discardPrinter = PrinterWriter(ioutil.Discard)
+)
+
+// DefaultPrinter returns the fx.Printer that arrange uses when no printer
+// is supplied.  This outputs to os.Stderr, in keeping with uber/fx's behavior.
+func DefaultPrinter() fx.Printer {
+	return defaultPrinter
+}
+
+// DiscardPrinter returns an fx.Printer that throws away all inpu.t
+func DiscardPrinter() fx.Printer {
+	return discardPrinter
+}
+
 // Logger is an analog to fx.Logger.  This version sets the logger with fx.Logger
 // and, in addition, makes the printer available as a global, unnamed component.
 // Code in this package and its subpackages will use this fx.Printer for informational
@@ -24,7 +68,15 @@ func (pf PrinterFunc) Printf(template string, args ...interface{}) {
 func Logger(p fx.Printer) fx.Option {
 	return fx.Options(
 		fx.Logger(p),
-		fx.Supply(p),
+
+		// NOTE: Cannot use fx.Supply here, as that produces a component
+		// of the most-derived type, e.g. PrinterFunc.  We want a component
+		// of type fx.Printer regardless of the concrete type.
+		fx.Provide(
+			func() fx.Printer {
+				return p
+			},
+		),
 	)
 }
 
@@ -44,27 +96,10 @@ func LoggerFunc(pf PrinterFunc) fx.Option {
 	return Logger(pf)
 }
 
-// LoggerWriter uses Logger to supply an fx.Printer that writes to an io.Writer.
-// Any write error results in a panic.  Every write has a newline appended to it.
-//
-// This is a convenient function to dump all DI container logging to os.Stdout
-// or os.Stderr:
-//
-//   fx.New(
-//     // NOTE: the default setup for go.uber.org/fx sends output to os.Stderr
-//     arrange.LoggerWriter(os.Stdout),
-//
-//     // carry on ...
-//   )
+// LoggerWriter creates an fx.Printer with PrinterWriter and sets that as the
+// fx.Logger and exposes it as an unnamed component.
 func LoggerWriter(w io.Writer) fx.Option {
-	return LoggerFunc(
-		func(template string, args ...interface{}) {
-			_, err := fmt.Fprintf(w, template+"\n", args...)
-			if err != nil {
-				panic(err)
-			}
-		},
-	)
+	return Logger(PrinterWriter(w))
 }
 
 // t is implemented by both *testing.T and *testing.B

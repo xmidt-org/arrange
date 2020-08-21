@@ -26,6 +26,7 @@ func testUnmarshalSuccess(t *testing.T) {
 
 	fxtest.New(
 		t,
+		TestLogger(t),
 		Supply(v),
 		fx.Provide(
 			Unmarshal(TestConfig{}),
@@ -89,6 +90,7 @@ func testUnmarshalKeySuccess(t *testing.T) {
 
 	fxtest.New(
 		t,
+		TestLogger(t),
 		Supply(v),
 		fx.Provide(
 			UnmarshalKey("test", TestConfig{}),
@@ -160,6 +162,7 @@ age: 64
 
 	fxtest.New(
 		t,
+		TestLogger(t),
 		Supply(v),
 		Provide(TestConfig{Interval: 15 * time.Second}),
 		Provide(&AnotherConfig{Interval: 17 * time.Hour}),
@@ -255,6 +258,7 @@ test3:
 
 	fxtest.New(
 		t,
+		TestLogger(t),
 		Supply(v),
 		ProvideKey("test1", TestConfig{Interval: 15 * time.Second}),
 		ProvideKey("test2", &TestConfig{Interval: 23 * time.Minute}),
@@ -370,6 +374,7 @@ test3:
 
 	fxtest.New(
 		t,
+		TestLogger(t),
 		Supply(v, global),
 		Keys("test1", "test2", "test3").Provide(TestConfig{}, option1),
 		Keys("test1", "test2", "test3").Group("tests").Provide(&TestConfig{}, option2),

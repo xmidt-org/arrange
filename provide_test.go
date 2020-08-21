@@ -59,7 +59,7 @@ func testUnmarshalExact(t *testing.T) {
 	t.Log("EXPECTED ERROR OUTPUT:")
 
 	app := fx.New(
-		fx.Logger(testPrinter{T: t}),
+		TestLogger(t),
 		Supply(v, global),
 		fx.Provide(
 			Unmarshal(TestConfig{}, Exact),
@@ -122,7 +122,7 @@ func testUnmarshalKeyExact(t *testing.T) {
 	t.Log("EXPECTED ERROR OUTPUT:")
 
 	app := fx.New(
-		fx.Logger(testPrinter{T: t}),
+		TestLogger(t),
 		Supply(v, global),
 		fx.Provide(
 			UnmarshalKey("test", TestConfig{}, Exact),
@@ -207,7 +207,7 @@ nosuch: asdfasdfasdf
 	t.Log("EXPECTED ERROR OUTPUT:")
 
 	app := fx.New(
-		fx.Logger(testPrinter{T: t}),
+		TestLogger(t),
 		Supply(v, Exact),
 		Provide(TestConfig{}),
 		fx.Populate(&value),
@@ -306,7 +306,7 @@ test:
 	t.Log("EXPECTED ERROR OUTPUT:")
 
 	app := fx.New(
-		fx.Logger(testPrinter{T: t}),
+		TestLogger(t),
 		Supply(v, Exact),
 		ProvideKey("test", TestConfig{}),
 		fx.Populate(&value),

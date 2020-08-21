@@ -3,7 +3,6 @@ package arrange
 import (
 	"fmt"
 	"io"
-	"io/ioutil"
 	"os"
 
 	"go.uber.org/fx"
@@ -45,20 +44,12 @@ func PrinterWriter(w io.Writer) fx.Printer {
 	})
 }
 
-var (
-	defaultPrinter = PrinterWriter(os.Stderr)
-	discardPrinter = PrinterWriter(ioutil.Discard)
-)
+var defaultPrinter = PrinterWriter(os.Stderr)
 
 // DefaultPrinter returns the fx.Printer that arrange uses when no printer
 // is supplied.  This outputs to os.Stderr, in keeping with uber/fx's behavior.
 func DefaultPrinter() fx.Printer {
 	return defaultPrinter
-}
-
-// DiscardPrinter returns an fx.Printer that throws away all inpu.t
-func DiscardPrinter() fx.Printer {
-	return discardPrinter
 }
 
 // Logger is an analog to fx.Logger.  This version sets the logger with fx.Logger

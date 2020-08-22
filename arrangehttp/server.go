@@ -314,7 +314,7 @@ func (s *S) unmarshalOptions(p fx.Printer, dependencies []reflect.Value) (option
 						// this allows callers to reuse fx.In structs for different purposes
 						raw := fv.Interface()
 						if so, err := NewSOption(raw); err == nil {
-							p.Printf(prepend("SERVER OPTION => %T %s"), raw, f.Tag)
+							p.Printf(arrange.Prepend(module, "SERVER OPTION => %T %s"), raw, f.Tag)
 							options = append(options, so)
 						}
 					}
@@ -449,7 +449,7 @@ func (s *S) Unmarshal(local ...viper.DecoderConfigOption) interface{} {
 	return s.applyUnmarshal(
 		local,
 		func(p fx.Printer, v *viper.Viper, o viper.DecoderConfigOption, t arrange.Target) error {
-			p.Printf(prepend("SERVER UNMARSHAL => %s"), t.ComponentType())
+			p.Printf(arrange.Prepend(module, "SERVER UNMARSHAL => %s"), t.ComponentType())
 			return v.Unmarshal(t.UnmarshalTo(), o)
 		},
 	)
@@ -459,7 +459,7 @@ func (s *S) UnmarshalKey(key string, local ...viper.DecoderConfigOption) interfa
 	return s.applyUnmarshal(
 		local,
 		func(p fx.Printer, v *viper.Viper, o viper.DecoderConfigOption, t arrange.Target) error {
-			p.Printf(prepend("SERVER UNMARSHAL KEY\t[%s] => %s"), key, t.ComponentType())
+			p.Printf(arrange.Prepend(module, "SERVER UNMARSHAL KEY\t[%s] => %s"), key, t.ComponentType())
 			return v.UnmarshalKey(key, t.UnmarshalTo(), o)
 		},
 	)

@@ -1,7 +1,4 @@
 package arrangehttp
 
-import "github.com/xmidt-org/arrange"
-
-func prepend(template string) string {
-	return arrange.Prepend("Arrange HTTP", template)
-}
+// module is what this package prepends to fx.Printer.Printf templates
+const module = "Arrange HTTP"

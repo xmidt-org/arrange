@@ -9,16 +9,14 @@ import (
 	"go.uber.org/fx"
 )
 
+// module is what code in this package passes to Prepend as its module parameter
+const module = "Arrange"
+
 // Prepend creates the standard format for information output that uber/fx uses.
 // It returns a string of the form "[module] template".  This function can be used
 // in conjunction with fx.Printer to standard informational output.
 func Prepend(module, template string) string {
 	return "[" + module + "] " + template
-}
-
-// prepend does the standard prepending for this package
-func prepend(template string) string {
-	return Prepend("Arrange", template)
 }
 
 // PrinterFunc is a function type that implements fx.Printer.  This is useful

@@ -55,7 +55,7 @@ func Unmarshal(prototype interface{}, local ...viper.DecoderConfigOption) interf
 		prototype,
 		local,
 		func(p fx.Printer, v *viper.Viper, o viper.DecoderConfigOption, t Target) error {
-			p.Printf(prepend("UNMARSHAL => %s"), t.ComponentType())
+			p.Printf(Prepend(module, "UNMARSHAL => %s"), t.ComponentType())
 			return v.Unmarshal(t.UnmarshalTo(), o)
 		},
 	)
@@ -71,7 +71,7 @@ func UnmarshalKey(key string, prototype interface{}, local ...viper.DecoderConfi
 		prototype,
 		local,
 		func(p fx.Printer, v *viper.Viper, o viper.DecoderConfigOption, t Target) error {
-			p.Printf(prepend("UNMARSHAL KEY\t[%s] => %s"), key, t.ComponentType())
+			p.Printf(Prepend(module, "UNMARSHAL KEY\t[%s] => %s"), key, t.ComponentType())
 			return v.UnmarshalKey(key, t.UnmarshalTo(), o)
 		},
 	)

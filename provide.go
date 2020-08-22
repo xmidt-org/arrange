@@ -10,13 +10,13 @@ import (
 // unmarshalFunc is a strategy for unmarshaling a particular value from viper
 type unmarshalFunc func(fx.Printer, *viper.Viper, viper.DecoderConfigOption, Target) error
 
-// unmarshal is the common approach to dynamically creating an fx.Provide
+// applyUnmarshal is the common approach to dynamically creating an fx.Provide
 // constructor function to unmarshal an object and return the results
 //
 // the closure passed to this function is expected to handle unmarshaling.
 // the global decoder options are passed, and the closure can merge them
 // with any local options.
-func unmarshal(prototype interface{}, local []viper.DecoderConfigOption, uf unmarshalFunc) interface{} {
+func applyUnmarshal(prototype interface{}, local []viper.DecoderConfigOption, uf unmarshalFunc) interface{} {
 	t := NewTarget(prototype)
 	return reflect.MakeFunc(
 		reflect.FuncOf(
@@ -51,11 +51,11 @@ func unmarshal(prototype interface{}, local []viper.DecoderConfigOption, uf unma
 // Provide is generally preferred to this function, but Unmarshal is more flexible
 // and can be used with fx.Annotated.
 func Unmarshal(prototype interface{}, local ...viper.DecoderConfigOption) interface{} {
-	return unmarshal(
+	return applyUnmarshal(
 		prototype,
 		local,
 		func(p fx.Printer, v *viper.Viper, o viper.DecoderConfigOption, t Target) error {
-			p.Printf(prependArrange("UNMARSHAL => %s"), t.ComponentType())
+			p.Printf(prepend("UNMARSHAL => %s"), t.ComponentType())
 			return v.Unmarshal(t.UnmarshalTo(), o)
 		},
 	)
@@ -67,11 +67,11 @@ func Unmarshal(prototype interface{}, local ...viper.DecoderConfigOption) interf
 // Generally, ProvideKey is simpler and preferred.  Use this function when more control
 // is needed over the component, such as putting it into a group or using a different component name.
 func UnmarshalKey(key string, prototype interface{}, local ...viper.DecoderConfigOption) interface{} {
-	return unmarshal(
+	return applyUnmarshal(
 		prototype,
 		local,
 		func(p fx.Printer, v *viper.Viper, o viper.DecoderConfigOption, t Target) error {
-			p.Printf(prependArrange("UNMARSHAL KEY\t[%s] => %s"), key, t.ComponentType())
+			p.Printf(prepend("UNMARSHAL KEY\t[%s] => %s"), key, t.ComponentType())
 			return v.UnmarshalKey(key, t.UnmarshalTo(), o)
 		},
 	)

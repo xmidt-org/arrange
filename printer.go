@@ -16,8 +16,8 @@ func Prepend(module, template string) string {
 	return "[" + module + "] " + template
 }
 
-// prependArrange does the standard prepending for this package
-func prependArrange(template string) string {
+// prepend does the standard prepending for this package
+func prepend(template string) string {
 	return Prepend("Arrange", template)
 }
 
@@ -98,6 +98,7 @@ func LoggerWriter(w io.Writer) fx.Option {
 
 // t is implemented by both *testing.T and *testing.B
 type t interface {
+	Name() string
 	Logf(string, ...interface{})
 }
 
@@ -106,7 +107,7 @@ type t interface {
 func TestLogger(t t) fx.Option {
 	return LoggerFunc(
 		func(template string, args ...interface{}) {
-			t.Logf(template, args...)
+			t.Logf(t.Name()+" "+template, args...)
 		},
 	)
 }

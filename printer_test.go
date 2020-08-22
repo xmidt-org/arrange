@@ -22,11 +22,7 @@ func (ae alwaysError) Write([]byte) (int, error) {
 func TestPrepend(t *testing.T) {
 	assert := assert.New(t)
 	assert.Equal("[Arrange] MODULE", Prepend("Arrange", "MODULE"))
-}
-
-func TestPrependArrange(t *testing.T) {
-	assert := assert.New(t)
-	assert.Equal("[Arrange] MODULE", prependArrange("MODULE"))
+	assert.Equal("[Arrange] MODULE", prepend("MODULE"))
 }
 
 func TestPrinterFunc(t *testing.T) {

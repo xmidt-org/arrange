@@ -30,12 +30,7 @@ func applyUnmarshal(prototype interface{}, local []viper.DecoderConfigOption, uf
 		),
 		func(args []reflect.Value) []reflect.Value {
 			in := args[0].Interface().(ProvideIn)
-			p := in.Printer
-			if p == nil {
-				p = DefaultPrinter()
-			}
-
-			err := uf(p, in.Viper, Merge(in.DecoderOptions, local), t)
+			err := uf(GetPrinter(in.Printer), in.Viper, Merge(in.DecoderOptions, local), t)
 			return []reflect.Value{
 				t.component,
 				NewErrorValue(err),

@@ -53,6 +53,17 @@ func DefaultPrinter() fx.Printer {
 	return defaultPrinter
 }
 
+// GetPrinter returns p if p != nil, otherwise it returns DefaultPrinter().
+// Useful since the fx.Printer is an optional component for arrange and its
+// subpackages.
+func GetPrinter(p fx.Printer) fx.Printer {
+	if p == nil {
+		return DefaultPrinter()
+	}
+
+	return p
+}
+
 // Logger is an analog to fx.Logger.  This version sets the logger with fx.Logger
 // and, in addition, makes the printer available as a global, unnamed component.
 // Code in this package and its subpackages will use this fx.Printer for informational

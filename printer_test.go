@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"io/ioutil"
+	"log"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -41,6 +43,16 @@ func TestPrinterFunc(t *testing.T) {
 func TestDefaultPrinter(t *testing.T) {
 	assert := assert.New(t)
 	assert.Equal(defaultPrinter, DefaultPrinter())
+}
+
+func TestGetPrinter(t *testing.T) {
+	var (
+		assert   = assert.New(t)
+		expected = log.New(ioutil.Discard, "", 0)
+	)
+
+	assert.Equal(DefaultPrinter(), GetPrinter(nil))
+	assert.Equal(expected, GetPrinter(expected))
 }
 
 func testPrinterWriterSuccess(t *testing.T) {

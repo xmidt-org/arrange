@@ -378,11 +378,7 @@ func (s *S) applyUnmarshal(local []viper.DecoderConfigOption, suf serverUnmarsha
 
 				target := arrange.NewTarget(s.prototype)
 				in := inputs[0].Interface().(ServerIn)
-				p := in.Printer
-				if p == nil {
-					p = arrange.DefaultPrinter()
-				}
-
+				p := arrange.GetPrinter(in.Printer)
 				err = suf(p, in.Viper, arrange.Merge(in.DecoderOptions, local), target)
 				if err == nil {
 					factory = target.Component().(ServerFactory)

@@ -41,19 +41,17 @@ jobs:
   include:
     - stage: tag
       name: "Tag For Release"
-      #if: branch = main && type = push
+      if: branch = main && type = push
       before_script:
         - echo -e "machine github.com\n  login $GH_TOKEN" > ~/.netrc
       script:
-         - echo -e "Doing nothing!"
-# Do nothing on the branch, but don't fail sonar
-#        - export OLD_VERSION=$(git describe --tags `git rev-list --tags --max-count=1` | tail -1 | sed 's/v\(.*\)/\1/')
-#        - git config --global user.name "xmidt-bot"
-#        - git config --global user.email "$BOT_EMAIL"
-#        - export TAG=$(cat CHANGELOG.md | perl -0777 -ne 'print "$1" if /.*## \[Unreleased\]\s+## \[(v\d+.\d+.\d+)\].*/s')
-#        - export TODAY=`date +'%m/%d/%Y'`
-#        - export NOTES=$(cat CHANGELOG.md | perl -0777 -ne 'print "$ENV{TODAY}\n\n$1\n" if /.*## \[$ENV{TAG}\]\s(.*?)\s+## \[(v\d+.\d+.\d+)\].*/s')
-#        - if [[ "$TAG" != "" && "$TAG" != "$OLD_VERSION" ]]; then git tag -a "$TAG" -m "$NOTES"; git push origin --tags; echo $?; fi
+        - export OLD_VERSION=$(git describe --tags `git rev-list --tags --max-count=1` | tail -1 | sed 's/v\(.*\)/\1/')
+        - git config --global user.name "xmidt-bot"
+        - git config --global user.email "$BOT_EMAIL"
+        - export TAG=$(cat CHANGELOG.md | perl -0777 -ne 'print "$1" if /.*## \[Unreleased\]\s+## \[(v\d+.\d+.\d+)\].*/s')
+        - export TODAY=`date +'%m/%d/%Y'`
+        - export NOTES=$(cat CHANGELOG.md | perl -0777 -ne 'print "$ENV{TODAY}\n\n$1\n" if /.*## \[$ENV{TAG}\]\s(.*?)\s+## \[(v\d+.\d+.\d+)\].*/s')
+        - if [[ "$TAG" != "" && "$TAG" != "$OLD_VERSION" ]]; then git tag -a "$TAG" -m "$NOTES"; git push origin --tags; echo $?; fi
       after_success: skip
 
     - stage: release

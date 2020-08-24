@@ -2,7 +2,7 @@ language: go
 
 go:
   - 1.13.x
-  - tip
+#  - tip
 
 os:
   - linux
@@ -42,8 +42,7 @@ jobs:
     - stage: tag
       name: "Tag For Release"
       #if: branch = main && type = push
-      addons:
-      install:
+      install: skip
       before_script:
         - echo -e "machine github.com\n  login $GH_TOKEN" > ~/.netrc
       script:
@@ -56,7 +55,7 @@ jobs:
 #        - export TODAY=`date +'%m/%d/%Y'`
 #        - export NOTES=$(cat CHANGELOG.md | perl -0777 -ne 'print "$ENV{TODAY}\n\n$1\n" if /.*## \[$ENV{TAG}\]\s(.*?)\s+## \[(v\d+.\d+.\d+)\].*/s')
 #        - if [[ "$TAG" != "" && "$TAG" != "$OLD_VERSION" ]]; then git tag -a "$TAG" -m "$NOTES"; git push origin --tags; echo $?; fi
-      after_success:
+      after_success: skip
 
     - stage: release
       name: "Make a Release"

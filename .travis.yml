@@ -1,11 +1,11 @@
 language: go
 
-os:
-  - linux
-
 go:
   - 1.13.x
   - tip
+
+os:
+  - linux
 
 branches:
   only:
@@ -56,6 +56,7 @@ jobs:
     - stage: release
       name: "Make a Release"
       if: branch != main
+      script: skip
       deploy:
         on:
           all_branches: true

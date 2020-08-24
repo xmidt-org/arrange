@@ -1,6 +1,7 @@
 package arrangehttp
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"reflect"
@@ -228,92 +229,103 @@ func (c *C) Use(v ...interface{}) *C {
 	return c
 }
 
-// newClient does all the heavy lifting for creating the client, applying
-// options, and binding CloseIdleConnections to the fx lifecycle.
-func (c *C) newClient(f ClientFactory, in ClientIn, dependencies []reflect.Value) (*http.Client, error) {
-	client, err := f.NewClient()
-	if err != nil {
-		return nil, err
-	}
-
-	var options []COption
-
-	// visit struct fields in dependencies, building COptions where possible
-	for _, d := range dependencies {
-		arrange.VisitFields(
-			d,
-			func(f reflect.StructField, fv reflect.Value) arrange.VisitResult {
-				if arrange.IsDependency(f, fv) {
-					// ignore struct fields that aren't applicable
-					// this allows callers to reuse fx.In structs for different purposes
-					if co, err := NewCOption(fv.Interface()); err == nil {
-						options = append(options, co)
+// unmarshalOptions returns a slice of COptions (possibly) created from both this builder's context
+// and the supplied dependencies, if any.  if the supplied dependencies slice is empty, this
+// method simply returns s.options.
+func (c *C) unmarshalOptions(p fx.Printer, dependencies []reflect.Value) (options []COption) {
+	if len(dependencies) > 0 {
+		// visit struct fields in dependencies, building SOptions where possible
+		for _, d := range dependencies {
+			arrange.VisitFields(
+				d,
+				func(f reflect.StructField, fv reflect.Value) arrange.VisitResult {
+					if arrange.IsDependency(f, fv) {
+						// ignore struct fields that aren't applicable
+						// this allows callers to reuse fx.In structs for different purposes
+						raw := fv.Interface()
+						if co, err := NewCOption(raw); err == nil {
+							p.Printf(arrange.Prepend(module, "CLIENT OPTION => %T %s"), raw, f.Tag)
+							options = append(options, co)
+						}
 					}
-				}
 
-				return arrange.VisitContinue
-			},
-		)
-	}
-
-	// locally defined options execute after injected options, allowing
-	// local options to override global ones
-	options = append(options, c.options...)
-	for _, co := range options {
-		err = co(client)
-		if err != nil {
-			return nil, err
+					return arrange.VisitContinue
+				},
+			)
 		}
+
+		// locally defined options execute after injected options, allowing
+		// local options to override global ones
+		options = append(options, c.options...)
+	} else {
+		// optimization: for the case with no dependencies, don't bother
+		// making a copy and just return the builder's options as is
+		options = c.options
 	}
 
-	return client, nil
+	return
 }
 
-// unmarshalFuncOf returns the function signature for an unmarshal function.
-// The first parameter will always be a ServerIn.  If more than one parameter
-// is supplied, they will all be structs expected to be injected by uber/fx.
-// The return values are always (*mux.Router, error).
-func (c *C) unmarshalFuncOf() reflect.Type {
-	return reflect.FuncOf(
-		// inputs
-		append(
-			[]reflect.Type{reflect.TypeOf(ClientIn{})},
-			c.dependencies...,
-		),
+// clientUnmarshalFunc is the require closure that performs unmarshaling of
+// a ClientFactory instance from viper.
+type clientUnmarshalFunc func(fx.Printer, *viper.Viper, viper.DecoderConfigOption, arrange.Target) error
 
-		// outputs
-		[]reflect.Type{
-			reflect.TypeOf((*http.Client)(nil)),
-			arrange.ErrorType(),
-		},
-
-		false, // not variadic
-	)
-}
-
-func (c *C) Unmarshal(opts ...viper.DecoderConfigOption) interface{} {
+// applyUnmarshal does all the heavy-lifting of creating an http.Client and applying any options.
+// The returned function will always return the tuple of (*http.Client, error), and its first input
+// parameter will always be a ClientIn.  Subsequent input parameters, if necessary, will be the
+// dependencies supplied during building.
+func (c *C) applyUnmarshal(local []viper.DecoderConfigOption, cuf clientUnmarshalFunc) interface{} {
 	return reflect.MakeFunc(
-		c.unmarshalFuncOf(),
+		reflect.FuncOf(
+			// inputs
+			append(
+				[]reflect.Type{reflect.TypeOf(ClientIn{})},
+				c.dependencies...,
+			),
+
+			// outputs
+			[]reflect.Type{
+				reflect.TypeOf((*http.Client)(nil)),
+				arrange.ErrorType(),
+			},
+
+			false, // not variadic
+		),
 		func(inputs []reflect.Value) []reflect.Value {
-			var client *http.Client
-			var err error
+			var (
+				client *http.Client
+				err    error
+			)
 
 			if len(c.errs) > 0 {
 				err = multierr.Combine(c.errs...)
 			} else {
-				in := inputs[0].Interface().(ClientIn)
 				target := arrange.NewTarget(c.prototype)
-				err = in.Viper.Unmarshal(
-					target.UnmarshalTo(),
-					arrange.Merge(in.DecoderOptions, opts),
-				)
+				in := inputs[0].Interface().(ClientIn)
+				p := arrange.GetPrinter(in.Printer)
+				err = cuf(p, in.Viper, arrange.Merge(in.DecoderOptions, local), target)
+				if err == nil {
+					factory := target.Component().(ClientFactory)
+					client, err = factory.NewClient()
+				}
 
 				if err == nil {
-					client, err = c.newClient(
-						target.Component().(ClientFactory),
-						in,
-						inputs[1:],
-					)
+					for _, co := range c.unmarshalOptions(p, inputs[1:]) {
+						err = co(client)
+						if err != nil {
+							break
+						}
+					}
+				}
+
+				if err == nil {
+					// if everything's good, ensure that idle connections are closed on shutdown
+					in.Lifecycle.Append(fx.Hook{
+						OnStop: func(context.Context) error {
+							client.CloseIdleConnections()
+							return nil
+						},
+					})
 				}
 			}
 
@@ -323,6 +335,60 @@ func (c *C) Unmarshal(opts ...viper.DecoderConfigOption) interface{} {
 			}
 		},
 	).Interface()
+}
+
+// Unmarshal dynamically produces a function with the following signature:
+//
+//   func(ClientIn, /* zero or more fx.In struct dependencies */) (*http.Client, error)
+//
+// This returned function can then be used inside fx.Provide.  The simplest example would be:
+//
+//   fx.New(
+//     fx.Provide(
+//       arrangehttp.Client().Unmarshal(),
+//     ),
+//     fx.Invoke(
+//       func(c *http.Client) {
+//         // use this client somehow
+//       },
+//     ),
+//   )
+//
+// A more interesting example, with some dependencies automatically applied:
+//
+//   type Dependencies struct {
+//     fx.In
+//
+//     // This field will be scanned and automatically applied to http.Client.Transport
+//     Decorator arrangehttp.RoundTripperConstructor `name:"metrics"`
+//   }
+//
+//   fx.New(
+//     fx.Provide(
+//       fx.Annotated{
+//         Name: "metrics",
+//         Target: func() arrangehttp.RoundTripperConstructor {
+//           // interact with whatever metrics API you like to produce a decorator
+//         },
+//       },
+//       arrangehttp.Client(Dependencies{}).Unmarshal(),
+//     ),
+//     fx.Invoke(
+//       func(c *http.Client) {
+//         // this client will have its Transport decorated with metrics
+//       },
+//     ),
+//   )
+//
+// See NewCOption and Use for the set of things supported in dependency structs.
+func (c *C) Unmarshal(local ...viper.DecoderConfigOption) interface{} {
+	return c.applyUnmarshal(
+		local,
+		func(p fx.Printer, v *viper.Viper, o viper.DecoderConfigOption, t arrange.Target) error {
+			p.Printf(arrange.Prepend(module, "CLIENT UNMARSHAL => %s"), t.ComponentType())
+			return v.Unmarshal(t.UnmarshalTo(), o)
+		},
+	)
 }
 
 // Provide produces an fx.Provide that does the same thing as Unmarshal.  This
@@ -352,39 +418,16 @@ func (c *C) Provide(opts ...viper.DecoderConfigOption) fx.Option {
 	)
 }
 
-func (c *C) UnmarshalKey(key string, opts ...viper.DecoderConfigOption) interface{} {
-	return reflect.MakeFunc(
-		c.unmarshalFuncOf(),
-		func(inputs []reflect.Value) []reflect.Value {
-			var client *http.Client
-			var err error
-
-			if len(c.errs) > 0 {
-				err = multierr.Combine(c.errs...)
-			} else {
-				in := inputs[0].Interface().(ClientIn)
-				target := arrange.NewTarget(c.prototype)
-				err = in.Viper.UnmarshalKey(
-					key,
-					target.UnmarshalTo(),
-					arrange.Merge(in.DecoderOptions, opts),
-				)
-
-				if err == nil {
-					client, err = c.newClient(
-						target.Component().(ClientFactory),
-						in,
-						inputs[1:],
-					)
-				}
-			}
-
-			return []reflect.Value{
-				reflect.ValueOf(client),
-				arrange.NewErrorValue(err),
-			}
+// UnmarshalKey is the same as Unmarshal, save that it unmarshals the ClientFactory from
+// a specific configuration key.
+func (c *C) UnmarshalKey(key string, local ...viper.DecoderConfigOption) interface{} {
+	return c.applyUnmarshal(
+		local,
+		func(p fx.Printer, v *viper.Viper, o viper.DecoderConfigOption, t arrange.Target) error {
+			p.Printf(arrange.Prepend(module, "CLIENT UNMARSHAL KEY\t[%s] => %s"), key, t.ComponentType())
+			return v.UnmarshalKey(key, t.UnmarshalTo(), o)
 		},
-	).Interface()
+	)
 }
 
 // ProvideKey unmarshals the ClientFactory from a particular Viper key.  The *http.Client

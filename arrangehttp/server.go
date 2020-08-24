@@ -299,86 +299,127 @@ func (s *S) Use(v ...interface{}) *S {
 	return s
 }
 
-// newRouter does all the heavy-lifting of creating an http.Server and mux.Router and
-// applying any options.  If everything is successful, the http.Server is bound to the
-// fx.Lifecycle.
-func (s *S) newRouter(f ServerFactory, in ServerIn, dependencies []reflect.Value) (*mux.Router, error) {
-	server, err := f.NewServer()
-	if err != nil {
-		return nil, err
+// unmarshalOptions returns a slice of SOptions (possibly) created from both this builder's context
+// and the supplied dependencies, if any.  if the supplied dependencies slice is empty, this
+// method simply returns s.options.
+func (s *S) unmarshalOptions(p fx.Printer, dependencies []reflect.Value) (options []SOption) {
+	if len(dependencies) > 0 {
+		// visit struct fields in dependencies, building SOptions where possible
+		for _, d := range dependencies {
+			arrange.VisitFields(
+				d,
+				func(f reflect.StructField, fv reflect.Value) arrange.VisitResult {
+					if arrange.IsDependency(f, fv) {
+						// ignore struct fields that aren't applicable
+						// this allows callers to reuse fx.In structs for different purposes
+						raw := fv.Interface()
+						if so, err := NewSOption(raw); err == nil {
+							p.Printf(arrange.Prepend(module, "SERVER OPTION => %T %s"), raw, f.Tag)
+							options = append(options, so)
+						}
+					}
+
+					return arrange.VisitContinue
+				},
+			)
+		}
+
+		// locally defined options execute after injected options, allowing
+		// local options to override global ones
+		options = append(options, s.options...)
+	} else {
+		// optimization: for the case with no dependencies, don't bother
+		// making a copy and just return the builder's options as is
+		options = s.options
 	}
 
-	router := mux.NewRouter()
-	server.Handler = router
-	var chain ListenerChain
-	var options []SOption
+	return
+}
 
-	// visit struct fields in dependencies, building SOptions where possible
-	for _, d := range dependencies {
-		arrange.VisitFields(
-			d,
-			func(f reflect.StructField, fv reflect.Value) arrange.VisitResult {
-				if arrange.IsDependency(f, fv) {
-					// ignore struct fields that aren't applicable
-					// this allows callers to reuse fx.In structs for different purposes
-					if so, err := NewSOption(fv.Interface()); err == nil {
-						options = append(options, so)
+// serverUnmarshalFunc is the require closure that performs unmarshaling of
+// a ServerFactory instance from viper.
+type serverUnmarshalFunc func(fx.Printer, *viper.Viper, viper.DecoderConfigOption, arrange.Target) error
+
+// applyUnmarshal does all the heavy-lifting of creating an http.Server and mux.Router and
+// applying any options.  If everything is successful, the http.Server is bound to the
+// fx.Lifecycle.  The returned function will always return the tuple of (*mux.Router, error),
+// and the first input parameter will always be a ServerIn.
+func (s *S) applyUnmarshal(local []viper.DecoderConfigOption, suf serverUnmarshalFunc) interface{} {
+	return reflect.MakeFunc(
+		reflect.FuncOf(
+			// inputs
+			append(
+				[]reflect.Type{reflect.TypeOf(ServerIn{})},
+				s.dependencies...,
+			),
+
+			// outputs
+			[]reflect.Type{
+				reflect.TypeOf((*mux.Router)(nil)),
+				arrange.ErrorType(),
+			},
+
+			false, // not variadic
+		),
+		func(inputs []reflect.Value) []reflect.Value {
+			var (
+				router *mux.Router
+				err    error
+			)
+
+			if len(s.errs) > 0 {
+				err = multierr.Combine(s.errs...)
+			} else {
+				var (
+					server  *http.Server
+					chain   ListenerChain
+					factory ServerFactory
+				)
+
+				target := arrange.NewTarget(s.prototype)
+				in := inputs[0].Interface().(ServerIn)
+				p := arrange.GetPrinter(in.Printer)
+				err = suf(p, in.Viper, arrange.Merge(in.DecoderOptions, local), target)
+				if err == nil {
+					factory = target.Component().(ServerFactory)
+					server, err = factory.NewServer()
+				}
+
+				if err == nil {
+					router = mux.NewRouter()
+					server.Handler = router
+					for _, so := range s.unmarshalOptions(p, inputs[1:]) {
+						chain, err = so(server, router, chain)
+						if err != nil {
+							break
+						}
 					}
 				}
 
-				return arrange.VisitContinue
-			},
-		)
-	}
+				if err == nil {
+					lf, ok := factory.(ListenerFactory)
+					if !ok {
+						lf = DefaultListenerFactory{}
+					}
 
-	// locally defined options execute after injected options, allowing
-	// local options to override global ones
-	options = append(options, s.options...)
-	for _, so := range options {
-		chain, err = so(server, router, chain)
-		if err != nil {
-			return nil, err
-		}
-	}
+					// if everything's good, bind the server to the fx.App lifecycle
+					in.Lifecycle.Append(fx.Hook{
+						OnStart: ServerOnStart(
+							server,
+							chain.Factory(lf),
+							ShutdownOnExit(in.Shutdowner),
+						),
+						OnStop: server.Shutdown,
+					})
+				}
+			}
 
-	lf, ok := f.(ListenerFactory)
-	if !ok {
-		lf = DefaultListenerFactory{}
-	}
-
-	// if everything's good, bind the server to the fx.App lifecycle
-	in.Lifecycle.Append(fx.Hook{
-		OnStart: ServerOnStart(
-			server,
-			chain.Factory(lf),
-			ShutdownOnExit(in.Shutdowner),
-		),
-		OnStop: server.Shutdown,
-	})
-
-	return router, nil
-}
-
-// unmarshalFuncOf returns the function signature for an unmarshal function.
-// The first parameter will always be a ServerIn.  If more than one parameter
-// is supplied, they will all be structs expected to be injected by uber/fx.
-// The return values are always (*mux.Router, error).
-func (s *S) unmarshalFuncOf() reflect.Type {
-	return reflect.FuncOf(
-		// inputs
-		append(
-			[]reflect.Type{reflect.TypeOf(ServerIn{})},
-			s.dependencies...,
-		),
-
-		// outputs
-		[]reflect.Type{
-			reflect.TypeOf((*mux.Router)(nil)),
-			arrange.ErrorType(),
+			return []reflect.Value{
+				reflect.ValueOf(router),
+				arrange.NewErrorValue(err),
+			}
 		},
-
-		false, // not variadic
-	)
+	).Interface()
 }
 
 // Unmarshal terminates the builder chain and returns a function that produces a mux.Router.
@@ -400,73 +441,24 @@ func (s *S) unmarshalFuncOf() reflect.Type {
 //       },
 //     ),
 //   )
-func (s *S) Unmarshal(opts ...viper.DecoderConfigOption) interface{} {
-	return reflect.MakeFunc(
-		s.unmarshalFuncOf(),
-		func(inputs []reflect.Value) []reflect.Value {
-			var router *mux.Router
-			var err error
-
-			if len(s.errs) > 0 {
-				err = multierr.Combine(s.errs...)
-			} else {
-				in := inputs[0].Interface().(ServerIn)
-				target := arrange.NewTarget(s.prototype)
-				err = in.Viper.Unmarshal(
-					target.UnmarshalTo(),
-					arrange.Merge(in.DecoderOptions, opts),
-				)
-
-				if err == nil {
-					router, err = s.newRouter(
-						target.Component().(ServerFactory),
-						in,
-						inputs[1:],
-					)
-				}
-			}
-
-			return []reflect.Value{
-				reflect.ValueOf(router),
-				arrange.NewErrorValue(err),
-			}
+func (s *S) Unmarshal(local ...viper.DecoderConfigOption) interface{} {
+	return s.applyUnmarshal(
+		local,
+		func(p fx.Printer, v *viper.Viper, o viper.DecoderConfigOption, t arrange.Target) error {
+			p.Printf(arrange.Prepend(module, "SERVER UNMARSHAL => %s"), t.ComponentType())
+			return v.Unmarshal(t.UnmarshalTo(), o)
 		},
-	).Interface()
+	)
 }
 
-func (s *S) UnmarshalKey(key string, opts ...viper.DecoderConfigOption) interface{} {
-	return reflect.MakeFunc(
-		s.unmarshalFuncOf(),
-		func(inputs []reflect.Value) []reflect.Value {
-			var router *mux.Router
-			var err error
-
-			if len(s.errs) > 0 {
-				err = multierr.Combine(s.errs...)
-			} else {
-				in := inputs[0].Interface().(ServerIn)
-				target := arrange.NewTarget(s.prototype)
-				err = in.Viper.UnmarshalKey(
-					key,
-					target.UnmarshalTo(),
-					arrange.Merge(in.DecoderOptions, opts),
-				)
-
-				if err == nil {
-					router, err = s.newRouter(
-						target.Component().(ServerFactory),
-						in,
-						inputs[1:],
-					)
-				}
-			}
-
-			return []reflect.Value{
-				reflect.ValueOf(router),
-				arrange.NewErrorValue(err),
-			}
+func (s *S) UnmarshalKey(key string, local ...viper.DecoderConfigOption) interface{} {
+	return s.applyUnmarshal(
+		local,
+		func(p fx.Printer, v *viper.Viper, o viper.DecoderConfigOption, t arrange.Target) error {
+			p.Printf(arrange.Prepend(module, "SERVER UNMARSHAL KEY\t[%s] => %s"), key, t.ComponentType())
+			return v.UnmarshalKey(key, t.UnmarshalTo(), o)
 		},
-	).Interface()
+	)
 }
 
 // Provide produces an fx.Provide that does the same thing as Unmarshal.  This

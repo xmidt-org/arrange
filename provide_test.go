@@ -26,6 +26,7 @@ func testUnmarshalSuccess(t *testing.T) {
 
 	fxtest.New(
 		t,
+		TestLogger(t),
 		Supply(v),
 		fx.Provide(
 			Unmarshal(TestConfig{}),
@@ -59,7 +60,7 @@ func testUnmarshalExact(t *testing.T) {
 	t.Log("EXPECTED ERROR OUTPUT:")
 
 	app := fx.New(
-		fx.Logger(testPrinter{T: t}),
+		TestLogger(t),
 		Supply(v, global),
 		fx.Provide(
 			Unmarshal(TestConfig{}, Exact),
@@ -89,6 +90,7 @@ func testUnmarshalKeySuccess(t *testing.T) {
 
 	fxtest.New(
 		t,
+		TestLogger(t),
 		Supply(v),
 		fx.Provide(
 			UnmarshalKey("test", TestConfig{}),
@@ -122,7 +124,7 @@ func testUnmarshalKeyExact(t *testing.T) {
 	t.Log("EXPECTED ERROR OUTPUT:")
 
 	app := fx.New(
-		fx.Logger(testPrinter{T: t}),
+		TestLogger(t),
 		Supply(v, global),
 		fx.Provide(
 			UnmarshalKey("test", TestConfig{}, Exact),
@@ -160,6 +162,7 @@ age: 64
 
 	fxtest.New(
 		t,
+		TestLogger(t),
 		Supply(v),
 		Provide(TestConfig{Interval: 15 * time.Second}),
 		Provide(&AnotherConfig{Interval: 17 * time.Hour}),
@@ -207,7 +210,7 @@ nosuch: asdfasdfasdf
 	t.Log("EXPECTED ERROR OUTPUT:")
 
 	app := fx.New(
-		fx.Logger(testPrinter{T: t}),
+		TestLogger(t),
 		Supply(v, Exact),
 		Provide(TestConfig{}),
 		fx.Populate(&value),
@@ -255,6 +258,7 @@ test3:
 
 	fxtest.New(
 		t,
+		TestLogger(t),
 		Supply(v),
 		ProvideKey("test1", TestConfig{Interval: 15 * time.Second}),
 		ProvideKey("test2", &TestConfig{Interval: 23 * time.Minute}),
@@ -306,7 +310,7 @@ test:
 	t.Log("EXPECTED ERROR OUTPUT:")
 
 	app := fx.New(
-		fx.Logger(testPrinter{T: t}),
+		TestLogger(t),
 		Supply(v, Exact),
 		ProvideKey("test", TestConfig{}),
 		fx.Populate(&value),
@@ -370,6 +374,7 @@ test3:
 
 	fxtest.New(
 		t,
+		TestLogger(t),
 		Supply(v, global),
 		Keys("test1", "test2", "test3").Provide(TestConfig{}, option1),
 		Keys("test1", "test2", "test3").Group("tests").Provide(&TestConfig{}, option2),

@@ -3,7 +3,6 @@ package arrange
 import (
 	"fmt"
 	"io/ioutil"
-	"log"
 
 	"github.com/spf13/viper"
 	"go.uber.org/fx"
@@ -18,7 +17,7 @@ func ExampleIf() {
 	}
 
 	fx.New(
-		fx.Logger(log.New(ioutil.Discard, "", 0)),
+		LoggerWriter(ioutil.Discard),
 		Supply(v), // necessary for the Provide call below
 		If(v.IsSet("address")).Then(
 			Provide(Config{}),

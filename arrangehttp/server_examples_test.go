@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
-	"log"
 	"net"
 	"net/http"
 	"os"
@@ -43,9 +42,7 @@ address: ":0"
 
 	address := make(chan net.Addr, 1)
 	app := fx.New(
-		fx.Logger(
-			log.New(ioutil.Discard, "", 0),
-		),
+		arrange.LoggerWriter(ioutil.Discard),
 		fx.Supply(v), // you can also use arrange.Supply
 		fx.Provide(
 			fx.Annotated{
@@ -153,9 +150,7 @@ servers:
 
 	address := make(chan net.Addr, 1)
 	app := fx.New(
-		fx.Logger(
-			log.New(ioutil.Discard, "", 0),
-		),
+		arrange.LoggerWriter(ioutil.Discard),
 		arrange.Supply(v),
 		fx.Provide(
 			func() http.Handler {

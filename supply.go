@@ -21,6 +21,9 @@ type ProvideIn struct {
 
 	// DecoderOptions are an optional set of options from the enclosing fx.App
 	DecoderOptions []viper.DecoderConfigOption `optional:"true"`
+
+	// Printer is an optional fx.Printer that arrange will use to output informational messages
+	Printer fx.Printer `optional:"true"`
 }
 
 // Supply is an analog to fx.Supply.  This eases the injection of a viper instance

@@ -60,7 +60,7 @@ func testSupplyNilViper(t *testing.T) {
 	t.Log("EXPECTED ERROR OUTPUT:")
 
 	app := fx.New(
-		fx.Logger(testPrinter{T: t}),
+		TestLogger(t),
 		Supply(nil),
 		fx.Populate(&actual),
 	)

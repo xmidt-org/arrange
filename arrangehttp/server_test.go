@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
-	"log"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -788,9 +787,7 @@ func testServerListenerConstructors(t *testing.T) {
 	v.Set("address", ":0")
 	app := fxtest.New(
 		t,
-		fx.Logger(
-			log.New(ioutil.Discard, "", 0),
-		),
+		arrange.TestLogger(t),
 		arrange.Supply(v),
 		fx.Provide(
 			Server().
@@ -815,7 +812,7 @@ func testServerListenerConstructors(t *testing.T) {
 	select {
 	case serverAddress = <-address:
 	case <-time.After(2 * time.Second):
-		assert.Fail("No server address returned")
+		require.Fail("No server address returned")
 	}
 
 	response, err := http.Get("http://" + serverAddress.String() + "/test")
@@ -856,9 +853,7 @@ func testServerUnmarshal(t *testing.T) {
 	v.Set("address", ":0")
 	app := fxtest.New(
 		t,
-		fx.Logger(
-			log.New(ioutil.Discard, "", 0),
-		),
+		arrange.TestLogger(t),
 		arrange.Supply(v),
 		fx.Provide(
 			func() ListenerChain {
@@ -898,35 +893,35 @@ func testServerUnmarshal(t *testing.T) {
 	case <-localSOptionCalled:
 		// passing
 	case <-time.After(2 * time.Second):
-		assert.Fail("The local server option was not called")
+		require.Fail("The local server option was not called")
 	}
 
 	select {
 	case <-globalSOptionCalled:
 		// passing
 	case <-time.After(2 * time.Second):
-		assert.Fail("The global server option was not called")
+		require.Fail("The global server option was not called")
 	}
 
 	var serverAddress net.Addr
 	select {
 	case serverAddress = <-localAddress:
 	case <-time.After(2 * time.Second):
-		assert.Fail("No server address returned")
+		require.Fail("No server address returned")
 	}
 
 	select {
 	case globalAddress := <-globalAddress1:
 		assert.Equal(serverAddress, globalAddress)
 	case <-time.After(2 * time.Second):
-		assert.Fail("No server address returned")
+		require.Fail("No server address returned")
 	}
 
 	select {
 	case globalAddress := <-globalAddress2:
 		assert.Equal(serverAddress, globalAddress)
 	case <-time.After(2 * time.Second):
-		assert.Fail("No server address returned")
+		require.Fail("No server address returned")
 	}
 
 	response, err := http.Get("http://" + serverAddress.String() + "/test")
@@ -962,9 +957,7 @@ func testServerUnmarshalDefaultListenerFactory(t *testing.T) {
 	v.Set("address", ":0")
 	app := fxtest.New(
 		t,
-		fx.Logger(
-			log.New(ioutil.Discard, "", 0),
-		),
+		arrange.TestLogger(t),
 		arrange.Supply(v),
 		fx.Provide(
 			func() ListenerChain {
@@ -993,7 +986,7 @@ func testServerUnmarshalDefaultListenerFactory(t *testing.T) {
 	select {
 	case serverAddress = <-address:
 	case <-time.After(2 * time.Second):
-		assert.Fail("No server address returned")
+		require.Fail("No server address returned")
 	}
 
 	response, err := http.Get("http://" + serverAddress.String() + "/test")
@@ -1021,9 +1014,7 @@ func testServerServerFactoryError(t *testing.T) {
 
 	v.Set("address", "localhost:8080")
 	app := fx.New(
-		fx.Logger(
-			log.New(ioutil.Discard, "", 0),
-		),
+		arrange.TestLogger(t),
 		arrange.Supply(v),
 		fx.Provide(
 			Server().
@@ -1046,9 +1037,7 @@ func testServerLocalSOptionError(t *testing.T) {
 
 	v.Set("address", "localhost:8080")
 	app := fx.New(
-		fx.Logger(
-			log.New(ioutil.Discard, "", 0),
-		),
+		arrange.TestLogger(t),
 		arrange.Supply(v),
 		fx.Provide(
 			Server().
@@ -1078,9 +1067,7 @@ func testServerGlobalSOptionError(t *testing.T) {
 
 	v.Set("address", "localhost:8080")
 	app := fx.New(
-		fx.Logger(
-			log.New(ioutil.Discard, "", 0),
-		),
+		arrange.TestLogger(t),
 		arrange.Supply(v),
 		fx.Provide(
 			func() ServerOption {
@@ -1107,9 +1094,7 @@ func testServerUnmarshalError(t *testing.T) {
 	v.Set("address", ":0")
 	v.Set("readTimeout", "this is not a valid golang time.Duration")
 	app := fx.New(
-		fx.Logger(
-			log.New(ioutil.Discard, "", 0),
-		),
+		arrange.TestLogger(t),
 		arrange.Supply(v),
 		fx.Provide(
 			Server().Unmarshal(),
@@ -1130,9 +1115,7 @@ func testServerUnmarshalUseError(t *testing.T) {
 
 	v.Set("address", ":0")
 	app := fx.New(
-		fx.Logger(
-			log.New(ioutil.Discard, "", 0),
-		),
+		arrange.TestLogger(t),
 		arrange.Supply(v),
 		fx.Provide(
 			// not a valid option
@@ -1164,9 +1147,7 @@ func testServerProvide(t *testing.T) {
 	v.Set("address", ":0")
 	app := fxtest.New(
 		t,
-		fx.Logger(
-			log.New(ioutil.Discard, "", 0),
-		),
+		arrange.TestLogger(t),
 		arrange.Supply(v),
 		Server(sOption).
 			Use(
@@ -1196,7 +1177,7 @@ func testServerProvide(t *testing.T) {
 	select {
 	case serverAddress = <-address:
 	case <-time.After(2 * time.Second):
-		assert.Fail("No server address returned")
+		require.Fail("No server address returned")
 	}
 
 	response, err := http.Get("http://" + serverAddress.String() + "/test")
@@ -1238,9 +1219,7 @@ servers:
 
 	app := fxtest.New(
 		t,
-		fx.Logger(
-			log.New(ioutil.Discard, "", 0),
-		),
+		arrange.TestLogger(t),
 		arrange.Supply(v),
 		fx.Provide(
 			Server(sOption).
@@ -1272,7 +1251,7 @@ servers:
 	select {
 	case serverAddress = <-address:
 	case <-time.After(2 * time.Second):
-		assert.Fail("No server address returned")
+		require.Fail("No server address returned")
 	}
 
 	response, err := http.Get("http://" + serverAddress.String() + "/test")
@@ -1302,9 +1281,7 @@ servers:
 	require.NoError(v.ReadConfig(strings.NewReader(yaml)))
 
 	app := fx.New(
-		fx.Logger(
-			log.New(ioutil.Discard, "", 0),
-		),
+		arrange.TestLogger(t),
 		arrange.Supply(v),
 		fx.Provide(
 			Server().UnmarshalKey("servers.main"),
@@ -1335,9 +1312,7 @@ servers:
 	require.NoError(v.ReadConfig(strings.NewReader(yaml)))
 
 	app := fx.New(
-		fx.Logger(
-			log.New(ioutil.Discard, "", 0),
-		),
+		arrange.TestLogger(t),
 		arrange.Supply(v),
 		fx.Provide(
 			Server().Use("this is not an fx.In struct").UnmarshalKey("servers.main"),
@@ -1385,9 +1360,7 @@ servers:
 
 	app := fxtest.New(
 		t,
-		fx.Logger(
-			log.New(ioutil.Discard, "", 0),
-		),
+		arrange.TestLogger(t),
 		arrange.Supply(v),
 		Server(sOption).
 			Use(
@@ -1417,7 +1390,7 @@ servers:
 	select {
 	case serverAddress = <-address:
 	case <-time.After(2 * time.Second):
-		assert.Fail("No server address returned")
+		require.Fail("No server address returned")
 	}
 
 	response, err := http.Get("http://" + serverAddress.String() + "/test")

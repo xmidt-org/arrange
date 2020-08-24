@@ -31,8 +31,9 @@ jobs:
       script:
         - if [ -n "$(gofmt -s -l . | grep -v "vendor")" ]; then diff -u <(echo -n) <(gofmt -d $(gofmt -s -l . | grep -v "vendor")); fi
         - GO111MODULE=on go test -v -race -coverprofile=coverage.txt ./...
+        - GO111MODULE=on go test -race -json ./... > report.json
       after_success:
-        - sonar-scanner -Dproject.settings=./.sonar-project.properties -X
+        - sonar-scanner -Dproject.settings=./.sonar-project.properties
         - bash <(curl -s https://codecov.io/bash)
 
     - stage: tag

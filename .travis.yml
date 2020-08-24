@@ -1,12 +1,5 @@
 language: go
 
-go:
-  - 1.13.x
-  - tip
-
-os:
-  - linux
-
 branches:
   only:
     - main
@@ -21,16 +14,27 @@ addons:
 install:
   - GO111MODULE=on go mod vendor
 
-script:
-  - if [ -n "$(gofmt -s -l . | grep -v "vendor")" ]; then diff -u <(echo -n) <(gofmt -d $(gofmt -s -l . | grep -v "vendor")); fi
-  - GO111MODULE=on go test -v -race -coverprofile=coverage.txt ./...
-
-after_success:
-  - sonar-scanner -Dproject.settings=./.sonar-project.properties
-  - bash <(curl -s https://codecov.io/bash)
+stages:
+  - test
+  - tag
+  - release
 
 jobs:
   include:
+    - stage: test
+      name: "Build & Testing"
+      go:
+        - 1.13.x
+        - tip
+      os:
+        - linux
+      script:
+        - if [ -n "$(gofmt -s -l . | grep -v "vendor")" ]; then diff -u <(echo -n) <(gofmt -d $(gofmt -s -l . | grep -v "vendor")); fi
+        - GO111MODULE=on go test -v -race -coverprofile=coverage.txt ./...
+      after_success:
+        - sonar-scanner -Dproject.settings=./.sonar-project.properties -X
+        - bash <(curl -s https://codecov.io/bash)
+
     - stage: tag
       name: "Tag For Release"
       if: branch = main && type = push
@@ -44,10 +48,10 @@ jobs:
         - export TODAY=`date +'%m/%d/%Y'`
         - export NOTES=$(cat CHANGELOG.md | perl -0777 -ne 'print "$ENV{TODAY}\n\n$1\n" if /.*## \[$ENV{TAG}\]\s(.*?)\s+## \[(v\d+.\d+.\d+)\].*/s')
         - if [[ "$TAG" != "" && "$TAG" != "$OLD_VERSION" ]]; then git tag -a "$TAG" -m "$NOTES"; git push origin --tags; echo $?; fi
+
     - stage: release
       name: "Make a Release"
       if: branch != main
-      script: skip
       deploy:
         on:
           all_branches: true

@@ -1,4 +1,4 @@
 package arrangehttp
 
-// module is what this package prepends to fx.Printer.Printf templates
-const module = "Arrange HTTP"
+// Module is what this package uses for informational messages (NOT the golang module)
+const Module = "Arrange HTTP"

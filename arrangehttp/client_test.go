@@ -4,8 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io/ioutil"
-	"log"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
@@ -459,9 +457,7 @@ transport:
 
 	app := fxtest.New(
 		t,
-		fx.Logger(
-			log.New(ioutil.Discard, "", 0),
-		),
+		arrange.TestLogger(t),
 		arrange.Supply(v),
 		fx.Provide(
 			func() RoundTripperChain {
@@ -547,9 +543,7 @@ timeout: "this is not a valid golang duration"
 	require.NoError(v.ReadConfig(strings.NewReader(yaml)))
 
 	app := fx.New(
-		fx.Logger(
-			log.New(ioutil.Discard, "", 0),
-		),
+		arrange.TestLogger(t),
 		arrange.Supply(v),
 		fx.Provide(
 			Client().Unmarshal(),
@@ -575,9 +569,7 @@ timeout: "90s"
 	require.NoError(v.ReadConfig(strings.NewReader(yaml)))
 
 	app := fx.New(
-		fx.Logger(
-			log.New(ioutil.Discard, "", 0),
-		),
+		arrange.TestLogger(t),
 		arrange.Supply(v),
 		fx.Provide(
 			Client().
@@ -600,9 +592,7 @@ func testClientLocalCOptionError(t *testing.T) {
 
 	v.Set("timeout", "10s")
 	app := fx.New(
-		fx.Logger(
-			log.New(ioutil.Discard, "", 0),
-		),
+		arrange.TestLogger(t),
 		arrange.Supply(v),
 		fx.Provide(
 			Client().
@@ -634,9 +624,7 @@ func testClientFactoryError(t *testing.T) {
 
 	v.Set("timeout", "89s")
 	app := fx.New(
-		fx.Logger(
-			log.New(ioutil.Discard, "", 0),
-		),
+		arrange.TestLogger(t),
 		arrange.Supply(v),
 		fx.Provide(
 			Client().ClientFactory(badClientFactory{}).Unmarshal(),
@@ -675,9 +663,7 @@ transport:
 
 	app := fxtest.New(
 		t,
-		fx.Logger(
-			log.New(ioutil.Discard, "", 0),
-		),
+		arrange.TestLogger(t),
 		arrange.Supply(v),
 		Client(option).Provide(),
 		fx.Populate(&client),
@@ -725,9 +711,7 @@ clients:
 
 	app := fxtest.New(
 		t,
-		fx.Logger(
-			log.New(ioutil.Discard, "", 0),
-		),
+		arrange.TestLogger(t),
 		arrange.Supply(v),
 		fx.Provide(
 			Client(option).UnmarshalKey("clients.main"),
@@ -765,9 +749,7 @@ clients:
 	require.NoError(v.ReadConfig(strings.NewReader(yaml)))
 
 	app := fx.New(
-		fx.Logger(
-			log.New(ioutil.Discard, "", 0),
-		),
+		arrange.TestLogger(t),
 		arrange.Supply(v),
 		fx.Provide(
 			Client().UnmarshalKey("clients.main"),
@@ -795,9 +777,7 @@ clients:
 	require.NoError(v.ReadConfig(strings.NewReader(yaml)))
 
 	app := fx.New(
-		fx.Logger(
-			log.New(ioutil.Discard, "", 0),
-		),
+		arrange.TestLogger(t),
 		arrange.Supply(v),
 		fx.Provide(
 			Client().
@@ -844,9 +824,7 @@ clients:
 
 	app := fxtest.New(
 		t,
-		fx.Logger(
-			log.New(ioutil.Discard, "", 0),
-		),
+		arrange.TestLogger(t),
 		arrange.Supply(v),
 		Client(option).ProvideKey("clients.main"),
 		fx.Invoke(

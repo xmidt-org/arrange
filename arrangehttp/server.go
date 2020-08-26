@@ -314,7 +314,7 @@ func (s *S) unmarshalOptions(p fx.Printer, dependencies []reflect.Value) (option
 						// this allows callers to reuse fx.In structs for different purposes
 						raw := fv.Interface()
 						if so, err := NewSOption(raw); err == nil {
-							p.Printf(arrange.Prepend(module, "SERVER OPTION => %T %s"), raw, f.Tag)
+							arrange.Printf(p, Module, "SERVER OPTION => %T %s", raw, f.Tag)
 							options = append(options, so)
 						}
 					}
@@ -378,8 +378,7 @@ func (s *S) applyUnmarshal(local []viper.DecoderConfigOption, suf serverUnmarsha
 
 				target := arrange.NewTarget(s.prototype)
 				in := inputs[0].Interface().(ServerIn)
-				p := arrange.GetPrinter(in.Printer)
-				err = suf(p, in.Viper, arrange.Merge(in.DecoderOptions, local), target)
+				err = suf(in.Printer, in.Viper, arrange.Merge(in.DecoderOptions, local), target)
 				if err == nil {
 					factory = target.Component().(ServerFactory)
 					server, err = factory.NewServer()
@@ -388,7 +387,7 @@ func (s *S) applyUnmarshal(local []viper.DecoderConfigOption, suf serverUnmarsha
 				if err == nil {
 					router = mux.NewRouter()
 					server.Handler = router
-					for _, so := range s.unmarshalOptions(p, inputs[1:]) {
+					for _, so := range s.unmarshalOptions(in.Printer, inputs[1:]) {
 						chain, err = so(server, router, chain)
 						if err != nil {
 							break
@@ -445,7 +444,7 @@ func (s *S) Unmarshal(local ...viper.DecoderConfigOption) interface{} {
 	return s.applyUnmarshal(
 		local,
 		func(p fx.Printer, v *viper.Viper, o viper.DecoderConfigOption, t arrange.Target) error {
-			p.Printf(arrange.Prepend(module, "SERVER UNMARSHAL => %s"), t.ComponentType())
+			arrange.Printf(p, Module, "SERVER UNMARSHAL => %s", t.ComponentType())
 			return v.Unmarshal(t.UnmarshalTo(), o)
 		},
 	)
@@ -455,7 +454,7 @@ func (s *S) UnmarshalKey(key string, local ...viper.DecoderConfigOption) interfa
 	return s.applyUnmarshal(
 		local,
 		func(p fx.Printer, v *viper.Viper, o viper.DecoderConfigOption, t arrange.Target) error {
-			p.Printf(arrange.Prepend(module, "SERVER UNMARSHAL KEY\t[%s] => %s"), key, t.ComponentType())
+			arrange.Printf(p, Module, "SERVER UNMARSHAL KEY\t[%s] => %s", key, t.ComponentType())
 			return v.UnmarshalKey(key, t.UnmarshalTo(), o)
 		},
 	)

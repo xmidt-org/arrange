@@ -244,7 +244,7 @@ func (c *C) unmarshalOptions(p fx.Printer, dependencies []reflect.Value) (option
 						// this allows callers to reuse fx.In structs for different purposes
 						raw := fv.Interface()
 						if co, err := NewCOption(raw); err == nil {
-							p.Printf(arrange.Prepend(module, "CLIENT OPTION => %T %s"), raw, f.Tag)
+							arrange.Printf(p, Module, "CLIENT OPTION => %T %s", raw, f.Tag)
 							options = append(options, co)
 						}
 					}
@@ -302,15 +302,14 @@ func (c *C) applyUnmarshal(local []viper.DecoderConfigOption, cuf clientUnmarsha
 			} else {
 				target := arrange.NewTarget(c.prototype)
 				in := inputs[0].Interface().(ClientIn)
-				p := arrange.GetPrinter(in.Printer)
-				err = cuf(p, in.Viper, arrange.Merge(in.DecoderOptions, local), target)
+				err = cuf(in.Printer, in.Viper, arrange.Merge(in.DecoderOptions, local), target)
 				if err == nil {
 					factory := target.Component().(ClientFactory)
 					client, err = factory.NewClient()
 				}
 
 				if err == nil {
-					for _, co := range c.unmarshalOptions(p, inputs[1:]) {
+					for _, co := range c.unmarshalOptions(in.Printer, inputs[1:]) {
 						err = co(client)
 						if err != nil {
 							break
@@ -385,7 +384,7 @@ func (c *C) Unmarshal(local ...viper.DecoderConfigOption) interface{} {
 	return c.applyUnmarshal(
 		local,
 		func(p fx.Printer, v *viper.Viper, o viper.DecoderConfigOption, t arrange.Target) error {
-			p.Printf(arrange.Prepend(module, "CLIENT UNMARSHAL => %s"), t.ComponentType())
+			arrange.Printf(p, Module, "CLIENT UNMARSHAL => %s", t.ComponentType())
 			return v.Unmarshal(t.UnmarshalTo(), o)
 		},
 	)
@@ -424,7 +423,7 @@ func (c *C) UnmarshalKey(key string, local ...viper.DecoderConfigOption) interfa
 	return c.applyUnmarshal(
 		local,
 		func(p fx.Printer, v *viper.Viper, o viper.DecoderConfigOption, t arrange.Target) error {
-			p.Printf(arrange.Prepend(module, "CLIENT UNMARSHAL KEY\t[%s] => %s"), key, t.ComponentType())
+			arrange.Printf(p, Module, "CLIENT UNMARSHAL KEY\t[%s] => %s", key, t.ComponentType())
 			return v.UnmarshalKey(key, t.UnmarshalTo(), o)
 		},
 	)

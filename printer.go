@@ -9,15 +9,8 @@ import (
 	"go.uber.org/fx"
 )
 
-// module is what code in this package passes to Prepend as its module parameter
-const module = "Arrange"
-
-// Prepend creates the standard format for information output that uber/fx uses.
-// It returns a string of the form "[module] template".  This function can be used
-// in conjunction with fx.Printer to standard informational output.
-func Prepend(module, template string) string {
-	return "[" + module + "] " + template
-}
+// Module is the fx.Printer module (NOT the golang module) for all output in this package
+const Module = "Arrange"
 
 // PrinterFunc is a function type that implements fx.Printer.  This is useful
 // for passing functions as printers, such as when using go.uber.org/zap with
@@ -28,6 +21,18 @@ type PrinterFunc func(string, ...interface{})
 // a newline to the output.
 func (pf PrinterFunc) Printf(template string, args ...interface{}) {
 	pf(template, args...)
+}
+
+// Printf sends it's output to the supplied printer.  If p is nil, DefaultPrinter() is used.
+//
+// The format used is "[module] template", the same as uber/fx.  The template, in turn, is
+// washed through printf-style formatting using the args.
+func Printf(p fx.Printer, module, template string, args ...interface{}) {
+	if p == nil {
+		p = DefaultPrinter()
+	}
+
+	p.Printf("["+module+"] "+template, args...)
 }
 
 // PrinterWriter creates an fx.Printer that sends all output to the specified
@@ -51,17 +56,6 @@ var defaultPrinter fx.Printer = log.New(os.Stderr, "", log.LstdFlags)
 // is supplied.  This outputs to os.Stderr, in keeping with uber/fx's behavior.
 func DefaultPrinter() fx.Printer {
 	return defaultPrinter
-}
-
-// GetPrinter returns p if p != nil, otherwise it returns DefaultPrinter().
-// Useful since the fx.Printer is an optional component for arrange and its
-// subpackages.
-func GetPrinter(p fx.Printer) fx.Printer {
-	if p == nil {
-		return DefaultPrinter()
-	}
-
-	return p
 }
 
 // Logger is an analog to fx.Logger.  This version sets the logger with fx.Logger

@@ -4,8 +4,6 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
-	"io/ioutil"
-	"log"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -19,11 +17,6 @@ type alwaysError struct{}
 
 func (ae alwaysError) Write([]byte) (int, error) {
 	return 0, errors.New("expected io.Writer error")
-}
-
-func TestPrepend(t *testing.T) {
-	assert := assert.New(t)
-	assert.Equal("[Test] MODULE", Prepend("Test", "MODULE"))
 }
 
 func TestPrinterFunc(t *testing.T) {
@@ -40,19 +33,34 @@ func TestPrinterFunc(t *testing.T) {
 	assert.Equal("test 123", output.String())
 }
 
+func TestPrintf(t *testing.T) {
+	var (
+		assert  = assert.New(t)
+		require = require.New(t)
+	)
+
+	output := new(bytes.Buffer)
+	Printf(PrinterWriter(output), "test", "value: %d", 123)
+	require.Greater(output.Len(), 0)
+	assert.Contains(output.String(), "[test]")
+	assert.Contains(output.String(), "value: 123")
+
+	old := defaultPrinter
+	defer func() {
+		defaultPrinter = old
+	}()
+
+	output = new(bytes.Buffer)
+	defaultPrinter = PrinterWriter(output)
+	Printf(nil, "test", "value: %d", 123)
+	require.Greater(output.Len(), 0)
+	assert.Contains(output.String(), "[test]")
+	assert.Contains(output.String(), "value: 123")
+}
+
 func TestDefaultPrinter(t *testing.T) {
 	assert := assert.New(t)
 	assert.Equal(defaultPrinter, DefaultPrinter())
-}
-
-func TestGetPrinter(t *testing.T) {
-	var (
-		assert   = assert.New(t)
-		expected = log.New(ioutil.Discard, "", 0)
-	)
-
-	assert.Equal(DefaultPrinter(), GetPrinter(nil))
-	assert.Equal(expected, GetPrinter(expected))
 }
 
 func testPrinterWriterSuccess(t *testing.T) {

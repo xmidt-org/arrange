@@ -23,16 +23,29 @@ func (pf PrinterFunc) Printf(template string, args ...interface{}) {
 	pf(template, args...)
 }
 
-// Printf sends it's output to the supplied printer.  If p is nil, DefaultPrinter() is used.
+// prefixPrinter prepends a string to each template prior to invoking its printer
+type prefixPrinter struct {
+	prefix  string
+	printer fx.Printer
+}
+
+func (pp prefixPrinter) Printf(template string, args ...interface{}) {
+	pp.printer.Printf(pp.prefix+template, args...)
+}
+
+// NewModulePrinter decorates a given printer and prefixes "[module] " to
+// each line of log output.  This adheres to the uber/fx de facto standard.
 //
-// The format used is "[module] template", the same as uber/fx.  The template, in turn, is
-// washed through printf-style formatting using the args.
-func Printf(p fx.Printer, module, template string, args ...interface{}) {
-	if p == nil {
-		p = DefaultPrinter()
+// If printer is nil, DefaultPrinter() will be used instead.
+func NewModulePrinter(module string, printer fx.Printer) fx.Printer {
+	if printer == nil {
+		printer = DefaultPrinter()
 	}
 
-	p.Printf("["+module+"] "+template, args...)
+	return prefixPrinter{
+		prefix:  "[" + module + "] ",
+		printer: printer,
+	}
 }
 
 // PrinterWriter creates an fx.Printer that sends all output to the specified

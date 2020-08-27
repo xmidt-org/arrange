@@ -1,14 +1,8 @@
 package arrange
 
 import (
-	"errors"
-
 	"github.com/spf13/viper"
 	"go.uber.org/fx"
-)
-
-var (
-	ErrNilViper = errors.New("the viper instance cannot be nil")
 )
 
 // ProvideIn is the set of dependencies for all unmarshal providers in this package.

@@ -2,7 +2,6 @@ package arrange
 
 import (
 	"bytes"
-	"errors"
 	"fmt"
 	"testing"
 
@@ -11,13 +10,6 @@ import (
 	"go.uber.org/fx"
 	"go.uber.org/fx/fxtest"
 )
-
-// alwaysError is an io.Writer that always returns an error
-type alwaysError struct{}
-
-func (ae alwaysError) Write([]byte) (int, error) {
-	return 0, errors.New("expected io.Writer error")
-}
 
 func TestPrinterFunc(t *testing.T) {
 	var (
@@ -54,7 +46,7 @@ func testNewPrinterWriterError(t *testing.T) {
 		assert  = assert.New(t)
 		require = require.New(t)
 
-		pw = NewPrinterWriter(alwaysError{})
+		pw = NewPrinterWriter(badWriter{})
 	)
 
 	require.NotNil(pw)

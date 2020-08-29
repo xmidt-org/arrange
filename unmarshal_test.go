@@ -40,15 +40,10 @@ func testUnmarshalSuccess(t *testing.T) {
 	)
 }
 
-func testUnmarshalExact(t *testing.T) {
+func testUnmarshalError(t *testing.T) {
 	var (
 		assert = assert.New(t)
 		v      = viper.New()
-
-		globalCalled = false
-		global       = func(*mapstructure.DecoderConfig) {
-			globalCalled = true
-		}
 
 		actual TestConfig
 	)
@@ -61,20 +56,21 @@ func testUnmarshalExact(t *testing.T) {
 
 	app := fx.New(
 		TestLogger(t),
-		ForViper(v, Exact, global),
 		fx.Provide(
+			func() Unmarshaler {
+				return badUnmarshaler{}
+			},
 			Unmarshal(TestConfig{}),
 		),
 		fx.Populate(&actual),
 	)
 
-	assert.True(globalCalled)
 	assert.Error(app.Err())
 }
 
 func TestUnmarshal(t *testing.T) {
 	t.Run("Success", testUnmarshalSuccess)
-	t.Run("Exact", testUnmarshalExact)
+	t.Run("Error", testUnmarshalError)
 }
 
 func testUnmarshalKeySuccess(t *testing.T) {
@@ -104,15 +100,10 @@ func testUnmarshalKeySuccess(t *testing.T) {
 	)
 }
 
-func testUnmarshalKeyExact(t *testing.T) {
+func testUnmarshalKeyError(t *testing.T) {
 	var (
 		assert = assert.New(t)
 		v      = viper.New()
-
-		globalCalled = false
-		global       = func(*mapstructure.DecoderConfig) {
-			globalCalled = true
-		}
 
 		actual TestConfig
 	)
@@ -125,20 +116,21 @@ func testUnmarshalKeyExact(t *testing.T) {
 
 	app := fx.New(
 		TestLogger(t),
-		ForViper(v, Exact, global),
 		fx.Provide(
+			func() Unmarshaler {
+				return badUnmarshaler{}
+			},
 			UnmarshalKey("test", TestConfig{}),
 		),
 		fx.Populate(&actual),
 	)
 
-	assert.True(globalCalled)
 	assert.Error(app.Err())
 }
 
 func TestUnmarshalKey(t *testing.T) {
 	t.Run("Success", testUnmarshalKeySuccess)
-	t.Run("Exact", testUnmarshalKeyExact)
+	t.Run("Error", testUnmarshalKeyError)
 }
 
 func testProvideSuccess(t *testing.T) {

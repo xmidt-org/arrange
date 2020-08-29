@@ -425,24 +425,6 @@ func (s *S) applyUnmarshal(uf func(arrange.Unmarshaler, interface{}) error) inte
 }
 
 // Unmarshal terminates the builder chain and returns a function that produces a mux.Router.
-// The returned function will accept the ServerIn dependency struct along with any structs
-// supplied via Inject.  The returned mux.Router will be the handler of a server bound to
-// the fx.App lifecycle.
-//
-//   v := viper.New()
-//   fx.New(
-//     arrange.Supply(v),
-//     fx.Provide(
-//       func() http.Handler { /* create a handler */ },
-//       Server().Unmarshal(),
-//     ),
-//     fx.Invoke(
-//       func(r *mux.Router, h http.Handler) {
-//         // This router is the handler for the above server.
-//         r.Handle("/", h)
-//       },
-//     ),
-//   )
 func (s *S) Unmarshal() interface{} {
 	return s.applyUnmarshal(
 		func(u arrange.Unmarshaler, v interface{}) error {
@@ -459,23 +441,8 @@ func (s *S) UnmarshalKey(key string) interface{} {
 	)
 }
 
-// Provide produces an fx.Provide that does the same thing as Unmarshal.  This
-// is the typical way to leverage this package to create an http.Server:
-//
-//   v := viper.New() // setup not shown
-//   fx.New(
-//     arrange.Supply(v), // don't forget to supply the viper as a component!
-//     arrangehttp.Server().Provide(),
-//     fx.Invoke(
-//       func(r *mux.Router) error {
-//         // add any routes or other modifications to the router,
-//         // which will be the handler for the server
-//       },
-//     ),
-//   )
-//
-// Use Unmarshal instead of this method when more control over the created component
-// is necessary, such as putting it in a group or naming it.
+// Provide produces an fx.Provide that does the same thing as Unmarshal.
+// is the typical way to leverage this package to create an http.Server.
 func (s *S) Provide() fx.Option {
 	return fx.Provide(
 		s.Unmarshal(),

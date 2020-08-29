@@ -147,9 +147,8 @@ func testClientConfigError(t *testing.T) {
 		}
 	)
 
-	client, err := cc.NewClient()
+	_, err := cc.NewClient()
 	assert.Error(err)
-	assert.NotNil(client)
 }
 
 func TestClientConfig(t *testing.T) {
@@ -485,13 +484,13 @@ transport:
 			},
 			Client().
 				Use(
-					Dependencies{},
 					NewHeaders("LocalConstructor", "true").AddRequest,
 					NewRoundTripperChain(
 						NewHeaders("LocalChain1", "true").AddRequest,
 						NewHeaders("LocalChain2", "true").AddRequest,
 					),
 				).
+				Inject(Dependencies{}).
 				Unmarshal(),
 		),
 		fx.Populate(&client),
@@ -574,6 +573,34 @@ timeout: "90s"
 		fx.Provide(
 			Client().
 				Use("this is not a supported option").
+				Unmarshal(),
+		),
+		fx.Populate(&client),
+	)
+
+	assert.Error(app.Err())
+}
+
+func testClientUnmarshalInjectError(t *testing.T) {
+	const yaml = `
+timeout: "90s"
+`
+	var (
+		assert  = assert.New(t)
+		require = require.New(t)
+		v       = viper.New()
+		client  *http.Client
+	)
+
+	v.SetConfigType("yaml")
+	require.NoError(v.ReadConfig(strings.NewReader(yaml)))
+
+	app := fx.New(
+		arrange.TestLogger(t),
+		arrange.ForViper(v),
+		fx.Provide(
+			Client().
+				Inject("this is not a struct that embeds fx.In").
 				Unmarshal(),
 		),
 		fx.Populate(&client),
@@ -851,6 +878,7 @@ func TestClient(t *testing.T) {
 	t.Run("Unmarshal", testClientUnmarshal)
 	t.Run("UnmarshalError", testClientUnmarshalError)
 	t.Run("UnmarshalUseError", testClientUnmarshalUseError)
+	t.Run("UnmarshalInjectError", testClientUnmarshalInjectError)
 	t.Run("LocalCOptionError", testClientLocalCOptionError)
 	t.Run("FactoryError", testClientFactoryError)
 	t.Run("Provide", testClientProvide)

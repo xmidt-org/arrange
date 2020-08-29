@@ -23,29 +23,34 @@ func (pf PrinterFunc) Printf(template string, args ...interface{}) {
 	pf(template, args...)
 }
 
-// Printf sends it's output to the supplied printer.  If p is nil, DefaultPrinter() is used.
-//
-// The format used is "[module] template", the same as uber/fx.  The template, in turn, is
-// washed through printf-style formatting using the args.
-func Printf(p fx.Printer, module, template string, args ...interface{}) {
-	if p == nil {
-		p = DefaultPrinter()
-	}
-
-	p.Printf("["+module+"] "+template, args...)
-}
-
-// PrinterWriter creates an fx.Printer that sends all output to the specified
-// Writer.  Each write has a newline appended.  Only one (1) write is performed
-// for each call to Printf.
-//
-// Any error from Write() results in a panic.
-func PrinterWriter(w io.Writer) fx.Printer {
+// NewPrinterWriter creates an fx.Printer that writes to the given writer.  Each call
+// to Printf results in exactly one call to Write.  A single newline is appended to each
+// line of output.  Any error from the io.Writer results in a panic.
+func NewPrinterWriter(w io.Writer) fx.Printer {
 	return PrinterFunc(func(template string, args ...interface{}) {
 		_, err := fmt.Fprintf(w, template+"\n", args...)
 		if err != nil {
 			panic(err)
 		}
+	})
+}
+
+// NewModulePrinter decorates a given printer and prefixes "[module] " to
+// each line of log output.  This adheres to the uber/fx de facto standard.
+//
+// If printer is nil, DefaultPrinter() will be used instead.
+//
+// This function's returned fx.Printer should not be used as a component for
+// uber/fx.  This function is intended for packages which want to leverage
+// an fx.Printer for their own informational output.
+func NewModulePrinter(module string, printer fx.Printer) fx.Printer {
+	if printer == nil {
+		printer = DefaultPrinter()
+	}
+
+	prefix := "[" + module + "] "
+	return PrinterFunc(func(template string, args ...interface{}) {
+		printer.Printf(prefix+template, args...)
 	})
 }
 
@@ -93,10 +98,19 @@ func LoggerFunc(pf PrinterFunc) fx.Option {
 	return Logger(pf)
 }
 
-// LoggerWriter creates an fx.Printer with PrinterWriter and sets that as the
-// fx.Logger and exposes it as an unnamed component.
+// DiscardLogger configures uber/fx to use an fx.Printer that throws away all input.
+// It also makes that same fx.Printer available as a global component for dependency injection.
+func DiscardLogger() fx.Option {
+	return LoggerFunc(func(string, ...interface{}) {})
+}
+
+// LoggerWriter uses NewPrinterWriter to create an fx.Printer that writes to the
+// given io.Writer.  The fx.Printer is made available as a component, and fx.Logger is
+// used to set that printer as uber/fx's sink for informational output.
 func LoggerWriter(w io.Writer) fx.Option {
-	return Logger(PrinterWriter(w))
+	return Logger(
+		NewPrinterWriter(w),
+	)
 }
 
 // t is implemented by both *testing.T and *testing.B

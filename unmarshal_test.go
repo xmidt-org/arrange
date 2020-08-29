@@ -27,7 +27,7 @@ func testUnmarshalSuccess(t *testing.T) {
 	fxtest.New(
 		t,
 		TestLogger(t),
-		Supply(v),
+		ForViper(v),
 		fx.Provide(
 			Unmarshal(TestConfig{}),
 		),
@@ -40,15 +40,10 @@ func testUnmarshalSuccess(t *testing.T) {
 	)
 }
 
-func testUnmarshalExact(t *testing.T) {
+func testUnmarshalError(t *testing.T) {
 	var (
 		assert = assert.New(t)
 		v      = viper.New()
-
-		globalCalled = false
-		global       = func(*mapstructure.DecoderConfig) {
-			globalCalled = true
-		}
 
 		actual TestConfig
 	)
@@ -61,20 +56,21 @@ func testUnmarshalExact(t *testing.T) {
 
 	app := fx.New(
 		TestLogger(t),
-		Supply(v, global),
 		fx.Provide(
-			Unmarshal(TestConfig{}, Exact),
+			func() Unmarshaler {
+				return badUnmarshaler{}
+			},
+			Unmarshal(TestConfig{}),
 		),
 		fx.Populate(&actual),
 	)
 
-	assert.True(globalCalled)
 	assert.Error(app.Err())
 }
 
 func TestUnmarshal(t *testing.T) {
 	t.Run("Success", testUnmarshalSuccess)
-	t.Run("Exact", testUnmarshalExact)
+	t.Run("Error", testUnmarshalError)
 }
 
 func testUnmarshalKeySuccess(t *testing.T) {
@@ -91,7 +87,7 @@ func testUnmarshalKeySuccess(t *testing.T) {
 	fxtest.New(
 		t,
 		TestLogger(t),
-		Supply(v),
+		ForViper(v),
 		fx.Provide(
 			UnmarshalKey("test", TestConfig{}),
 		),
@@ -104,15 +100,10 @@ func testUnmarshalKeySuccess(t *testing.T) {
 	)
 }
 
-func testUnmarshalKeyExact(t *testing.T) {
+func testUnmarshalKeyError(t *testing.T) {
 	var (
 		assert = assert.New(t)
 		v      = viper.New()
-
-		globalCalled = false
-		global       = func(*mapstructure.DecoderConfig) {
-			globalCalled = true
-		}
 
 		actual TestConfig
 	)
@@ -125,20 +116,21 @@ func testUnmarshalKeyExact(t *testing.T) {
 
 	app := fx.New(
 		TestLogger(t),
-		Supply(v, global),
 		fx.Provide(
-			UnmarshalKey("test", TestConfig{}, Exact),
+			func() Unmarshaler {
+				return badUnmarshaler{}
+			},
+			UnmarshalKey("test", TestConfig{}),
 		),
 		fx.Populate(&actual),
 	)
 
-	assert.True(globalCalled)
 	assert.Error(app.Err())
 }
 
 func TestUnmarshalKey(t *testing.T) {
 	t.Run("Success", testUnmarshalKeySuccess)
-	t.Run("Exact", testUnmarshalKeyExact)
+	t.Run("Error", testUnmarshalKeyError)
 }
 
 func testProvideSuccess(t *testing.T) {
@@ -163,7 +155,7 @@ age: 64
 	fxtest.New(
 		t,
 		TestLogger(t),
-		Supply(v),
+		ForViper(v),
 		Provide(TestConfig{Interval: 15 * time.Second}),
 		Provide(&AnotherConfig{Interval: 17 * time.Hour}),
 		Provide((*TestConfig)(nil)),
@@ -211,7 +203,7 @@ nosuch: asdfasdfasdf
 
 	app := fx.New(
 		TestLogger(t),
-		Supply(v, Exact),
+		ForViper(v, Exact),
 		Provide(TestConfig{}),
 		fx.Populate(&value),
 	)
@@ -259,7 +251,7 @@ test3:
 	fxtest.New(
 		t,
 		TestLogger(t),
-		Supply(v),
+		ForViper(v),
 		ProvideKey("test1", TestConfig{Interval: 15 * time.Second}),
 		ProvideKey("test2", &TestConfig{Interval: 23 * time.Minute}),
 		ProvideKey("test3", (*TestConfig)(nil)),
@@ -311,7 +303,7 @@ test:
 
 	app := fx.New(
 		TestLogger(t),
-		Supply(v, Exact),
+		ForViper(v, Exact),
 		ProvideKey("test", TestConfig{}),
 		fx.Populate(&value),
 	)
@@ -375,9 +367,14 @@ test3:
 	fxtest.New(
 		t,
 		TestLogger(t),
-		Supply(v, global),
-		Keys("test1", "test2", "test3").Provide(TestConfig{}, option1),
-		Keys("test1", "test2", "test3").Group("tests").Provide(&TestConfig{}, option2),
+		ForViper(v, global),
+		fx.Provide(
+			func() []viper.DecoderConfigOption {
+				return []viper.DecoderConfigOption{option1, option2}
+			},
+		),
+		Keys("test1", "test2", "test3").Provide(TestConfig{}),
+		Keys("test1", "test2", "test3").Group("tests").Provide(&TestConfig{}),
 		fx.Invoke(
 			func(in In) {
 				actual = in
@@ -411,6 +408,6 @@ test3:
 
 	// called once per unmarshal ...
 	assert.Equal(6, globalCount)
-	assert.Equal(3, option1Count)
-	assert.Equal(3, option2Count)
+	assert.Equal(6, option1Count)
+	assert.Equal(6, option2Count)
 }

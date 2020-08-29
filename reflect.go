@@ -41,8 +41,14 @@ func NewErrorValue(err error) reflect.Value {
 // from NewTarget to give a consistent way of referring to the actual object
 // that should be unmarshaled as opposed to the object produced for dependency injection.
 type Target struct {
-	component   reflect.Value
-	unmarshalTo reflect.Value
+	// Component refers the the actual value that should be returned from an uber/fx constructor.
+	// This holds the value of the actual component that participates in dependency injection.
+	Component reflect.Value
+
+	// UnmarshalTo is the value that should be unmarshaled.  This value is always a pointer.
+	// If Component is a pointer, UnmarshalTo will be the same value.  Otherwise, UnmarshalTo
+	// will be a pointer the the Component value.
+	UnmarshalTo reflect.Value
 }
 
 // NewTarget reflects a prototype object that describes the target
@@ -106,38 +112,19 @@ type Target struct {
 func NewTarget(prototype interface{}) (t Target) {
 	pvalue := reflect.ValueOf(prototype)
 	if pvalue.Kind() == reflect.Ptr {
-		t.unmarshalTo = reflect.New(pvalue.Type().Elem())
+		t.UnmarshalTo = reflect.New(pvalue.Type().Elem())
 		if !pvalue.IsNil() {
-			t.unmarshalTo.Elem().Set(pvalue.Elem())
+			t.UnmarshalTo.Elem().Set(pvalue.Elem())
 		}
 
-		t.component = t.unmarshalTo
+		t.Component = t.UnmarshalTo
 	} else {
-		t.unmarshalTo = reflect.New(pvalue.Type())
-		t.unmarshalTo.Elem().Set(pvalue)
-		t.component = t.unmarshalTo.Elem()
+		t.UnmarshalTo = reflect.New(pvalue.Type())
+		t.UnmarshalTo.Elem().Set(pvalue)
+		t.Component = t.UnmarshalTo.Elem()
 	}
 
 	return
-}
-
-// Component returns the component object returned from constructors
-func (t Target) Component() interface{} {
-	return t.component.Interface()
-}
-
-// ComponentType returns the type of the component object, which is
-// useful when building function signatures with reflect.FuncOf.
-func (t Target) ComponentType() reflect.Type {
-	return t.component.Type()
-}
-
-// UnmarshalTo returns the target of unmarshaling, which will always be
-// a pointer.  If the component is a value, this method returns a pointer
-// to that value.  If the component is a pointer, this method returns that
-// same pointer.
-func (t Target) UnmarshalTo() interface{} {
-	return t.unmarshalTo.Interface()
 }
 
 // VisitResult is the enumerated constant returned by a FieldVisitor

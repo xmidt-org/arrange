@@ -788,7 +788,7 @@ func testServerListenerConstructors(t *testing.T) {
 	app := fxtest.New(
 		t,
 		arrange.TestLogger(t),
-		arrange.Supply(v),
+		arrange.ForViper(v),
 		fx.Provide(
 			Server().
 				Use(
@@ -854,7 +854,7 @@ func testServerUnmarshal(t *testing.T) {
 	app := fxtest.New(
 		t,
 		arrange.TestLogger(t),
-		arrange.Supply(v),
+		arrange.ForViper(v),
 		fx.Provide(
 			func() ListenerChain {
 				return NewListenerChain(
@@ -958,7 +958,7 @@ func testServerUnmarshalDefaultListenerFactory(t *testing.T) {
 	app := fxtest.New(
 		t,
 		arrange.TestLogger(t),
-		arrange.Supply(v),
+		arrange.ForViper(v),
 		fx.Provide(
 			func() ListenerChain {
 				return NewListenerChain(
@@ -1015,7 +1015,7 @@ func testServerServerFactoryError(t *testing.T) {
 	v.Set("address", "localhost:8080")
 	app := fx.New(
 		arrange.TestLogger(t),
-		arrange.Supply(v),
+		arrange.ForViper(v),
 		fx.Provide(
 			Server().
 				ServerFactory(badServerFactory{}).
@@ -1038,7 +1038,7 @@ func testServerLocalSOptionError(t *testing.T) {
 	v.Set("address", "localhost:8080")
 	app := fx.New(
 		arrange.TestLogger(t),
-		arrange.Supply(v),
+		arrange.ForViper(v),
 		fx.Provide(
 			Server().
 				Use(
@@ -1068,7 +1068,7 @@ func testServerGlobalSOptionError(t *testing.T) {
 	v.Set("address", "localhost:8080")
 	app := fx.New(
 		arrange.TestLogger(t),
-		arrange.Supply(v),
+		arrange.ForViper(v),
 		fx.Provide(
 			func() ServerOption {
 				return func(*http.Server) error {
@@ -1095,7 +1095,7 @@ func testServerUnmarshalError(t *testing.T) {
 	v.Set("readTimeout", "this is not a valid golang time.Duration")
 	app := fx.New(
 		arrange.TestLogger(t),
-		arrange.Supply(v),
+		arrange.ForViper(v),
 		fx.Provide(
 			Server().Unmarshal(),
 		),
@@ -1116,7 +1116,7 @@ func testServerUnmarshalUseError(t *testing.T) {
 	v.Set("address", ":0")
 	app := fx.New(
 		arrange.TestLogger(t),
-		arrange.Supply(v),
+		arrange.ForViper(v),
 		fx.Provide(
 			// not a valid option
 			Server().Use(123).Unmarshal(),
@@ -1148,7 +1148,7 @@ func testServerProvide(t *testing.T) {
 	app := fxtest.New(
 		t,
 		arrange.TestLogger(t),
-		arrange.Supply(v),
+		arrange.ForViper(v),
 		Server(sOption).
 			Use(
 				CaptureListenAddress(address),
@@ -1220,7 +1220,7 @@ servers:
 	app := fxtest.New(
 		t,
 		arrange.TestLogger(t),
-		arrange.Supply(v),
+		arrange.ForViper(v),
 		fx.Provide(
 			Server(sOption).
 				Use(
@@ -1282,7 +1282,7 @@ servers:
 
 	app := fx.New(
 		arrange.TestLogger(t),
-		arrange.Supply(v),
+		arrange.ForViper(v),
 		fx.Provide(
 			Server().UnmarshalKey("servers.main"),
 		),
@@ -1313,7 +1313,7 @@ servers:
 
 	app := fx.New(
 		arrange.TestLogger(t),
-		arrange.Supply(v),
+		arrange.ForViper(v),
 		fx.Provide(
 			Server().Use("this is not an fx.In struct").UnmarshalKey("servers.main"),
 		),
@@ -1361,7 +1361,7 @@ servers:
 	app := fxtest.New(
 		t,
 		arrange.TestLogger(t),
-		arrange.Supply(v),
+		arrange.ForViper(v),
 		Server(sOption).
 			Use(
 				CaptureListenAddress(address),

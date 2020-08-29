@@ -33,18 +33,18 @@ func testNewTargetValue(t *testing.T) {
 			)
 
 			assert.Equal(
-				target.Component(),
+				target.Component.Interface(),
 				record,
 			)
 
 			assert.Equal(
-				target.ComponentType(),
+				target.Component.Type(),
 				reflect.TypeOf(NewTargetTester{}),
 			)
 
 			assert.Equal(
 				record,
-				*target.UnmarshalTo().(*NewTargetTester),
+				*target.UnmarshalTo.Interface().(*NewTargetTester),
 			)
 		})
 	}
@@ -67,18 +67,18 @@ func testNewTargetPointer(t *testing.T) {
 			)
 
 			assert.Equal(
-				target.Component(),
+				target.Component.Interface(),
 				&record,
 			)
 
 			assert.Equal(
-				target.ComponentType(),
+				target.Component.Type(),
 				reflect.TypeOf((*NewTargetTester)(nil)),
 			)
 
 			assert.Equal(
 				&record,
-				target.UnmarshalTo().(*NewTargetTester),
+				target.UnmarshalTo.Interface().(*NewTargetTester),
 			)
 		})
 	}
@@ -91,18 +91,18 @@ func testNewTargetNil(t *testing.T) {
 	)
 
 	assert.Equal(
-		target.Component(),
+		target.Component.Interface(),
 		&NewTargetTester{},
 	)
 
 	assert.Equal(
-		target.ComponentType(),
+		target.Component.Type(),
 		reflect.TypeOf((*NewTargetTester)(nil)),
 	)
 
 	assert.Equal(
 		&NewTargetTester{},
-		target.UnmarshalTo().(*NewTargetTester),
+		target.UnmarshalTo.Interface().(*NewTargetTester),
 	)
 }
 

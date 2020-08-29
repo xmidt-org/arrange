@@ -27,7 +27,7 @@ func ExampleProvide() {
 
 	fx.New(
 		LoggerWriter(ioutil.Discard),
-		Supply(v),
+		ForViper(v),
 		Provide(Config{}),
 		fx.Invoke(
 			func(cfg Config) error {
@@ -65,7 +65,7 @@ func ExampleProvideKey() {
 
 	fx.New(
 		LoggerWriter(ioutil.Discard),
-		Supply(v),
+		ForViper(v),
 		ProvideKey("server", Config{}),
 		fx.Invoke(
 			func(in ConfigIn) error {
@@ -109,7 +109,7 @@ func ExampleKeys() {
 
 	fx.New(
 		LoggerWriter(ioutil.Discard),
-		Supply(v),
+		ForViper(v),
 		Keys("servers.http", "servers.pprof").Provide(Config{}),
 		fx.Invoke(
 			func(in ConfigIn) error {

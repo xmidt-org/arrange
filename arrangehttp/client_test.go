@@ -458,7 +458,7 @@ transport:
 	app := fxtest.New(
 		t,
 		arrange.TestLogger(t),
-		arrange.Supply(v),
+		arrange.ForViper(v),
 		fx.Provide(
 			func() RoundTripperChain {
 				return NewRoundTripperChain(
@@ -544,7 +544,7 @@ timeout: "this is not a valid golang duration"
 
 	app := fx.New(
 		arrange.TestLogger(t),
-		arrange.Supply(v),
+		arrange.ForViper(v),
 		fx.Provide(
 			Client().Unmarshal(),
 		),
@@ -570,7 +570,7 @@ timeout: "90s"
 
 	app := fx.New(
 		arrange.TestLogger(t),
-		arrange.Supply(v),
+		arrange.ForViper(v),
 		fx.Provide(
 			Client().
 				Use("this is not a supported option").
@@ -593,7 +593,7 @@ func testClientLocalCOptionError(t *testing.T) {
 	v.Set("timeout", "10s")
 	app := fx.New(
 		arrange.TestLogger(t),
-		arrange.Supply(v),
+		arrange.ForViper(v),
 		fx.Provide(
 			Client().
 				Use(
@@ -625,7 +625,7 @@ func testClientFactoryError(t *testing.T) {
 	v.Set("timeout", "89s")
 	app := fx.New(
 		arrange.TestLogger(t),
-		arrange.Supply(v),
+		arrange.ForViper(v),
 		fx.Provide(
 			Client().ClientFactory(badClientFactory{}).Unmarshal(),
 		),
@@ -664,7 +664,7 @@ transport:
 	app := fxtest.New(
 		t,
 		arrange.TestLogger(t),
-		arrange.Supply(v),
+		arrange.ForViper(v),
 		Client(option).Provide(),
 		fx.Populate(&client),
 	)
@@ -712,7 +712,7 @@ clients:
 	app := fxtest.New(
 		t,
 		arrange.TestLogger(t),
-		arrange.Supply(v),
+		arrange.ForViper(v),
 		fx.Provide(
 			Client(option).UnmarshalKey("clients.main"),
 		),
@@ -750,7 +750,7 @@ clients:
 
 	app := fx.New(
 		arrange.TestLogger(t),
-		arrange.Supply(v),
+		arrange.ForViper(v),
 		fx.Provide(
 			Client().UnmarshalKey("clients.main"),
 		),
@@ -778,7 +778,7 @@ clients:
 
 	app := fx.New(
 		arrange.TestLogger(t),
-		arrange.Supply(v),
+		arrange.ForViper(v),
 		fx.Provide(
 			Client().
 				Use("this is not a supported option").
@@ -825,7 +825,7 @@ clients:
 	app := fxtest.New(
 		t,
 		arrange.TestLogger(t),
-		arrange.Supply(v),
+		arrange.ForViper(v),
 		Client(option).ProvideKey("clients.main"),
 		fx.Invoke(
 			func(in ClientIn) {

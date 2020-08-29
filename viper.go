@@ -13,16 +13,6 @@ var (
 	ErrNilViper = errors.New("the viper instance cannot be nil")
 )
 
-// Unmarshaler is the strategy used to unmarshal configuration into objects.
-// An unnamed fx.App component that implements this interface is required for arrange.
-type Unmarshaler interface {
-	// Unmarshal reads configuration data into the given struct
-	Unmarshal(value interface{}) error
-
-	// UnmarshalKey reads configuration data from a key into the given struct
-	UnmarshalKey(key string, value interface{}) error
-}
-
 // ViperUnmarshaler is the standard Unmarshaler implementation used by arrange.
 // It couples a Viper instance together with zero or more decoder options.
 type ViperUnmarshaler struct {
@@ -33,7 +23,10 @@ type ViperUnmarshaler struct {
 	// unmarshal calls
 	Options []viper.DecoderConfigOption
 
-	// Printer is the required fx.Printer component to which informational messages are written
+	// Printer is the required fx.Printer component to which informational messages are written.
+	//
+	// NOTE: This field won't be defaulted.  It must be set.  ForViper ensures this field
+	// is set even if no fx.Printer component is present in the enclosing fx.App.
 	Printer fx.Printer
 }
 
@@ -50,11 +43,9 @@ func (vu ViperUnmarshaler) UnmarshalKey(key string, value interface{}) error {
 }
 
 // ViperUnmarshalIn is the set of dependencies required to build a ViperUnmarshaler
+// Note that the actual viper instance must be supplied externally.
 type ViperUnmarshalerIn struct {
 	fx.In
-
-	// Viper is the required viper instance
-	Viper *viper.Viper
 
 	// Options is the optional slice of viper.DecoderConfigOption that will be
 	// applied to every unmarshal or unmarshal key operation
@@ -65,8 +56,11 @@ type ViperUnmarshalerIn struct {
 	Printer fx.Printer `optional:"true"`
 }
 
-// ForViper supplies an externally created Viper instance to the enclosing ex.App.
-// This function also creates an Unmarshaler component backed by this Viper instance.
+// ForViper creates a ViperUnmarshaler backed by an externally supplied viper instance.
+// The returned component is of type Unmarshaler.
+//
+// This function DOES NOT make the viper instance itself available as a component.
+// If that is desired, use fx.Supply.
 //
 // The set of viper.DecoderConfigOptions used will be the merging of the options supplied
 // to this function and an optional []viper.DecoderConfigOption component.
@@ -76,11 +70,10 @@ func ForViper(v *viper.Viper, o ...viper.DecoderConfigOption) fx.Option {
 	}
 
 	return fx.Options(
-		fx.Supply(v),
 		fx.Provide(
 			func(in ViperUnmarshalerIn) Unmarshaler {
 				return ViperUnmarshaler{
-					Viper: in.Viper,
+					Viper: v,
 					Options: append(
 						append([]viper.DecoderConfigOption{}, o...),
 						in.Options...,

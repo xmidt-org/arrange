@@ -7,52 +7,61 @@ import (
 	"go.uber.org/fx"
 )
 
-// unmarshalFunc is a strategy for unmarshaling a particular value from viper
-type unmarshalFunc func(fx.Printer, *viper.Viper, viper.DecoderConfigOption, Target) error
+// Unmarshaler is the strategy used to unmarshal configuration into objects.
+// An unnamed fx.App component that implements this interface is required for arrange.
+type Unmarshaler interface {
+	// Unmarshal reads configuration data into the given struct
+	Unmarshal(value interface{}) error
 
-// applyUnmarshal is the common approach to dynamically creating an fx.Provide
-// constructor function to unmarshal an object and return the results
+	// UnmarshalKey reads configuration data from a key into the given struct
+	UnmarshalKey(key string, value interface{}) error
+}
+
+// makeUnmarshalFunc is the common approach to dynamically creating an fx.Provide
+// constructor function to unmarshal an object and return the results.  The returned
+// functional always has the signature "func(Unmarshaler) (T, error)", where T is the
+// pointer type of the component being returned.
 //
-// the closure passed to this function is expected to handle unmarshaling.
-// the global decoder options are passed, and the closure can merge them
-// with any local options.
-func applyUnmarshal(prototype interface{}, local []viper.DecoderConfigOption, uf unmarshalFunc) interface{} {
+// The closure passed to this function is expected to do the actual unmarshaling.
+func makeUnmarshalFunc(prototype interface{}, uf func(Unmarshaler, interface{}) error) reflect.Value {
 	t := NewTarget(prototype)
 	return reflect.MakeFunc(
 		reflect.FuncOf(
 			// function inputs:
-			[]reflect.Type{reflect.TypeOf(ProvideIn{})},
+			[]reflect.Type{reflect.TypeOf((*Unmarshaler)(nil)).Elem()},
 
 			// function outputs:
-			[]reflect.Type{t.ComponentType(), ErrorType()},
+			[]reflect.Type{t.Component.Type(), ErrorType()},
 
 			false, // not variadic
 		),
 		func(args []reflect.Value) []reflect.Value {
-			in := args[0].Interface().(ProvideIn)
-			err := uf(in.Printer, in.Viper, Merge(in.DecoderOptions, local), t)
+			err := uf(
+				args[0].Interface().(Unmarshaler),
+				t.UnmarshalTo.Interface(),
+			)
+
 			return []reflect.Value{
-				t.component,
+				t.Component,
 				NewErrorValue(err),
 			}
 		},
-	).Interface()
-
+	)
 }
 
-// Unmarshal generates and returns a constructor function that unmarshals an object from
-// Viper.  The object's type will be the same as the prototype.
+// Unmarshal generates and returns a constructor function that uses the required global
+// Unmarshaler component to unmarshal an object.  The unmarshaled object will be the same
+// type as the prototype.
 //
 // Provide is generally preferred to this function, but Unmarshal is more flexible
 // and can be used with fx.Annotated.
-func Unmarshal(prototype interface{}, local ...viper.DecoderConfigOption) interface{} {
-	return applyUnmarshal(
+func Unmarshal(prototype interface{}) interface{} {
+	return makeUnmarshalFunc(
 		prototype,
-		local,
-		func(p fx.Printer, v *viper.Viper, o viper.DecoderConfigOption, t Target) error {
-			return v.Unmarshal(t.UnmarshalTo(), o)
+		func(u Unmarshaler, value interface{}) error {
+			return u.Unmarshal(value)
 		},
-	)
+	).Interface()
 }
 
 // UnmarshalKey generates and returns a constructor function that unmarshals an object
@@ -60,22 +69,21 @@ func Unmarshal(prototype interface{}, local ...viper.DecoderConfigOption) interf
 //
 // Generally, ProvideKey is simpler and preferred.  Use this function when more control
 // is needed over the component, such as putting it into a group or using a different component name.
-func UnmarshalKey(key string, prototype interface{}, local ...viper.DecoderConfigOption) interface{} {
-	return applyUnmarshal(
+func UnmarshalKey(key string, prototype interface{}) interface{} {
+	return makeUnmarshalFunc(
 		prototype,
-		local,
-		func(p fx.Printer, v *viper.Viper, o viper.DecoderConfigOption, t Target) error {
-			return v.UnmarshalKey(key, t.UnmarshalTo(), o)
+		func(u Unmarshaler, value interface{}) error {
+			return u.UnmarshalKey(key, value)
 		},
-	)
+	).Interface()
 }
 
 // Provide is the simplest way to arrange an unmarshaled component.  This function simply
 // returns a constructor that unmarshals a component of the same type as the prototype
 // and emits it as an unnamed component.
-func Provide(prototype interface{}, opts ...viper.DecoderConfigOption) fx.Option {
+func Provide(prototype interface{}) fx.Option {
 	return fx.Provide(
-		Unmarshal(prototype, opts...),
+		Unmarshal(prototype),
 	)
 }
 
@@ -85,7 +93,7 @@ func ProvideKey(key string, prototype interface{}, opts ...viper.DecoderConfigOp
 	return fx.Provide(
 		fx.Annotated{
 			Name:   key,
-			Target: UnmarshalKey(key, prototype, opts...),
+			Target: UnmarshalKey(key, prototype),
 		},
 	)
 }
@@ -121,18 +129,18 @@ func (k *K) Group(g string) *K {
 
 // Provide returns an fx.Option that unmarshals all the keys, either named individually
 // or under a single group.
-func (k *K) Provide(prototype interface{}, opts ...viper.DecoderConfigOption) fx.Option {
+func (k *K) Provide(prototype interface{}) fx.Option {
 	var constructors []interface{}
 	for key := range k.keys {
 		if len(k.group) > 0 {
 			constructors = append(constructors, fx.Annotated{
 				Group:  k.group,
-				Target: UnmarshalKey(key, prototype, opts...),
+				Target: UnmarshalKey(key, prototype),
 			})
 		} else {
 			constructors = append(constructors, fx.Annotated{
 				Name:   key,
-				Target: UnmarshalKey(key, prototype, opts...),
+				Target: UnmarshalKey(key, prototype),
 			})
 		}
 	}

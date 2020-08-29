@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/gorilla/mux"
-	"github.com/spf13/viper"
 	"github.com/xmidt-org/arrange"
 	"github.com/xmidt-org/arrange/arrangetls"
 	"go.uber.org/fx"
@@ -225,7 +224,13 @@ type RouterOption func(*mux.Router) error
 // ServerIn describes the set of dependencies for creating a mux.Router and,
 // by extension, an http.Server.
 type ServerIn struct {
-	arrange.ProvideIn
+	// Unmarshaler is the required arrange Unmarshaler component used to unmarshal
+	// a ServerFactory
+	Unmarshaler arrange.Unmarshaler
+
+	// Printer is the optional fx.Printer used to output informational messages about
+	// server unmarshaling and configuration.  If unset, arrange.DefaultPrinter() is used.
+	Printer fx.Printer `optional:"true"`
 
 	// Lifecycle is the required uber/fx Lifecycle to which the server will be bound.
 	// The server will start with the app starts and will gracefully shutdown when
@@ -314,7 +319,7 @@ func (s *S) unmarshalOptions(p fx.Printer, dependencies []reflect.Value) (option
 						// this allows callers to reuse fx.In structs for different purposes
 						raw := fv.Interface()
 						if so, err := NewSOption(raw); err == nil {
-							arrange.Printf(p, Module, "SERVER OPTION => %T %s", raw, f.Tag)
+							p.Printf("SERVER OPTION => %T %s", raw, f.Tag)
 							options = append(options, so)
 						}
 					}
@@ -336,15 +341,11 @@ func (s *S) unmarshalOptions(p fx.Printer, dependencies []reflect.Value) (option
 	return
 }
 
-// serverUnmarshalFunc is the require closure that performs unmarshaling of
-// a ServerFactory instance from viper.
-type serverUnmarshalFunc func(fx.Printer, *viper.Viper, viper.DecoderConfigOption, arrange.Target) error
-
 // applyUnmarshal does all the heavy-lifting of creating an http.Server and mux.Router and
 // applying any options.  If everything is successful, the http.Server is bound to the
 // fx.Lifecycle.  The returned function will always return the tuple of (*mux.Router, error),
 // and the first input parameter will always be a ServerIn.
-func (s *S) applyUnmarshal(local []viper.DecoderConfigOption, suf serverUnmarshalFunc) interface{} {
+func (s *S) applyUnmarshal(uf func(arrange.Unmarshaler, interface{}) error) interface{} {
 	return reflect.MakeFunc(
 		reflect.FuncOf(
 			// inputs
@@ -378,9 +379,9 @@ func (s *S) applyUnmarshal(local []viper.DecoderConfigOption, suf serverUnmarsha
 
 				target := arrange.NewTarget(s.prototype)
 				in := inputs[0].Interface().(ServerIn)
-				err = suf(in.Printer, in.Viper, arrange.Merge(in.DecoderOptions, local), target)
+				err = uf(in.Unmarshaler, target.UnmarshalTo.Interface())
 				if err == nil {
-					factory = target.Component().(ServerFactory)
+					factory = target.Component.Interface().(ServerFactory)
 					server, err = factory.NewServer()
 				}
 
@@ -440,22 +441,18 @@ func (s *S) applyUnmarshal(local []viper.DecoderConfigOption, suf serverUnmarsha
 //       },
 //     ),
 //   )
-func (s *S) Unmarshal(local ...viper.DecoderConfigOption) interface{} {
+func (s *S) Unmarshal() interface{} {
 	return s.applyUnmarshal(
-		local,
-		func(p fx.Printer, v *viper.Viper, o viper.DecoderConfigOption, t arrange.Target) error {
-			arrange.Printf(p, Module, "SERVER UNMARSHAL => %s", t.ComponentType())
-			return v.Unmarshal(t.UnmarshalTo(), o)
+		func(u arrange.Unmarshaler, v interface{}) error {
+			return u.Unmarshal(v)
 		},
 	)
 }
 
-func (s *S) UnmarshalKey(key string, local ...viper.DecoderConfigOption) interface{} {
+func (s *S) UnmarshalKey(key string) interface{} {
 	return s.applyUnmarshal(
-		local,
-		func(p fx.Printer, v *viper.Viper, o viper.DecoderConfigOption, t arrange.Target) error {
-			arrange.Printf(p, Module, "SERVER UNMARSHAL KEY\t[%s] => %s", key, t.ComponentType())
-			return v.UnmarshalKey(key, t.UnmarshalTo(), o)
+		func(u arrange.Unmarshaler, v interface{}) error {
+			return u.UnmarshalKey(key, v)
 		},
 	)
 }
@@ -477,17 +474,17 @@ func (s *S) UnmarshalKey(key string, local ...viper.DecoderConfigOption) interfa
 //
 // Use Unmarshal instead of this method when more control over the created component
 // is necessary, such as putting it in a group or naming it.
-func (s *S) Provide(opts ...viper.DecoderConfigOption) fx.Option {
+func (s *S) Provide() fx.Option {
 	return fx.Provide(
-		s.Unmarshal(opts...),
+		s.Unmarshal(),
 	)
 }
 
-func (s *S) ProvideKey(key string, opts ...viper.DecoderConfigOption) fx.Option {
+func (s *S) ProvideKey(key string) fx.Option {
 	return fx.Provide(
 		fx.Annotated{
 			Name:   key,
-			Target: s.UnmarshalKey(key, opts...),
+			Target: s.UnmarshalKey(key),
 		},
 	)
 }

@@ -7,7 +7,6 @@ import (
 	"reflect"
 	"time"
 
-	"github.com/spf13/viper"
 	"github.com/xmidt-org/arrange"
 	"github.com/xmidt-org/arrange/arrangetls"
 	"go.uber.org/fx"
@@ -164,7 +163,13 @@ func NewCOption(o interface{}) (COption, error) {
 
 // ClientIn is the set of dependencies required to build an *http.Client component
 type ClientIn struct {
-	arrange.ProvideIn
+	// Unmarshaler is the required arrange Unmarshaler component used to unmarshal
+	// a ClientFactory
+	Unmarshaler arrange.Unmarshaler
+
+	// Printer is the optional fx.Printer used to output informational messages about
+	// client unmarshaling and configuration.  If unset, arrange.DefaultPrinter() is used.
+	Printer fx.Printer `optional:"true"`
 
 	// Lifecycle is used to bind http.Client.CloseIdleConnections to the
 	// fx.App OnStop event
@@ -234,6 +239,8 @@ func (c *C) Use(v ...interface{}) *C {
 // method simply returns s.options.
 func (c *C) unmarshalOptions(p fx.Printer, dependencies []reflect.Value) (options []COption) {
 	if len(dependencies) > 0 {
+		p := arrange.NewModulePrinter(Module, p)
+
 		// visit struct fields in dependencies, building SOptions where possible
 		for _, d := range dependencies {
 			arrange.VisitFields(
@@ -244,7 +251,7 @@ func (c *C) unmarshalOptions(p fx.Printer, dependencies []reflect.Value) (option
 						// this allows callers to reuse fx.In structs for different purposes
 						raw := fv.Interface()
 						if co, err := NewCOption(raw); err == nil {
-							arrange.Printf(p, Module, "CLIENT OPTION => %T %s", raw, f.Tag)
+							p.Printf("CLIENT OPTION => %T %s", raw, f.Tag)
 							options = append(options, co)
 						}
 					}
@@ -266,15 +273,11 @@ func (c *C) unmarshalOptions(p fx.Printer, dependencies []reflect.Value) (option
 	return
 }
 
-// clientUnmarshalFunc is the require closure that performs unmarshaling of
-// a ClientFactory instance from viper.
-type clientUnmarshalFunc func(fx.Printer, *viper.Viper, viper.DecoderConfigOption, arrange.Target) error
-
 // applyUnmarshal does all the heavy-lifting of creating an http.Client and applying any options.
 // The returned function will always return the tuple of (*http.Client, error), and its first input
 // parameter will always be a ClientIn.  Subsequent input parameters, if necessary, will be the
 // dependencies supplied during building.
-func (c *C) applyUnmarshal(local []viper.DecoderConfigOption, cuf clientUnmarshalFunc) interface{} {
+func (c *C) applyUnmarshal(uf func(arrange.Unmarshaler, interface{}) error) interface{} {
 	return reflect.MakeFunc(
 		reflect.FuncOf(
 			// inputs
@@ -302,9 +305,9 @@ func (c *C) applyUnmarshal(local []viper.DecoderConfigOption, cuf clientUnmarsha
 			} else {
 				target := arrange.NewTarget(c.prototype)
 				in := inputs[0].Interface().(ClientIn)
-				err = cuf(in.Printer, in.Viper, arrange.Merge(in.DecoderOptions, local), target)
+				err = uf(in.Unmarshaler, target.UnmarshalTo.Interface())
 				if err == nil {
-					factory := target.Component().(ClientFactory)
+					factory := target.Component.Interface().(ClientFactory)
 					client, err = factory.NewClient()
 				}
 
@@ -336,56 +339,10 @@ func (c *C) applyUnmarshal(local []viper.DecoderConfigOption, cuf clientUnmarsha
 	).Interface()
 }
 
-// Unmarshal dynamically produces a function with the following signature:
-//
-//   func(ClientIn, /* zero or more fx.In struct dependencies */) (*http.Client, error)
-//
-// This returned function can then be used inside fx.Provide.  The simplest example would be:
-//
-//   fx.New(
-//     fx.Provide(
-//       arrangehttp.Client().Unmarshal(),
-//     ),
-//     fx.Invoke(
-//       func(c *http.Client) {
-//         // use this client somehow
-//       },
-//     ),
-//   )
-//
-// A more interesting example, with some dependencies automatically applied:
-//
-//   type Dependencies struct {
-//     fx.In
-//
-//     // This field will be scanned and automatically applied to http.Client.Transport
-//     Decorator arrangehttp.RoundTripperConstructor `name:"metrics"`
-//   }
-//
-//   fx.New(
-//     fx.Provide(
-//       fx.Annotated{
-//         Name: "metrics",
-//         Target: func() arrangehttp.RoundTripperConstructor {
-//           // interact with whatever metrics API you like to produce a decorator
-//         },
-//       },
-//       arrangehttp.Client(Dependencies{}).Unmarshal(),
-//     ),
-//     fx.Invoke(
-//       func(c *http.Client) {
-//         // this client will have its Transport decorated with metrics
-//       },
-//     ),
-//   )
-//
-// See NewCOption and Use for the set of things supported in dependency structs.
-func (c *C) Unmarshal(local ...viper.DecoderConfigOption) interface{} {
+func (c *C) Unmarshal() interface{} {
 	return c.applyUnmarshal(
-		local,
-		func(p fx.Printer, v *viper.Viper, o viper.DecoderConfigOption, t arrange.Target) error {
-			arrange.Printf(p, Module, "CLIENT UNMARSHAL => %s", t.ComponentType())
-			return v.Unmarshal(t.UnmarshalTo(), o)
+		func(u arrange.Unmarshaler, v interface{}) error {
+			return u.Unmarshal(v)
 		},
 	)
 }
@@ -411,20 +368,18 @@ func (c *C) Unmarshal(local ...viper.DecoderConfigOption) interface{} {
 //
 // Use Unmarshal instead of this method when more control over the created component
 // is necessary, such as putting it in a group or naming it.
-func (c *C) Provide(opts ...viper.DecoderConfigOption) fx.Option {
+func (c *C) Provide() fx.Option {
 	return fx.Provide(
-		c.Unmarshal(opts...),
+		c.Unmarshal(),
 	)
 }
 
 // UnmarshalKey is the same as Unmarshal, save that it unmarshals the ClientFactory from
 // a specific configuration key.
-func (c *C) UnmarshalKey(key string, local ...viper.DecoderConfigOption) interface{} {
+func (c *C) UnmarshalKey(key string) interface{} {
 	return c.applyUnmarshal(
-		local,
-		func(p fx.Printer, v *viper.Viper, o viper.DecoderConfigOption, t arrange.Target) error {
-			arrange.Printf(p, Module, "CLIENT UNMARSHAL KEY\t[%s] => %s", key, t.ComponentType())
-			return v.UnmarshalKey(key, t.UnmarshalTo(), o)
+		func(u arrange.Unmarshaler, v interface{}) error {
+			return u.UnmarshalKey(key, v)
 		},
 	)
 }
@@ -448,11 +403,11 @@ func (c *C) UnmarshalKey(key string, local ...viper.DecoderConfigOption) interfa
 //       },
 //     ),
 //   )
-func (c *C) ProvideKey(key string, opts ...viper.DecoderConfigOption) fx.Option {
+func (c *C) ProvideKey(key string) fx.Option {
 	return fx.Provide(
 		fx.Annotated{
 			Name:   key,
-			Target: c.UnmarshalKey(key, opts...),
+			Target: c.UnmarshalKey(key),
 		},
 	)
 }

@@ -224,6 +224,8 @@ type RouterOption func(*mux.Router) error
 // ServerIn describes the set of dependencies for creating a mux.Router and,
 // by extension, an http.Server.
 type ServerIn struct {
+	fx.In
+
 	// Unmarshaler is the required arrange Unmarshaler component used to unmarshal
 	// a ServerFactory
 	Unmarshaler arrange.Unmarshaler

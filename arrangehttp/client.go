@@ -163,6 +163,8 @@ func NewCOption(o interface{}) (COption, error) {
 
 // ClientIn is the set of dependencies required to build an *http.Client component
 type ClientIn struct {
+	fx.In
+
 	// Unmarshaler is the required arrange Unmarshaler component used to unmarshal
 	// a ClientFactory
 	Unmarshaler arrange.Unmarshaler

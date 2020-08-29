@@ -43,7 +43,7 @@ address: ":0"
 	address := make(chan net.Addr, 1)
 	app := fx.New(
 		arrange.LoggerWriter(ioutil.Discard),
-		fx.Supply(v), // you can also use arrange.ForViper
+		arrange.ForViper(v),
 		fx.Provide(
 			fx.Annotated{
 				Name: "api",

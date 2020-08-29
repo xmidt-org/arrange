@@ -692,7 +692,7 @@ transport:
 		t,
 		arrange.TestLogger(t),
 		arrange.ForViper(v),
-		Client(option).Provide(),
+		Client().Use(option).Provide(),
 		fx.Populate(&client),
 	)
 
@@ -741,7 +741,7 @@ clients:
 		arrange.TestLogger(t),
 		arrange.ForViper(v),
 		fx.Provide(
-			Client(option).UnmarshalKey("clients.main"),
+			Client().Use(option).UnmarshalKey("clients.main"),
 		),
 		fx.Populate(&client),
 	)
@@ -853,7 +853,7 @@ clients:
 		t,
 		arrange.TestLogger(t),
 		arrange.ForViper(v),
-		Client(option).ProvideKey("clients.main"),
+		Client().Use(option).ProvideKey("clients.main"),
 		fx.Invoke(
 			func(in ClientIn) {
 				client = in.Client

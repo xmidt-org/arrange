@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 - expose an optional fx.Printer for arrange informational output
 - expose a testing fx.Printer to redirect output to testing.T and testing.B
 - introduce arrange.Unmarshaler rather than having everything depend directly on viper
+- separated Use vs Inject in builders to make API usage clearer
 
 ## [v0.1.6]
 - struct field traversal

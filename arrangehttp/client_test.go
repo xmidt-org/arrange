@@ -147,9 +147,8 @@ func testClientConfigError(t *testing.T) {
 		}
 	)
 
-	client, err := cc.NewClient()
+	_, err := cc.NewClient()
 	assert.Error(err)
-	assert.NotNil(client)
 }
 
 func TestClientConfig(t *testing.T) {
@@ -485,13 +484,13 @@ transport:
 			},
 			Client().
 				Use(
-					Dependencies{},
 					NewHeaders("LocalConstructor", "true").AddRequest,
 					NewRoundTripperChain(
 						NewHeaders("LocalChain1", "true").AddRequest,
 						NewHeaders("LocalChain2", "true").AddRequest,
 					),
 				).
+				Inject(Dependencies{}).
 				Unmarshal(),
 		),
 		fx.Populate(&client),
@@ -582,7 +581,35 @@ timeout: "90s"
 	assert.Error(app.Err())
 }
 
-func testClientLocalCOptionError(t *testing.T) {
+func testClientUnmarshalInjectError(t *testing.T) {
+	const yaml = `
+timeout: "90s"
+`
+	var (
+		assert  = assert.New(t)
+		require = require.New(t)
+		v       = viper.New()
+		client  *http.Client
+	)
+
+	v.SetConfigType("yaml")
+	require.NoError(v.ReadConfig(strings.NewReader(yaml)))
+
+	app := fx.New(
+		arrange.TestLogger(t),
+		arrange.ForViper(v),
+		fx.Provide(
+			Client().
+				Inject("this is not a struct that embeds fx.In").
+				Unmarshal(),
+		),
+		fx.Populate(&client),
+	)
+
+	assert.Error(app.Err())
+}
+
+func testClientCOptionError(t *testing.T) {
 	var (
 		assert = assert.New(t)
 		client *http.Client
@@ -665,7 +692,7 @@ transport:
 		t,
 		arrange.TestLogger(t),
 		arrange.ForViper(v),
-		Client(option).Provide(),
+		Client().Use(option).Provide(),
 		fx.Populate(&client),
 	)
 
@@ -714,7 +741,7 @@ clients:
 		arrange.TestLogger(t),
 		arrange.ForViper(v),
 		fx.Provide(
-			Client(option).UnmarshalKey("clients.main"),
+			Client().Use(option).UnmarshalKey("clients.main"),
 		),
 		fx.Populate(&client),
 	)
@@ -826,7 +853,7 @@ clients:
 		t,
 		arrange.TestLogger(t),
 		arrange.ForViper(v),
-		Client(option).ProvideKey("clients.main"),
+		Client().Use(option).ProvideKey("clients.main"),
 		fx.Invoke(
 			func(in ClientIn) {
 				client = in.Client
@@ -851,7 +878,8 @@ func TestClient(t *testing.T) {
 	t.Run("Unmarshal", testClientUnmarshal)
 	t.Run("UnmarshalError", testClientUnmarshalError)
 	t.Run("UnmarshalUseError", testClientUnmarshalUseError)
-	t.Run("LocalCOptionError", testClientLocalCOptionError)
+	t.Run("UnmarshalInjectError", testClientUnmarshalInjectError)
+	t.Run("COptionError", testClientCOptionError)
 	t.Run("FactoryError", testClientFactoryError)
 	t.Run("Provide", testClientProvide)
 	t.Run("UnmarshalKey", testClientUnmarshalKey)

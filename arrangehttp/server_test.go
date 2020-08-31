@@ -1125,6 +1125,35 @@ func testServerUnmarshalUseError(t *testing.T) {
 	assert.Error(app.Err())
 }
 
+func testServerUnmarshalInjectError(t *testing.T) {
+	const yaml = `
+timeout: "90s"
+`
+	var (
+		assert  = assert.New(t)
+		require = require.New(t)
+		router  *mux.Router
+
+		v = viper.New()
+	)
+
+	v.SetConfigType("yaml")
+	require.NoError(v.ReadConfig(strings.NewReader(yaml)))
+
+	app := fx.New(
+		arrange.TestLogger(t),
+		arrange.ForViper(v),
+		fx.Provide(
+			Server().
+				Inject("this is not a struct that embeds fx.In").
+				Unmarshal(),
+		),
+		fx.Populate(&router),
+	)
+
+	assert.Error(app.Err())
+}
+
 func testServerProvide(t *testing.T) {
 	var (
 		assert  = assert.New(t)
@@ -1404,6 +1433,7 @@ func TestServer(t *testing.T) {
 	t.Run("UnmarshalDefaultListenerFactory", testServerUnmarshalDefaultListenerFactory)
 	t.Run("UnmarshalError", testServerUnmarshalError)
 	t.Run("UnmarshalUseError", testServerUnmarshalUseError)
+	t.Run("UnmarshalInjectError", testServerUnmarshalInjectError)
 	t.Run("FactoryError", testServerServerFactoryError)
 	t.Run("LocalServerOptionError", testServerLocalSOptionError)
 	t.Run("GlobalServerOptionError", testServerGlobalSOptionError)

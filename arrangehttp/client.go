@@ -234,12 +234,12 @@ func (c *C) Use(v ...interface{}) *C {
 // convert.  Any field that is not an option is ignored, without an error.  That allows
 // one fx.In-style struct to server multiple purposes.
 func (c *C) Inject(in ...interface{}) *C {
-	for _, s := range in {
-		if dependency, ok := arrange.IsIn(s); ok {
+	for _, d := range in {
+		if dependency, ok := arrange.IsIn(d); ok {
 			c.dependencies = append(c.dependencies, dependency.Type())
 		} else {
 			c.errs = append(c.errs,
-				fmt.Errorf("%T does not refer to a struct that embeds fx.In", s),
+				fmt.Errorf("%T does not refer to a struct that embeds fx.In", d),
 			)
 		}
 	}
@@ -252,7 +252,7 @@ func (c *C) Inject(in ...interface{}) *C {
 // method simply returns s.options.
 func (c *C) unmarshalOptions(p fx.Printer, dependencies []reflect.Value) (options []COption) {
 	if len(dependencies) > 0 {
-		p := arrange.NewModulePrinter(Module, p)
+		p = arrange.NewModulePrinter(Module, p)
 
 		// visit struct fields in dependencies, building SOptions where possible
 		for _, d := range dependencies {
@@ -264,7 +264,7 @@ func (c *C) unmarshalOptions(p fx.Printer, dependencies []reflect.Value) (option
 						// this allows callers to reuse fx.In structs for different purposes
 						raw := fv.Interface()
 						if co, err := NewCOption(raw); err == nil {
-							p.Printf("CLIENT OPTION => %T %s", raw, f.Tag)
+							p.Printf("CLIENT INJECT => %s.%s %s", d.Type(), f.Name, f.Tag)
 							options = append(options, co)
 						}
 					}

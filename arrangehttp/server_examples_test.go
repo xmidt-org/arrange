@@ -75,7 +75,7 @@ address: ":0"
 				}
 			},
 			Server().
-				Use(ServerDependencies{}). // this will include the middleware and listen decoration
+				Inject(ServerDependencies{}). // this will include the middleware and listen decoration
 				Unmarshal(),
 		),
 		fx.Invoke(
@@ -188,7 +188,7 @@ servers:
 		),
 		// this is outside fx.Provide(...)
 		Server().
-			Use(ServerDependencies{}). // this will include the middleware and listen decoration
+			Inject(ServerDependencies{}). // this will include the middleware and listen decoration
 			ProvideKey("servers.main"),
 		fx.Invoke(
 			func(in RouterIn) {

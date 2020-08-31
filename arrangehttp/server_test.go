@@ -871,10 +871,8 @@ func testServerUnmarshal(t *testing.T) {
 				}
 			},
 			Server(localSOption).
-				Use(
-					Dependencies{},
-					NewListenerChain(CaptureListenAddress(localAddress)),
-				).
+				Use(NewListenerChain(CaptureListenAddress(localAddress))).
+				Inject(Dependencies{}).
 				Unmarshal(),
 		),
 		fx.Invoke(
@@ -967,7 +965,7 @@ func testServerUnmarshalDefaultListenerFactory(t *testing.T) {
 			},
 			Server().
 				ServerFactory(CustomConfig{}).
-				Use(Dependencies{}).
+				Inject(Dependencies{}).
 				Unmarshal(),
 		),
 		fx.Invoke(

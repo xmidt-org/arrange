@@ -609,7 +609,7 @@ timeout: "90s"
 	assert.Error(app.Err())
 }
 
-func testClientLocalCOptionError(t *testing.T) {
+func testClientCOptionError(t *testing.T) {
 	var (
 		assert = assert.New(t)
 		client *http.Client
@@ -879,7 +879,7 @@ func TestClient(t *testing.T) {
 	t.Run("UnmarshalError", testClientUnmarshalError)
 	t.Run("UnmarshalUseError", testClientUnmarshalUseError)
 	t.Run("UnmarshalInjectError", testClientUnmarshalInjectError)
-	t.Run("LocalCOptionError", testClientLocalCOptionError)
+	t.Run("COptionError", testClientCOptionError)
 	t.Run("FactoryError", testClientFactoryError)
 	t.Run("Provide", testClientProvide)
 	t.Run("UnmarshalKey", testClientUnmarshalKey)

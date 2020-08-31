@@ -1025,7 +1025,7 @@ func testServerServerFactoryError(t *testing.T) {
 	assert.Error(app.Err())
 }
 
-func testServerLocalSOptionError(t *testing.T) {
+func testServerSOptionError(t *testing.T) {
 	var (
 		assert = assert.New(t)
 		router *mux.Router
@@ -1043,37 +1043,6 @@ func testServerLocalSOptionError(t *testing.T) {
 					ServerOption(func(*http.Server) error { return errors.New("expected server option error") }),
 				).
 				Unmarshal(),
-		),
-		fx.Populate(&router),
-	)
-
-	assert.Error(app.Err())
-}
-
-func testServerGlobalSOptionError(t *testing.T) {
-	var (
-		assert = assert.New(t)
-		router *mux.Router
-
-		v = viper.New()
-	)
-
-	type Dependencies struct {
-		fx.In
-		Option SOption
-	}
-
-	v.Set("address", "localhost:8080")
-	app := fx.New(
-		arrange.TestLogger(t),
-		arrange.ForViper(v),
-		fx.Provide(
-			func() ServerOption {
-				return func(*http.Server) error {
-					return errors.New("expected server option error")
-				}
-			},
-			Server().Use(Dependencies{}).Unmarshal(),
 		),
 		fx.Populate(&router),
 	)
@@ -1435,8 +1404,7 @@ func TestServer(t *testing.T) {
 	t.Run("UnmarshalUseError", testServerUnmarshalUseError)
 	t.Run("UnmarshalInjectError", testServerUnmarshalInjectError)
 	t.Run("FactoryError", testServerServerFactoryError)
-	t.Run("LocalServerOptionError", testServerLocalSOptionError)
-	t.Run("GlobalServerOptionError", testServerGlobalSOptionError)
+	t.Run("SOptionError", testServerSOptionError)
 	t.Run("Provide", testServerProvide)
 	t.Run("UnmarshalKey", testServerUnmarshalKey)
 	t.Run("UnmarshalKeyError", testServerUnmarshalKeyError)

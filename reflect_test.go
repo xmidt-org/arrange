@@ -1,7 +1,7 @@
 package arrange
 
 import (
-	"bytes"
+	"net/http"
 	"reflect"
 	"strconv"
 	"testing"
@@ -375,93 +375,116 @@ func TestVisitFields(t *testing.T) {
 	t.Run("Embedded", testVisitFieldsEmbedded)
 }
 
-func testIsInNotIn(t *testing.T) {
-	type Plain struct {
-		Value1 string
-	}
-
-	testData := []interface{}{
-		Plain{
-			Value1: "does not matter",
+func TestValueOf(t *testing.T) {
+	testData := []struct {
+		v        interface{}
+		expected reflect.Value
+	}{
+		{
+			v:        123,
+			expected: reflect.ValueOf(123),
 		},
-		reflect.ValueOf(Plain{
-			Value1: "does not matter",
-		}),
-		&Plain{
-			Value1: "does not matter",
+		{
+			v:        reflect.ValueOf("test"),
+			expected: reflect.ValueOf("test"),
 		},
-		reflect.ValueOf(&Plain{
-			Value1: "does not matter",
-		}),
 	}
 
-	for i, v := range testData {
+	for i, record := range testData {
 		t.Run(strconv.Itoa(i), func(t *testing.T) {
-			var (
-				assert   = assert.New(t)
-				require  = require.New(t)
-				root, ok = IsIn(v)
+			assert := assert.New(t)
+			assert.Equal(
+				record.expected.Interface(),
+				ValueOf(record.v).Interface(),
 			)
-
-			assert.False(ok)
-			require.True(root.IsValid())
-			assert.Equal(reflect.TypeOf(Plain{}), root.Type())
 		})
 	}
 }
 
-func testIsInNotAStruct(t *testing.T) {
-	testData := []interface{}{
-		123,
-		reflect.ValueOf(nil),
-		new(int),
-		new((*int)),
+func TestTypeOf(t *testing.T) {
+	testData := []struct {
+		v        interface{}
+		expected reflect.Type
+	}{
+		{
+			v:        "test",
+			expected: reflect.TypeOf("test"),
+		},
+		{
+			v:        reflect.ValueOf(123),
+			expected: reflect.TypeOf(123),
+		},
+		{
+			v:        reflect.TypeOf(123),
+			expected: reflect.TypeOf(123),
+		},
 	}
 
-	for i, v := range testData {
+	for i, record := range testData {
 		t.Run(strconv.Itoa(i), func(t *testing.T) {
-			var (
-				assert   = assert.New(t)
-				root, ok = IsIn(v)
-			)
-
-			assert.False(ok)
-			assert.False(root.IsValid())
+			assert := assert.New(t)
+			assert.Equal(record.expected, TypeOf(record.v))
 		})
 	}
 }
 
-func testIsInSuccess(t *testing.T) {
-	type Dependencies struct {
-		fx.In
-		Something    string
-		AnotherThing bytes.Buffer
-	}
-
-	testData := []interface{}{
-		Dependencies{},
-		reflect.ValueOf(Dependencies{}),
-		&Dependencies{},
-		reflect.ValueOf(&Dependencies{}),
-	}
-
-	for i, v := range testData {
-		t.Run(strconv.Itoa(i), func(t *testing.T) {
-			var (
-				assert   = assert.New(t)
-				require  = require.New(t)
-				root, ok = IsIn(v)
-			)
-
-			assert.True(ok)
-			require.True(root.IsValid())
-			assert.Equal(reflect.TypeOf(Dependencies{}), root.Type())
-		})
-	}
+func testTryConvertScalar(t *testing.T) {
+	assert := assert.New(t)
+	result, ok := TryConvert(int64(0), int(123))
+	assert.Equal([]int64{123}, result)
+	assert.True(ok)
 }
 
-func TestIsIn(t *testing.T) {
-	t.Run("NotIn", testIsInNotIn)
-	t.Run("NotAStruct", testIsInNotAStruct)
-	t.Run("Success", testIsInSuccess)
+func testTryConvertFunction(t *testing.T) {
+	var (
+		assert  = assert.New(t)
+		require = require.New(t)
+
+		srcCalled = false
+		src       = func(http.ResponseWriter, *http.Request) {
+			srcCalled = true
+		}
+	)
+
+	result, success := TryConvert(
+		http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}),
+		src,
+	)
+
+	require.True(success)
+
+	dst, ok := result.([]http.HandlerFunc)
+	require.True(ok)
+	require.NotEmpty(dst)
+	dst[0](nil, nil)
+	assert.True(srcCalled)
+}
+
+func testTryConvertArray(t *testing.T) {
+	assert := assert.New(t)
+	result, ok := TryConvert(int64(0), [4]int{67, -45, 13, 903})
+	assert.Equal([]int64{67, -45, 13, 903}, result)
+	assert.True(ok)
+}
+
+func testTryConvertSlice(t *testing.T) {
+	assert := assert.New(t)
+	result, ok := TryConvert(int64(0), []int{67, -45, 13, 903})
+	assert.Equal([]int64{67, -45, 13, 903}, result)
+	assert.True(ok)
+}
+
+func testTryConvertFailure(t *testing.T) {
+	assert := assert.New(t)
+	result, ok := TryConvert((*http.Request)(nil), 45)
+	assert.Nil(result)
+	assert.False(ok)
+}
+
+func TestTryConvert(t *testing.T) {
+	t.Run("Scalar", testTryConvertScalar)
+	t.Run("Function", testTryConvertFunction)
+	t.Run("Array", testTryConvertArray)
+	t.Run("Slice", testTryConvertSlice)
+	t.Run("Failure", testTryConvertFailure)
 }

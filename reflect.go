@@ -226,23 +226,88 @@ func VisitFields(root interface{}, v FieldVisitor) reflect.Value {
 	return rv
 }
 
-// IsIn performs a struct field traversal to find an fx.In embedded
-// struct.  If v could not be traversed or does not embed fx.In, this
-// function returns an invalid reflect.Value and false.  Otherwise,
-// the reflect.Value representing the actual struct, possibly dereferenced,
-// is returned along with true.
-func IsIn(v interface{}) (reflect.Value, bool) {
-	result := VisitContinue
-	root := VisitFields(
-		v,
-		func(f reflect.StructField, fv reflect.Value) VisitResult {
-			if f.Anonymous && f.Type == InType() {
-				result = VisitTerminate
-			}
+// ValueOf is a convenient utility function for turning v into a reflect.Value.
+// If v is already a reflect.Value, it is returned as is.  Otherwise, the result
+// of reflect.ValueOf(v) is returned.
+func ValueOf(v interface{}) reflect.Value {
+	if vv, ok := v.(reflect.Value); ok {
+		return vv
+	}
 
-			return result
-		},
+	return reflect.ValueOf(v)
+}
+
+// TypeOf is a convenient utility function for turning a v into a reflect.Type.
+// If v is already a reflect.Type, it is returned as is.  If v is a reflect.Value,
+// v.Type() is returned.  Otherwise, the result of reflect.TypeOf(v) is returned.
+func TypeOf(v interface{}) reflect.Type {
+	if vv, ok := v.(reflect.Value); ok {
+		return vv.Type()
+	} else if vt, ok := v.(reflect.Type); ok {
+		return vt
+	}
+
+	return reflect.TypeOf(v)
+}
+
+// TryConvert attempts to convert dst into a slice of whatever type src is.  If src is
+// itself a slice, then an attempt each made to convert each element of src into the dst type.
+//
+// The ConvertibleTo method in the reflect package is used to determine if conversion
+// is possible.  If it is, then this function always returns a slice of the type
+// referred to by dst.  This simplifies consumption of the result, as a caller may
+// always safely cast it to a "[]dst" if the second return value is true.
+//
+// The src parameter may be an actual object or a reflect.Value.  The src may also be a slice
+// type instead of a scalar.
+//
+// The dst parameter may be an actual object, a reflect.Value, or a reflect.Type.
+//
+// This function is useful in dependency injection situations when the
+// allowed type should be looser than what golang allows.  For example, allowing
+// a "func(http.Handler) http.Handler" where a "gorilla/mux.MiddlewareFunc" is desired.
+//
+// This function returns a nil interface{} and false if the conversion was not possible.
+func TryConvert(dst, src interface{}) (interface{}, bool) {
+	var (
+		from = ValueOf(src)
+		to   = TypeOf(dst)
 	)
 
-	return root, root.IsValid() && result == VisitTerminate
+	switch {
+	case from.Kind() == reflect.Array:
+		fallthrough
+
+	case from.Kind() == reflect.Slice:
+		if from.Type().Elem().ConvertibleTo(to) {
+			s := reflect.MakeSlice(
+				reflect.SliceOf(to), // element type
+				from.Len(),          // len
+				from.Len(),          // cap
+			)
+
+			for i := 0; i < from.Len(); i++ {
+				s.Index(i).Set(
+					from.Index(i).Convert(to),
+				)
+			}
+
+			return s.Interface(), true
+		}
+
+	case from.Type().ConvertibleTo(to):
+		s := reflect.MakeSlice(
+			reflect.SliceOf(to), // element type
+			1,                   // len
+			1,                   // cap
+		)
+
+		s.Index(0).Set(
+			from.Convert(to),
+		)
+
+		return s.Interface(), true
+	}
+
+	return nil, false
 }

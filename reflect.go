@@ -127,6 +127,43 @@ func NewTarget(prototype interface{}) (t Target) {
 	return
 }
 
+// IsIn tests if the given type refers to a struct that embeds fx.In.
+// Embedded, exported fields are searched recursively.  If t does not
+// refer to a struct, this function returns false.  The struct must embed
+// fx.In, not simply have fx.In as a field.
+//
+// This function will dereference t to arbitrary depth.  The returned
+// type will always be the completely dereferenced struct if and only if
+// it embeds fx.In.
+func IsIn(t reflect.Type) (reflect.Type, bool) {
+	// dereference to any depth
+	for t.Kind() == reflect.Ptr {
+		t = t.Elem()
+	}
+
+	if t.Kind() == reflect.Struct {
+		for i := 0; i < t.NumField(); i++ {
+			f := t.Field(i)
+			if !f.Anonymous {
+				continue
+			}
+
+			if f.Type == InType() {
+				return t, true
+			}
+
+			// only recurse for anonymous (embedded), exported fields
+			if len(f.PkgPath) == 0 {
+				if _, ok := IsIn(f.Type); ok {
+					return t, true
+				}
+			}
+		}
+	}
+
+	return nil, false
+}
+
 // VisitResult is the enumerated constant returned by a FieldVisitor
 type VisitResult int
 

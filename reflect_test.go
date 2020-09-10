@@ -112,6 +112,84 @@ func TestNewTarget(t *testing.T) {
 	t.Run("Nil", testNewTargetNil)
 }
 
+func TestIsIn(t *testing.T) {
+	type SimpleIn struct {
+		fx.In
+
+		Foo int
+		bar string
+	}
+
+	type NestedIn struct {
+		SimpleIn
+		Another float64
+	}
+
+	type FieldIn struct {
+		Test fx.In
+	}
+
+	type NotIn struct {
+		Name string
+		Age  int
+	}
+
+	testData := []struct {
+		input    interface{}
+		expected reflect.Type
+		success  bool
+	}{
+		{
+			input:    SimpleIn{},
+			expected: reflect.TypeOf(SimpleIn{}),
+			success:  true,
+		},
+		{
+			input:    &SimpleIn{},
+			expected: reflect.TypeOf(SimpleIn{}),
+			success:  true,
+		},
+		{
+			input:    NestedIn{},
+			expected: reflect.TypeOf(NestedIn{}),
+			success:  true,
+		},
+		{
+			input:    &NestedIn{},
+			expected: reflect.TypeOf(NestedIn{}),
+			success:  true,
+		},
+		{
+			input:   FieldIn{},
+			success: false,
+		},
+		{
+			input:   &FieldIn{},
+			success: false,
+		},
+		{
+			input:   NotIn{},
+			success: false,
+		},
+		{
+			input:   &NotIn{},
+			success: false,
+		},
+	}
+
+	for i, record := range testData {
+		t.Run(strconv.Itoa(i), func(t *testing.T) {
+			var (
+				assert     = assert.New(t)
+				actual, ok = IsIn(reflect.TypeOf(record.input))
+			)
+
+			assert.Equal(record.expected, actual)
+			assert.Equal(record.success, ok)
+		})
+	}
+}
+
 func TestIsDependency(t *testing.T) {
 	type Dependencies struct {
 		fx.In

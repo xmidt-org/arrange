@@ -127,7 +127,7 @@ func NewTarget(prototype interface{}) (t Target) {
 	return
 }
 
-// IsIn tests if the given type refers to a struct that embeds fx.In.
+// IsIn tests if the given value refers to a struct that embeds fx.In.
 // Embedded, exported fields are searched recursively.  If t does not
 // refer to a struct, this function returns false.  The struct must embed
 // fx.In, not simply have fx.In as a field.
@@ -135,7 +135,9 @@ func NewTarget(prototype interface{}) (t Target) {
 // This function will dereference t to arbitrary depth.  The returned
 // type will always be the completely dereferenced struct if and only if
 // it embeds fx.In.
-func IsIn(t reflect.Type) (reflect.Type, bool) {
+func IsIn(v interface{}) (reflect.Type, bool) {
+	t := TypeOf(v)
+
 	// dereference to any depth
 	for t.Kind() == reflect.Ptr {
 		t = t.Elem()
@@ -182,20 +184,34 @@ const (
 // FieldVisitor is a strategy for visiting each exported field of a struct
 type FieldVisitor func(reflect.StructField, reflect.Value) VisitResult
 
-// IsDependency is a filter for struct fields that cannot possibly be injected
-// dependencies.  This function returns true if all of the following are true:
+// IsUsable is a filter for struct fields that can be used by injection code.
+// This function returns true if all of the following are true:
 //
 //   - The reflect.Value is valid (i.e. IsValid() returns true)
 //   - The reflect.Value can return an interface (i.e. CanInterface() returns true)
-//   - The struct field is not anonymous
+//   - The struct field is not anonymous (i.e. embedded)
 //   - The struct field is exported
-//   - The struct field is either not the zero value or doesn't have the optional tag set to true
-func IsDependency(f reflect.StructField, fv reflect.Value) bool {
+//
+// When visiting struct fields, this function is a useful way of ignoring
+// fields that shouldn't be inspected.
+func IsUsable(f reflect.StructField, fv reflect.Value) bool {
+	// NOTE: CanInterface will panic in cases where IsValid will not.
+	// Thus, the order of this check is important, as it guarantees
+	// that CanInterface won't be called for an invalid value.
 	return fv.IsValid() &&
 		fv.CanInterface() &&
 		!f.Anonymous && // i.e. must not be embedded
-		len(f.PkgPath) == 0 && // must be exported
-		!(fv.IsZero() && f.Tag.Get("optional") == "true")
+		len(f.PkgPath) == 0 // must be exported
+}
+
+// IsOptional tests if the given struct field is tagged as an optional field.
+// Only applicable for structs that embed fx.In.
+//
+// Since there is no way to tell if an fx.App actually set a field when it is
+// optional, this function in tandem with checking for a zero value is a way
+// to ignore fields for components that were not supplied.
+func IsOptional(f reflect.StructField) bool {
+	return f.Tag.Get("optional") == "true"
 }
 
 // VisitFields walks the tree of struct fields.  Each embedded struct is also

@@ -1,6 +1,7 @@
 package arrange
 
 import (
+	"bytes"
 	"net/http"
 	"reflect"
 	"strconv"
@@ -190,33 +191,50 @@ func TestIsIn(t *testing.T) {
 	}
 }
 
-func TestIsDependency(t *testing.T) {
+func TestIsUsable(t *testing.T) {
 	type Dependencies struct {
-		fx.In
+		// NOTE: IsUsable doesn't depend on embedding fx.In
+
+		bytes.Buffer // embedded
 		unexported   int
-		Valid        string
-		ZeroValue    string `optional:"true"`
-		NotZeroValue string `optional:"true"`
 	}
 
 	var (
-		assert  = assert.New(t)
-		require = require.New(t)
-		v       = reflect.ValueOf(Dependencies{
-			NotZeroValue: "this should be seen as a dependency",
-		})
+		assert = assert.New(t)
+		dValue = reflect.ValueOf(Dependencies{})
 	)
 
-	require.NotPanics(func() {
-		// make sure this is a struct
-		v.NumField()
-	})
+	assert.False(
+		IsUsable(dValue.Type().Field(0), dValue.Field(0)),
+	)
 
-	assert.False(IsDependency(v.Type().Field(0), v.Field(0)))
-	assert.False(IsDependency(v.Type().Field(1), v.Field(1)))
-	assert.True(IsDependency(v.Type().Field(2), v.Field(2)))
-	assert.False(IsDependency(v.Type().Field(3), v.Field(3)))
-	assert.True(IsDependency(v.Type().Field(4), v.Field(4)))
+	assert.False(
+		IsUsable(dValue.Type().Field(1), dValue.Field(1)),
+	)
+
+	// force IsValid to return false
+	assert.False(
+		IsUsable(dValue.Type().Field(1), reflect.ValueOf(nil)),
+	)
+}
+
+func TestIsOptional(t *testing.T) {
+	type Dependencies struct {
+		// NOTE: IsOptional doesn't depend on embedding fx.In
+
+		Simple   *bytes.Buffer
+		Required *bytes.Buffer `optional:"false"`
+		Optional *bytes.Buffer `optional:"true"`
+	}
+
+	var (
+		assert = assert.New(t)
+		dType  = reflect.TypeOf(Dependencies{})
+	)
+
+	assert.False(IsOptional(dType.Field(0)))
+	assert.False(IsOptional(dType.Field(1)))
+	assert.True(IsOptional(dType.Field(2)))
 }
 
 func testVisitFieldsNotAStruct(t *testing.T) {

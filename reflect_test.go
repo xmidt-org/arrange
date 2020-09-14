@@ -136,86 +136,73 @@ func TestIsIn(t *testing.T) {
 	}
 
 	testData := []struct {
-		input    interface{}
-		expected reflect.Type
-		success  bool
+		input     interface{}
+		inspected reflect.Type
+		expected  bool
 	}{
 		{
-			input:    SimpleIn{},
-			expected: reflect.TypeOf(SimpleIn{}),
-			success:  true,
+			input:     SimpleIn{},
+			inspected: reflect.TypeOf(SimpleIn{}),
+			expected:  true,
 		},
 		{
-			input:    &SimpleIn{},
-			expected: reflect.TypeOf(SimpleIn{}),
-			success:  true,
+			input:     reflect.TypeOf(SimpleIn{}),
+			inspected: reflect.TypeOf(SimpleIn{}),
+			expected:  true,
 		},
 		{
-			input:    NestedIn{},
-			expected: reflect.TypeOf(NestedIn{}),
-			success:  true,
+			input:     reflect.ValueOf(SimpleIn{}),
+			inspected: reflect.TypeOf(SimpleIn{}),
+			expected:  true,
 		},
 		{
-			input:    &NestedIn{},
-			expected: reflect.TypeOf(NestedIn{}),
-			success:  true,
+			input:     NestedIn{},
+			inspected: reflect.TypeOf(NestedIn{}),
+			expected:  true,
 		},
 		{
-			input:   FieldIn{},
-			success: false,
+			input:     reflect.TypeOf(NestedIn{}),
+			inspected: reflect.TypeOf(NestedIn{}),
+			expected:  true,
 		},
 		{
-			input:   &FieldIn{},
-			success: false,
+			input:     reflect.ValueOf(NestedIn{}),
+			inspected: reflect.TypeOf(NestedIn{}),
+			expected:  true,
 		},
 		{
-			input:   NotIn{},
-			success: false,
+			input:     FieldIn{},
+			inspected: reflect.TypeOf(FieldIn{}),
+			expected:  false,
 		},
 		{
-			input:   &NotIn{},
-			success: false,
+			input:     NotIn{},
+			inspected: reflect.TypeOf(NotIn{}),
+			expected:  false,
+		},
+		{
+			input:     new(int),
+			inspected: reflect.TypeOf((*int)(nil)),
+			expected:  false,
+		},
+		{
+			input:     "this is most certainly not an fx.In struct",
+			inspected: reflect.TypeOf(""),
+			expected:  false,
 		},
 	}
 
 	for i, record := range testData {
 		t.Run(strconv.Itoa(i), func(t *testing.T) {
 			var (
-				assert     = assert.New(t)
-				actual, ok = IsIn(reflect.TypeOf(record.input))
+				assert         = assert.New(t)
+				actual, result = IsIn(record.input)
 			)
 
-			assert.Equal(record.expected, actual)
-			assert.Equal(record.success, ok)
+			assert.Equal(record.inspected, actual)
+			assert.Equal(record.expected, result)
 		})
 	}
-}
-
-func TestIsUsable(t *testing.T) {
-	type Dependencies struct {
-		// NOTE: IsUsable doesn't depend on embedding fx.In
-
-		bytes.Buffer // embedded
-		unexported   int
-	}
-
-	var (
-		assert = assert.New(t)
-		dValue = reflect.ValueOf(Dependencies{})
-	)
-
-	assert.False(
-		IsUsable(dValue.Type().Field(0), dValue.Field(0)),
-	)
-
-	assert.False(
-		IsUsable(dValue.Type().Field(1), dValue.Field(1)),
-	)
-
-	// force IsValid to return false
-	assert.False(
-		IsUsable(dValue.Type().Field(1), reflect.ValueOf(nil)),
-	)
 }
 
 func TestIsOptional(t *testing.T) {
@@ -237,29 +224,25 @@ func TestIsOptional(t *testing.T) {
 	assert.True(IsOptional(dType.Field(2)))
 }
 
-func testVisitFieldsNotAStruct(t *testing.T) {
+func testVisitDependenciesNotAStruct(t *testing.T) {
 	testData := []interface{}{
 		123,
 		new(int),
 		new((*int)),
 	}
 
-	for i, v := range testData {
+	for i, root := range testData {
 		t.Run(strconv.Itoa(i), func(t *testing.T) {
-			var (
-				assert = assert.New(t)
-				root   = VisitFields(v, func(reflect.StructField, reflect.Value) VisitResult {
-					assert.Fail("The visitor should not have been called")
-					return VisitTerminate
-				})
-			)
-
-			assert.False(root.IsValid())
+			assert := assert.New(t)
+			VisitDependencies(root, func(reflect.StructField, reflect.Value) bool {
+				assert.Fail("The visitor should not have been called")
+				return false
+			})
 		})
 	}
 }
 
-func testVisitFieldsSimple(t *testing.T) {
+func testVisitDependenciesSimple(t *testing.T) {
 	type Simple struct {
 		unexported string
 		Value1     int
@@ -296,23 +279,25 @@ func testVisitFieldsSimple(t *testing.T) {
 	}
 
 	t.Run("All", func(t *testing.T) {
-		for i, v := range testData {
+		for i, root := range testData {
 			t.Run(strconv.Itoa(i), func(t *testing.T) {
 				var (
 					assert       = assert.New(t)
-					require      = require.New(t)
 					actualNames  []string
 					actualValues []interface{}
-					root         = VisitFields(
-						v,
-						func(f reflect.StructField, fv reflect.Value) VisitResult {
-							actualNames = append(actualNames, f.Name)
-							actualValues = append(actualValues, fv.Interface())
-							assert.Empty(f.PkgPath)
-							assert.Equal(f.Type, fv.Type())
-							return VisitContinue
-						})
 				)
+
+				VisitDependencies(
+					root,
+					func(f reflect.StructField, fv reflect.Value) bool {
+						actualNames = append(actualNames, f.Name)
+						actualValues = append(actualValues, fv.Interface())
+						assert.Empty(f.PkgPath)
+						assert.Equal(f.Type, fv.Type())
+						assert.True(fv.IsValid())
+						assert.True(fv.CanInterface())
+						return true
+					})
 
 				assert.ElementsMatch(
 					[]string{"Value1", "Value2", "Value3", "Value4"},
@@ -323,9 +308,6 @@ func testVisitFieldsSimple(t *testing.T) {
 					[]interface{}{123, "test", 3.14, []string{"more", "testing"}},
 					actualValues,
 				)
-
-				require.True(root.IsValid())
-				assert.Equal(reflect.TypeOf(Simple{}), root.Type())
 			})
 		}
 	})
@@ -335,19 +317,21 @@ func testVisitFieldsSimple(t *testing.T) {
 			t.Run(strconv.Itoa(i), func(t *testing.T) {
 				var (
 					assert       = assert.New(t)
-					require      = require.New(t)
 					actualNames  []string
 					actualValues []interface{}
-					root         = VisitFields(
-						simple,
-						func(f reflect.StructField, fv reflect.Value) VisitResult {
-							actualNames = append(actualNames, f.Name)
-							actualValues = append(actualValues, fv.Interface())
-							assert.Empty(f.PkgPath)
-							assert.Equal(f.Type, fv.Type())
-							return VisitTerminate
-						})
 				)
+
+				VisitDependencies(
+					simple,
+					func(f reflect.StructField, fv reflect.Value) bool {
+						actualNames = append(actualNames, f.Name)
+						actualValues = append(actualValues, fv.Interface())
+						assert.Empty(f.PkgPath)
+						assert.Equal(f.Type, fv.Type())
+						assert.True(fv.IsValid())
+						assert.True(fv.CanInterface())
+						return false
+					})
 
 				assert.ElementsMatch(
 					[]string{"Value1"},
@@ -358,15 +342,12 @@ func testVisitFieldsSimple(t *testing.T) {
 					[]interface{}{123},
 					actualValues,
 				)
-
-				require.True(root.IsValid())
-				assert.Equal(reflect.TypeOf(Simple{}), root.Type())
 			})
 		}
 	})
 }
 
-func testVisitFieldsEmbedded(t *testing.T) {
+func testVisitDependenciesEmbedded(t *testing.T) {
 	type Leaf struct {
 		unexported int
 		Leaf1      int
@@ -432,19 +413,21 @@ func testVisitFieldsEmbedded(t *testing.T) {
 			t.Run(strconv.Itoa(i), func(t *testing.T) {
 				var (
 					assert       = assert.New(t)
-					require      = require.New(t)
 					actualNames  []string
 					actualValues []interface{}
-					root         = VisitFields(
-						v,
-						func(f reflect.StructField, fv reflect.Value) VisitResult {
-							actualNames = append(actualNames, f.Name)
-							actualValues = append(actualValues, fv.Interface())
-							assert.Empty(f.PkgPath)
-							assert.Equal(f.Type, fv.Type())
-							return VisitContinue
-						})
 				)
+
+				VisitDependencies(
+					v,
+					func(f reflect.StructField, fv reflect.Value) bool {
+						actualNames = append(actualNames, f.Name)
+						actualValues = append(actualValues, fv.Interface())
+						assert.Empty(f.PkgPath)
+						assert.Equal(f.Type, fv.Type())
+						assert.True(fv.IsValid())
+						assert.True(fv.CanInterface())
+						return true
+					})
 
 				t.Log("actualNames", actualNames)
 
@@ -457,18 +440,15 @@ func testVisitFieldsEmbedded(t *testing.T) {
 					[]interface{}{Leaf{Leaf1: 734, Leaf2: "leafy test"}, 734, "leafy test", 823, "compositey test", Leaf{Leaf1: 111}},
 					actualValues,
 				)
-
-				require.True(root.IsValid())
-				assert.Equal(reflect.TypeOf(Composite{}), root.Type())
 			})
 		}
 	})
 }
 
-func TestVisitFields(t *testing.T) {
-	t.Run("NotAStruct", testVisitFieldsNotAStruct)
-	t.Run("Simple", testVisitFieldsSimple)
-	t.Run("Embedded", testVisitFieldsEmbedded)
+func TestVisitDependencies(t *testing.T) {
+	t.Run("NotAStruct", testVisitDependenciesNotAStruct)
+	t.Run("Simple", testVisitDependenciesSimple)
+	t.Run("Embedded", testVisitDependenciesEmbedded)
 }
 
 func TestValueOf(t *testing.T) {

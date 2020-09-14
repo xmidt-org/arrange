@@ -33,6 +33,30 @@ func NewErrorValue(err error) reflect.Value {
 	return errPtr.Elem()
 }
 
+// ValueOf is a convenient utility function for turning v into a reflect.Value.
+// If v is already a reflect.Value, it is returned as is.  Otherwise, the result
+// of reflect.ValueOf(v) is returned.
+func ValueOf(v interface{}) reflect.Value {
+	if vv, ok := v.(reflect.Value); ok {
+		return vv
+	}
+
+	return reflect.ValueOf(v)
+}
+
+// TypeOf is a convenient utility function for turning a v into a reflect.Type.
+// If v is already a reflect.Type, it is returned as is.  If v is a reflect.Value,
+// v.Type() is returned.  Otherwise, the result of reflect.TypeOf(v) is returned.
+func TypeOf(v interface{}) reflect.Type {
+	if vv, ok := v.(reflect.Value); ok {
+		return vv.Type()
+	} else if vt, ok := v.(reflect.Type); ok {
+		return vt
+	}
+
+	return reflect.TypeOf(v)
+}
+
 // Target describes a sink for an unmarshal operation.
 //
 // Viper requires a pointer to be passed to its UnmarshalXXX functions.  However,
@@ -110,7 +134,7 @@ type Target struct {
 //
 // If the prototype does not refer to a struct, the results of this function are undefined.
 func NewTarget(prototype interface{}) (t Target) {
-	pvalue := reflect.ValueOf(prototype)
+	pvalue := ValueOf(prototype)
 	if pvalue.Kind() == reflect.Ptr {
 		t.UnmarshalTo = reflect.New(pvalue.Type().Elem())
 		if !pvalue.IsNil() {
@@ -132,21 +156,16 @@ func NewTarget(prototype interface{}) (t Target) {
 // refer to a struct, this function returns false.  The struct must embed
 // fx.In, not simply have fx.In as a field.
 //
-// This function will dereference t to arbitrary depth.  The returned
-// type will always be the completely dereferenced struct if and only if
-// it embeds fx.In.
+// IsIn returns both the actual reflect.Type that it inspected together
+// with whether that type is a struct that embeds fx.In.
 func IsIn(v interface{}) (reflect.Type, bool) {
 	t := TypeOf(v)
-
-	// dereference to any depth
-	for t.Kind() == reflect.Ptr {
-		t = t.Elem()
-	}
-
 	if t.Kind() == reflect.Struct {
 		for i := 0; i < t.NumField(); i++ {
 			f := t.Field(i)
+
 			if !f.Anonymous {
+				// skip
 				continue
 			}
 
@@ -154,8 +173,8 @@ func IsIn(v interface{}) (reflect.Type, bool) {
 				return t, true
 			}
 
-			// only recurse for anonymous (embedded), exported fields
 			if len(f.PkgPath) == 0 {
+				// only recurse for anonymous (embedded), exported fields
 				if _, ok := IsIn(f.Type); ok {
 					return t, true
 				}
@@ -163,46 +182,11 @@ func IsIn(v interface{}) (reflect.Type, bool) {
 		}
 	}
 
-	return nil, false
+	return t, false
 }
-
-// VisitResult is the enumerated constant returned by a FieldVisitor
-type VisitResult int
-
-const (
-	// VisitContinue indicates that field visitation should continue as normal
-	VisitContinue VisitResult = iota
-
-	// VisitSkip indicates that the fields of an embedded struct should not be visited.
-	// If returned for any other kind of field, this is equivalent to VisitContinue.
-	VisitSkip
-
-	// VisitTerminate terminates the tree walk immediately
-	VisitTerminate
-)
 
 // FieldVisitor is a strategy for visiting each exported field of a struct
-type FieldVisitor func(reflect.StructField, reflect.Value) VisitResult
-
-// IsUsable is a filter for struct fields that can be used by injection code.
-// This function returns true if all of the following are true:
-//
-//   - The reflect.Value is valid (i.e. IsValid() returns true)
-//   - The reflect.Value can return an interface (i.e. CanInterface() returns true)
-//   - The struct field is not anonymous (i.e. embedded)
-//   - The struct field is exported
-//
-// When visiting struct fields, this function is a useful way of ignoring
-// fields that shouldn't be inspected.
-func IsUsable(f reflect.StructField, fv reflect.Value) bool {
-	// NOTE: CanInterface will panic in cases where IsValid will not.
-	// Thus, the order of this check is important, as it guarantees
-	// that CanInterface won't be called for an invalid value.
-	return fv.IsValid() &&
-		fv.CanInterface() &&
-		!f.Anonymous && // i.e. must not be embedded
-		len(f.PkgPath) == 0 // must be exported
-}
+type FieldVisitor func(reflect.StructField, reflect.Value) bool
 
 // IsOptional tests if the given struct field is tagged as an optional field.
 // Only applicable for structs that embed fx.In.
@@ -214,41 +198,27 @@ func IsOptional(f reflect.StructField) bool {
 	return f.Tag.Get("optional") == "true"
 }
 
-// VisitFields walks the tree of struct fields.  Each embedded struct is also
-// traversed, but named struct fields are not.  Unexported fields are never traversed.
+// VisitDependencies walks the tree of struct fields looking for things that are acceptable
+// as injected dependencies, whether or not the given struct embeds fx.In.  This method ensures
+// that only exported struct fields for which IsValid() returns true are visited.  Anonymous
+// fields that are exported will be visited and, if they are structs, will be recursively visited.
 //
-// If root is actually a reflect.Value, that value will be used or dereferenced if
-// it is a pointer.
+// If root is actually a reflect.Value, that value will be used.  Otherwise, it's assumed that
+// root is a struct.  This function will dereference pointers to any depth.
 //
-// If root is a struct or any level of pointer to a struct, it will be dereferenced
-// and used as the starting point.
+// If root is not a struct, or cannot be dereferenced to a struct, this function does nothing.
 //
-// If root is not a struct, or cannot be dereferenced to a struct, this function
-// returns an invalid value, i.e. IsValid() will return false.  Also, an invalid
-// value is returned if root is a nil pointer.
-//
-// If any traversal occurred, this function returns the actual reflect.Value representing
-// the struct that was the root of the tree traversal.
-func VisitFields(root interface{}, v FieldVisitor) reflect.Value {
-	var rv reflect.Value
-	if rt, ok := root.(reflect.Value); ok {
-		rv = rt
-	} else {
-		rv = reflect.ValueOf(root)
-	}
+// Visitation continues until there are no more fields or until v returns false.
+func VisitDependencies(root interface{}, v FieldVisitor) {
+	rv := ValueOf(root)
 
-	// dereference as much as needed
+	// dereference as much as necessary
 	for rv.Kind() == reflect.Ptr {
-		if rv.IsNil() {
-			// can't traverse into a nil
-			return reflect.ValueOf(nil)
-		}
-
 		rv = rv.Elem()
 	}
 
 	if rv.Kind() != reflect.Struct {
-		return reflect.ValueOf(nil)
+		return
 	}
 
 	stack := []reflect.Value{rv}
@@ -261,46 +231,26 @@ func VisitFields(root interface{}, v FieldVisitor) reflect.Value {
 
 		stack = stack[:end]
 		for i := 0; i < st.NumField(); i++ {
-			f := st.Field(i)
-			if len(f.PkgPath) > 0 {
-				// NOTE: don't consider unexported fields
+			var (
+				f  = st.Field(i)
+				fv = s.Field(i)
+			)
+
+			if len(f.PkgPath) > 0 || !fv.IsValid() || !fv.CanInterface() {
+				// NOTE: skip unexported fields or those whose value cannot be accessed
 				continue
 			}
 
-			fv := s.Field(i)
-			if r := v(f, fv); r == VisitTerminate {
-				return rv
-			} else if f.Anonymous && r != VisitSkip {
+			if !v(f, fv) {
+				return
+			}
+
+			if f.Anonymous {
+				// NOTE: any anonymous, exported field will be recursively visited
 				stack = append(stack, fv)
 			}
 		}
 	}
-
-	return rv
-}
-
-// ValueOf is a convenient utility function for turning v into a reflect.Value.
-// If v is already a reflect.Value, it is returned as is.  Otherwise, the result
-// of reflect.ValueOf(v) is returned.
-func ValueOf(v interface{}) reflect.Value {
-	if vv, ok := v.(reflect.Value); ok {
-		return vv
-	}
-
-	return reflect.ValueOf(v)
-}
-
-// TypeOf is a convenient utility function for turning a v into a reflect.Type.
-// If v is already a reflect.Type, it is returned as is.  If v is a reflect.Value,
-// v.Type() is returned.  Otherwise, the result of reflect.TypeOf(v) is returned.
-func TypeOf(v interface{}) reflect.Type {
-	if vv, ok := v.(reflect.Value); ok {
-		return vv.Type()
-	} else if vt, ok := v.(reflect.Type); ok {
-		return vt
-	}
-
-	return reflect.TypeOf(v)
 }
 
 // TryConvert attempts to convert dst into a slice of whatever type src is.  If src is

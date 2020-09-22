@@ -280,6 +280,17 @@ func (s *S) ListenerConstructors(l ...ListenerConstructor) *S {
 	return s
 }
 
+// CaptureListenAddress decorates the server's listener so that the actual address the
+// server listens on is sent to a channel when the fx.App is started.
+//
+// This method is primarily useful during testing or examples when the bind address
+// of the server is such that it will bind to an available port, e.g. "", ":0", "[::1]:0", etc.
+func (s *S) CaptureListenAddress(ch chan<- net.Addr) *S {
+	return s.ListenerConstructors(
+		CaptureListenAddress(ch),
+	)
+}
+
 func (s *S) Inject(deps ...interface{}) *S {
 	for _, d := range deps {
 		if dt, ok := arrange.IsIn(d); ok {

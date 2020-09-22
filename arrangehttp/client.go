@@ -79,8 +79,11 @@ func (cc ClientConfig) NewClient() (client *http.Client, err error) {
 	return
 }
 
+// ClientOption is a functional option type that configures an http.Client.
 type ClientOption func(*http.Client) error
 
+// ClientOptions glues together multiple options into a single, immutable option.
+// Use this to produce aggregate options within an fx.App, instead of an []ClientOption.
 func ClientOptions(o ...ClientOption) ClientOption {
 	if len(o) == 1 {
 		return o[0]
@@ -197,6 +200,16 @@ func (c *C) Middleware(m ...RoundTripperConstructor) *C {
 	)
 }
 
+// Inject allows additional components to be supplied to build an http.Client.
+//
+// Each dependency supplied via this method must be a struct value that embeds
+// fx.In.  The embedding may be at any arbitrarily nested level.
+//
+// When unmarshaling occurs, these structs are injected via the normal usage
+// of uber/fx.  Each field of each struct is examined to see if it can be converted
+// into something that affects the construction of an http.Client.  Any field that
+// cannot be converted is silently ignored, which allows a single struct to
+// be used for more than one purpose.
 func (c *C) Inject(deps ...interface{}) *C {
 	for _, d := range deps {
 		if dt, ok := arrange.IsIn(d); ok {

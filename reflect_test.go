@@ -2,13 +2,13 @@ package arrange
 
 import (
 	"bytes"
+	"io"
 	"net/http"
 	"reflect"
 	"strconv"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 	"go.uber.org/fx"
 )
 
@@ -205,7 +205,7 @@ func TestIsIn(t *testing.T) {
 	}
 }
 
-func TestIsOptional(t *testing.T) {
+func TestIsInjected(t *testing.T) {
 	type Dependencies struct {
 		// NOTE: IsOptional doesn't depend on embedding fx.In
 
@@ -216,12 +216,25 @@ func TestIsOptional(t *testing.T) {
 
 	var (
 		assert = assert.New(t)
-		dType  = reflect.TypeOf(Dependencies{})
+		actual = map[string]bool{}
 	)
 
-	assert.False(IsOptional(dType.Field(0)))
-	assert.False(IsOptional(dType.Field(1)))
-	assert.True(IsOptional(dType.Field(2)))
+	VisitDependencies(
+		Dependencies{},
+		func(f reflect.StructField, fv reflect.Value) bool {
+			actual[f.Name] = IsInjected(f, fv)
+			return true
+		},
+	)
+
+	assert.Equal(
+		map[string]bool{
+			"Simple":   true,
+			"Required": true,
+			"Optional": false,
+		},
+		actual,
+	)
 }
 
 func testVisitDependenciesNotAStruct(t *testing.T) {
@@ -504,63 +517,130 @@ func TestTypeOf(t *testing.T) {
 	}
 }
 
-func testTryConvertScalar(t *testing.T) {
+func testTryConvertFailure(t *testing.T) {
 	assert := assert.New(t)
-	result, ok := TryConvert(int64(0), int(123))
-	assert.Equal([]int64{123}, result)
-	assert.True(ok)
+
+	assert.False(TryConvert(
+		"testy mc test",
+		func(int) {
+			assert.Fail("that is not convertible to an int")
+		},
+		func(io.Reader) {
+			assert.Fail("that is not convertible to an io.Reader")
+		},
+	))
 }
 
 func testTryConvertFunction(t *testing.T) {
-	var (
-		assert  = assert.New(t)
-		require = require.New(t)
+	type f1 func(http.Handler) http.Handler
+	type f2 func(http.Handler) http.Handler
 
-		srcCalled = false
-		src       = func(http.ResponseWriter, *http.Request) {
-			srcCalled = true
-		}
-	)
+	t.Run("ScalarToScalar", func(t *testing.T) {
+		var (
+			assert = assert.New(t)
 
-	result, success := TryConvert(
-		http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}),
-		src,
-	)
+			expectedCalled    = false
+			expected       f1 = func(http.Handler) http.Handler {
+				expectedCalled = true
+				return nil
+			}
+		)
 
-	require.True(success)
+		assert.True(TryConvert(
+			expected,
+			func(int) {
+				assert.Fail("that is not convertible to an int")
+			},
+			func(f f2) {
+				f(nil)
+			},
+		))
 
-	dst, ok := result.([]http.HandlerFunc)
-	require.True(ok)
-	require.NotEmpty(dst)
-	dst[0](nil, nil)
-	assert.True(srcCalled)
+		assert.True(expectedCalled)
+	})
+
+	t.Run("VectorToVector", func(t *testing.T) {
+		var (
+			assert = assert.New(t)
+
+			expectedCalled = []bool{false, false, false}
+			expected       = []f1{
+				func(http.Handler) http.Handler {
+					expectedCalled[0] = true
+					return nil
+				},
+				func(http.Handler) http.Handler {
+					expectedCalled[1] = true
+					return nil
+				},
+				func(http.Handler) http.Handler {
+					expectedCalled[2] = true
+					return nil
+				},
+			}
+		)
+
+		assert.True(TryConvert(
+			expected,
+			func(int) {
+				assert.Fail("that is not convertible to an int")
+			},
+			func(f []f2) {
+				for _, e := range f {
+					e(nil)
+				}
+			},
+		))
+
+		assert.Equal(
+			[]bool{true, true, true},
+			expectedCalled,
+		)
+	})
 }
 
-func testTryConvertArray(t *testing.T) {
-	assert := assert.New(t)
-	result, ok := TryConvert(int64(0), [4]int{67, -45, 13, 903})
-	assert.Equal([]int64{67, -45, 13, 903}, result)
-	assert.True(ok)
-}
+func testTryConvertValue(t *testing.T) {
+	t.Run("ScalarToScalar", func(t *testing.T) {
+		var (
+			assert = assert.New(t)
+			actual int64
+		)
 
-func testTryConvertSlice(t *testing.T) {
-	assert := assert.New(t)
-	result, ok := TryConvert(int64(0), []int{67, -45, 13, 903})
-	assert.Equal([]int64{67, -45, 13, 903}, result)
-	assert.True(ok)
-}
+		assert.True(TryConvert(
+			int(123),
+			func(*bytes.Buffer) {
+				assert.Fail("that is not convertible to a *bytes.Buffer")
+			},
+			func(v int64) {
+				actual = v
+			},
+		))
 
-func testTryConvertFailure(t *testing.T) {
-	assert := assert.New(t)
-	result, ok := TryConvert((*http.Request)(nil), 45)
-	assert.Nil(result)
-	assert.False(ok)
+		assert.Equal(int64(123), actual)
+	})
+
+	t.Run("VectorToVector", func(t *testing.T) {
+		var (
+			assert = assert.New(t)
+			actual []int64
+		)
+
+		assert.True(TryConvert(
+			[]int{6, 7, 8},
+			func(*bytes.Buffer) {
+				assert.Fail("that is not convertible to a *bytes.Buffer")
+			},
+			func(v []int64) {
+				actual = v
+			},
+		))
+
+		assert.Equal([]int64{6, 7, 8}, actual)
+	})
 }
 
 func TestTryConvert(t *testing.T) {
-	t.Run("Scalar", testTryConvertScalar)
-	t.Run("Function", testTryConvertFunction)
-	t.Run("Array", testTryConvertArray)
-	t.Run("Slice", testTryConvertSlice)
 	t.Run("Failure", testTryConvertFailure)
+	t.Run("Function", testTryConvertFunction)
+	t.Run("Value", testTryConvertValue)
 }

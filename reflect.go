@@ -188,14 +188,19 @@ func IsIn(v interface{}) (reflect.Type, bool) {
 // FieldVisitor is a strategy for visiting each exported field of a struct
 type FieldVisitor func(reflect.StructField, reflect.Value) bool
 
-// IsOptional tests if the given struct field is tagged as an optional field.
-// Only applicable for structs that embed fx.In.
+// IsInjected tests if a given struct field was (likely) injected by an fx.App.
+// This function returns false if and only if:
 //
-// Since there is no way to tell if an fx.App actually set a field when it is
-// optional, this function in tandem with checking for a zero value is a way
-// to ignore fields for components that were not supplied.
-func IsOptional(f reflect.StructField) bool {
-	return f.Tag.Get("optional") == "true"
+//   - The given field is marked as `optional:"true"`
+//   - The field's value is the zero value
+//
+// Otherwise, this function returns true.
+func IsInjected(f reflect.StructField, fv reflect.Value) bool {
+	if f.Tag.Get("optional") == "true" && fv.IsZero() {
+		return false
+	}
+
+	return true
 }
 
 // VisitDependencies walks the tree of struct fields looking for things that are acceptable
@@ -253,64 +258,71 @@ func VisitDependencies(root interface{}, v FieldVisitor) {
 	}
 }
 
-// TryConvert attempts to convert dst into a slice of whatever type src is.  If src is
-// itself a slice, then an attempt each made to convert each element of src into the dst type.
+// TryConvert provides a more flexible alternative to a switch/type block.  It reflects
+// the src parameter using ValueOf in this package, then determines which of a set of case
+// functions to invoke based on the sole input parameter of each callback.  Exactly zero or one
+// case function is invoked for any src.  This function returns true if a callback was invoked,
+// which means a conversion was successful.  Otherwise, this function returns false to indicate
+// that no conversion to the available callbacks was possible.
 //
-// The ConvertibleTo method in the reflect package is used to determine if conversion
-// is possible.  If it is, then this function always returns a slice of the type
-// referred to by dst.  This simplifies consumption of the result, as a caller may
-// always safely cast it to a "[]dst" if the second return value is true.
+// The src parameter may be a regular value or a reflect.Value.  It may refer to a scalar value,
+// an array, or a slice.
 //
-// The src parameter may be an actual object or a reflect.Value.  The src may also be a slice
-// type instead of a scalar.
+// Each callback must be a function that accepts one and only one parameter.  Any return values
+// are ignored.  This function will panic if a matching callback is not a function with (1) parameter.
+// The sole input parameter of a callback may be a scalar or a slice, NOT an array.
 //
-// The dst parameter may be an actual object, a reflect.Value, or a reflect.Type.
+// If src is an array or slice, a callback with a slice whose elements are convertible to elements
+// of the src will match.  If src is a scalar, then a callback whose parameter is convertible
+// to src will match.
 //
-// This function is useful in dependency injection situations when the
-// allowed type should be looser than what golang allows.  For example, allowing
-// a "func(http.Handler) http.Handler" where a "gorilla/mux.MiddlewareFunc" is desired.
-//
-// This function returns a nil interface{} and false if the conversion was not possible.
-func TryConvert(dst, src interface{}) (interface{}, bool) {
+// In many dependency injection situations, looser type conversions than what golang allows
+// are preferable.  For example, gorilla/mux.MiddlewareFunc and justinas/alice.Constructor
+// are not considered the same types by golang, even though they are both func(http.Handler) http.Handler.
+// Using TryConvert allows arrange to support multiple middleware packages without actually
+// having to import those packages just for the types.
+func TryConvert(src interface{}, cases ...interface{}) bool {
 	var (
-		from = ValueOf(src)
-		to   = TypeOf(dst)
+		from         = reflect.ValueOf(src)
+		fromSequence = (from.Kind() == reflect.Array || from.Kind() == reflect.Slice)
 	)
 
-	switch {
-	case from.Kind() == reflect.Array:
-		fallthrough
+	for _, c := range cases {
+		var (
+			cf = reflect.ValueOf(c)
+			to = cf.Type().In(0)
 
-	case from.Kind() == reflect.Slice:
-		if from.Type().Elem().ConvertibleTo(to) {
-			s := reflect.MakeSlice(
-				reflect.SliceOf(to), // element type
-				from.Len(),          // len
-				from.Len(),          // cap
-			)
+			// we don't support converting to arrays, as that gets into bounds checking
+			toSequence = (to.Kind() == reflect.Slice)
+		)
 
-			for i := 0; i < from.Len(); i++ {
-				s.Index(i).Set(
-					from.Index(i).Convert(to),
+		if fromSequence && toSequence {
+			if from.Type().Elem().ConvertibleTo(to.Elem()) {
+				s := reflect.MakeSlice(
+					to,         // to is a slice type already
+					from.Len(), // len
+					from.Len(), // cap
 				)
+
+				for i := 0; i < from.Len(); i++ {
+					s.Index(i).Set(
+						from.Index(i).Convert(to.Elem()),
+					)
+				}
+
+				cf.Call([]reflect.Value{s})
+				return true
 			}
+		} else if !fromSequence && !toSequence {
+			if from.Type().ConvertibleTo(to) {
+				cf.Call([]reflect.Value{
+					from.Convert(to),
+				})
 
-			return s.Interface(), true
+				return true
+			}
 		}
-
-	case from.Type().ConvertibleTo(to):
-		s := reflect.MakeSlice(
-			reflect.SliceOf(to), // element type
-			1,                   // len
-			1,                   // cap
-		)
-
-		s.Index(0).Set(
-			from.Convert(to),
-		)
-
-		return s.Interface(), true
 	}
 
-	return nil, false
+	return false
 }

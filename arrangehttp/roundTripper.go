@@ -1,6 +1,11 @@
 package arrangehttp
 
-import "net/http"
+import (
+	"net/http"
+	"reflect"
+
+	"github.com/xmidt-org/arrange"
+)
 
 // RoundTripperFunc is a function type that implements http.RoundTripper.
 // Useful for simple decoration and testing.
@@ -69,4 +74,60 @@ func (lc RoundTripperChain) Then(next http.RoundTripper) http.RoundTripper {
 	}
 
 	return next
+}
+
+type ClientMiddlewareChain interface {
+	Then(http.RoundTripper) http.RoundTripper
+}
+
+var roundTripperConstructorType = reflect.TypeOf(
+	func(http.RoundTripper) http.RoundTripper { return nil },
+)
+
+// TryClientMiddlewareChain attempts to convert v into a ClientMiddlewareChain.  If
+// the conversion is unsuccessful, this function returns nil.
+//
+// If v implements ClientMiddlewareChain, it is returned as is.
+//
+// If v is convertible to RoundTripperConstructor, it is return wrapped
+// in a RoundTripperChain.
+//
+// If v is an array or slice of an element convertible to RoundTripperConstructor,
+// each element is converted appropriately and returned wrapped in a RoundTripperChain.
+func TryClientMiddlewareChain(v interface{}) ClientMiddlewareChain {
+	if chain, ok := v.(ClientMiddlewareChain); ok {
+		return chain
+	}
+
+	vv := arrange.ValueOf(v)
+	switch {
+	case vv.Kind() == reflect.Array:
+		fallthrough
+
+	case vv.Kind() == reflect.Slice:
+		if vv.Type().Elem().ConvertibleTo(roundTripperConstructorType) {
+			dst := reflect.MakeSlice(
+				roundTripperConstructorType, // element type
+				vv.Len(),                    // len
+				vv.Len(),                    // cap
+			)
+
+			for i := 0; i < vv.Len(); i++ {
+				dst.Index(i).Set(
+					vv.Index(i).Convert(roundTripperConstructorType),
+				)
+			}
+
+			return NewRoundTripperChain(
+				vv.Convert(roundTripperConstructorType).Interface().([]RoundTripperConstructor)...,
+			)
+		}
+
+	case vv.Type().ConvertibleTo(roundTripperConstructorType):
+		return NewRoundTripperChain(
+			vv.Convert(roundTripperConstructorType).Interface().(RoundTripperConstructor),
+		)
+	}
+
+	return nil
 }

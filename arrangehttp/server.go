@@ -127,6 +127,8 @@ func RouterOptions(o ...RouterOption) RouterOption {
 // associated mux.Router, and any listener decoration.
 type sOption func(*http.Server, *mux.Router, ListenerChain) (ListenerChain, error)
 
+// newSOption reflects v to determine if it can be used as a functional option
+// for building an HTTP server.  If v is not a recognized type, this function returns nil.
 func newSOption(v interface{}) sOption {
 	var so sOption
 	arrange.TryConvert(
@@ -223,6 +225,8 @@ func (s *S) ServerFactory(prototype ServerFactory) *S {
 	return s
 }
 
+// With adds functional options that tailor the *http.Server supplied by
+// this builder chain.
 func (s *S) With(o ...ServerOption) *S {
 	s.options = append(
 		s.options,
@@ -232,6 +236,8 @@ func (s *S) With(o ...ServerOption) *S {
 	return s
 }
 
+// WithRouter adds functional options that tailor the *mux.Router supplied
+// by this builder chain.
 func (s *S) WithRouter(o ...RouterOption) *S {
 	s.options = append(
 		s.options,
@@ -241,6 +247,8 @@ func (s *S) WithRouter(o ...RouterOption) *S {
 	return s
 }
 
+// Middleware is a shorthand for a RouterOption that adds several middlewares
+// to the *mux.Router being built.
 func (s *S) Middleware(m ...func(http.Handler) http.Handler) *S {
 	return s.WithRouter(func(router *mux.Router) error {
 		for _, f := range m {
@@ -251,6 +259,8 @@ func (s *S) Middleware(m ...func(http.Handler) http.Handler) *S {
 	})
 }
 
+// MiddlewareChain is a shorthand for a RouterOption that adds a chain
+// of server middlewares.  Various packages can be used here, such as justinas/alice.
 func (s *S) MiddlewareChain(smc ServerMiddlewareChain) *S {
 	return s.WithRouter(func(router *mux.Router) error {
 		router.Use(smc.Then)
@@ -258,6 +268,8 @@ func (s *S) MiddlewareChain(smc ServerMiddlewareChain) *S {
 	})
 }
 
+// ListenerChain adds a ListenerChain that decorates the listener used to accept
+// traffic for this server.
 func (s *S) ListenerChain(lc ListenerChain) *S {
 	s.options = append(
 		s.options,
@@ -269,6 +281,8 @@ func (s *S) ListenerChain(lc ListenerChain) *S {
 	return s
 }
 
+// ListenerConstructors adds several decorators for the listener used to accept
+// traffic for this server.
 func (s *S) ListenerConstructors(l ...ListenerConstructor) *S {
 	s.options = append(
 		s.options,
@@ -291,6 +305,14 @@ func (s *S) CaptureListenAddress(ch chan<- net.Addr) *S {
 	)
 }
 
+// Inject allows additional components that tailor an http.Server, mux.Router, or net.Listener.
+// These components will be supplied by the enclosing fx.App.
+//
+// Each value supplied to this method must be a struct value that embeds fx.In.
+//
+// When the constructor for this server is called, each field of each struct is examined to
+// see if it is a type that can apply to tailoring a server, router, or listener.  Any fields
+// that cannot be used are silently ignored.
 func (s *S) Inject(deps ...interface{}) *S {
 	for _, d := range deps {
 		if dt, ok := arrange.IsIn(d); ok {
@@ -422,6 +444,8 @@ func (s *S) makeUnmarshalFunc(u func(arrange.Unmarshaler, interface{}) error) re
 }
 
 // Unmarshal terminates the builder chain and returns a function that produces a mux.Router.
+// The *http.Server and net.Listener objects built by this function are not exposed.  However,
+// both the server and listener will be bound to the lifecycle of the enclosing fx.App.
 func (s *S) Unmarshal() interface{} {
 	return s.makeUnmarshalFunc(
 		func(u arrange.Unmarshaler, v interface{}) error {
@@ -430,6 +454,7 @@ func (s *S) Unmarshal() interface{} {
 	).Interface()
 }
 
+// UnmarshalKey is like Unmarshal, except that it unmarshals from a particular configuration key.
 func (s *S) UnmarshalKey(key string) interface{} {
 	return s.makeUnmarshalFunc(
 		func(u arrange.Unmarshaler, v interface{}) error {
@@ -446,6 +471,8 @@ func (s *S) Provide() fx.Option {
 	)
 }
 
+// ProvideKey handles the simple case where a router is built from a given configuration key
+// and is exposed as a component of the same name as the key.
 func (s *S) ProvideKey(key string) fx.Option {
 	return fx.Provide(
 		fx.Annotated{

@@ -368,6 +368,7 @@ func testVisitDependenciesEmbedded(t *testing.T) {
 	}
 
 	type Composite struct {
+		fx.In      // should never be visited
 		Leaf       // embedded, which should be visited and possibly traversed
 		Composite1 int
 		Composite2 string
@@ -433,6 +434,7 @@ func testVisitDependenciesEmbedded(t *testing.T) {
 				VisitDependencies(
 					v,
 					func(f reflect.StructField, fv reflect.Value) bool {
+						assert.NotEqual(InType(), f.Type)
 						actualNames = append(actualNames, f.Name)
 						actualValues = append(actualValues, fv.Interface())
 						assert.Empty(f.PkgPath)

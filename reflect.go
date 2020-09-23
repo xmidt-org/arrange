@@ -235,13 +235,14 @@ func VisitDependencies(root interface{}, v FieldVisitor) {
 		)
 
 		stack = stack[:end]
+
 		for i := 0; i < st.NumField(); i++ {
 			var (
 				f  = st.Field(i)
 				fv = s.Field(i)
 			)
 
-			if len(f.PkgPath) > 0 || !fv.IsValid() || !fv.CanInterface() {
+			if len(f.PkgPath) > 0 || !fv.IsValid() || !fv.CanInterface() || f.Type == InType() {
 				// NOTE: skip unexported fields or those whose value cannot be accessed
 				continue
 			}

@@ -262,20 +262,16 @@ func VisitDependencies(root interface{}, v FieldVisitor) {
 // TryConvert provides a more flexible alternative to a switch/type block.  It reflects
 // the src parameter using ValueOf in this package, then determines which of a set of case
 // functions to invoke based on the sole input parameter of each callback.  Exactly zero or one
-// case function is invoked for any src.  This function returns true if a callback was invoked,
-// which means a conversion was successful.  Otherwise, this function returns false to indicate
+// case function is invoked.  This function returns true if a callback was invoked, which
+// means a conversion was successful.  Otherwise, this function returns false to indicate
 // that no conversion to the available callbacks was possible.
 //
 // The src parameter may be a regular value or a reflect.Value.  It may refer to a scalar value,
 // an array, or a slice.
 //
-// Each callback must be a function that accepts one and only one parameter.  Any return values
-// are ignored.  This function will panic if a matching callback is not a function with (1) parameter.
-// The sole input parameter of a callback may be a scalar or a slice, NOT an array.
-//
-// If src is an array or slice, a callback with a slice whose elements are convertible to elements
-// of the src will match.  If src is a scalar, then a callback whose parameter is convertible
-// to src will match.
+// Each case is checked for a match first by a simple direct conversion.  If that is unsuccessful,
+// then if both the src and the case refer to sequences, an attempt is made to convert each element
+// into a slice that matches the case.  Failing both of those attempts, the next cases is considered.
 //
 // In many dependency injection situations, looser type conversions than what golang allows
 // are preferable.  For example, gorilla/mux.MiddlewareFunc and justinas/alice.Constructor
@@ -292,12 +288,20 @@ func TryConvert(src interface{}, cases ...interface{}) bool {
 		var (
 			cf = reflect.ValueOf(c)
 			to = cf.Type().In(0)
-
-			// we don't support converting to arrays, as that gets into bounds checking
-			toSequence = (to.Kind() == reflect.Slice)
 		)
 
-		if fromSequence && toSequence {
+		// first, try a direct conversion
+		if from.Type().ConvertibleTo(to) {
+			cf.Call([]reflect.Value{
+				from.Convert(to),
+			})
+
+			return true
+		}
+
+		// next, try to convert elements of one sequence into another
+		// NOTE: we don't support converting to arrays, only slices
+		if fromSequence && to.Kind() == reflect.Slice {
 			if from.Type().Elem().ConvertibleTo(to.Elem()) {
 				s := reflect.MakeSlice(
 					to,         // to is a slice type already
@@ -312,14 +316,6 @@ func TryConvert(src interface{}, cases ...interface{}) bool {
 				}
 
 				cf.Call([]reflect.Value{s})
-				return true
-			}
-		} else if !fromSequence && !toSequence {
-			if from.Type().ConvertibleTo(to) {
-				cf.Call([]reflect.Value{
-					from.Convert(to),
-				})
-
 				return true
 			}
 		}

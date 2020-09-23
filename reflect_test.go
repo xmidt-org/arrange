@@ -601,6 +601,52 @@ func testTryConvertFunction(t *testing.T) {
 	})
 }
 
+func testTryConvertInterface(t *testing.T) {
+	t.Run("ScalarToScalar", func(t *testing.T) {
+		var (
+			assert = assert.New(t)
+			buffer = new(bytes.Buffer)
+			actual io.Writer
+		)
+
+		assert.True(TryConvert(
+			buffer,
+			func(v int64) {
+				assert.Fail("that is not convertible to an int")
+			},
+			func(w io.Writer) {
+				actual = w
+			},
+		))
+
+		assert.Equal(buffer, actual)
+	})
+
+	t.Run("VectorToVector", func(t *testing.T) {
+		var (
+			assert  = assert.New(t)
+			buffers = []*bytes.Buffer{
+				new(bytes.Buffer),
+				new(bytes.Buffer),
+			}
+
+			converted bool
+		)
+
+		assert.True(TryConvert(
+			buffers,
+			func(v int64) {
+				assert.Fail("that is not convertible to an int")
+			},
+			func(w []io.Writer) {
+				converted = true
+			},
+		))
+
+		assert.True(converted)
+	})
+}
+
 func testTryConvertValue(t *testing.T) {
 	t.Run("ScalarToScalar", func(t *testing.T) {
 		var (
@@ -644,5 +690,6 @@ func testTryConvertValue(t *testing.T) {
 func TestTryConvert(t *testing.T) {
 	t.Run("Failure", testTryConvertFailure)
 	t.Run("Function", testTryConvertFunction)
+	t.Run("Interface", testTryConvertInterface)
 	t.Run("Value", testTryConvertValue)
 }

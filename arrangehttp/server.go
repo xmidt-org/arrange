@@ -69,6 +69,12 @@ func (sc ServerConfig) Listen(ctx context.Context, s *http.Server) (net.Listener
 	}.Listen(ctx, s)
 }
 
+// ServerMiddlewareChain is a strategy for decorating an http.Handler.  Various
+// packages implement this interface, such as justinas/alice.
+type ServerMiddlewareChain interface {
+	Then(http.Handler) http.Handler
+}
+
 // ServerOption is a functional option type that can be converted to an SOption.
 // This type exists primarily to make fx.Provide constructors more concise.
 type ServerOption func(*http.Server) error
@@ -187,12 +193,6 @@ type ServerIn struct {
 	// Shutdowner is used to guarantee that any server which aborts its accept loop
 	// will stop the entire app.
 	Shutdowner fx.Shutdowner
-}
-
-// ServerMiddlewareChain is a strategy for decorating an http.Handler.  Various
-// packages implement this interface, such as justinas/alice.
-type ServerMiddlewareChain interface {
-	Then(http.Handler) http.Handler
 }
 
 // S is a Fluent Builder for unmarshaling an http.Server.  This type must be
@@ -385,7 +385,7 @@ func (s *S) unmarshal(u func(arrange.Unmarshaler, interface{}) error, inputs []r
 				if arrange.IsInjected(f, fv) {
 					// ignore dependencies that can't be converted
 					if so := newSOption(fv.Interface()); so != nil {
-						p.Printf("SERVER INJECT => %T.%s %s", dependency, f.Name, f.Tag)
+						p.Printf("SERVER INJECT => %s.%s %s", dependency.Type(), f.Name, f.Tag)
 						if lc, err = so(server, router, lc); err != nil {
 							optionErrs = append(optionErrs, err)
 						}

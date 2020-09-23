@@ -8,14 +8,44 @@ import (
 	"net"
 	"net/http"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/gorilla/mux"
+	"github.com/spf13/viper"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/xmidt-org/arrange"
 	"github.com/xmidt-org/arrange/arrangetls"
+	"go.uber.org/fx"
+	"go.uber.org/fx/fxtest"
 )
+
+type TestServerMiddlewareChain []func(http.Handler) http.Handler
+
+func (tsmc TestServerMiddlewareChain) Then(next http.Handler) http.Handler {
+	for i := len(tsmc) - 1; i >= 0; i-- {
+		next = tsmc[i](next)
+	}
+
+	return next
+}
+
+type simpleServerFactory struct {
+	Address   string
+	returnErr error
+}
+
+func (ssf simpleServerFactory) NewServer() (*http.Server, error) {
+	if ssf.returnErr != nil {
+		return nil, ssf.returnErr
+	}
+
+	return &http.Server{
+		Addr: ssf.Address,
+	}, nil
+}
 
 func testServerConfigBasic(t *testing.T) {
 	var (
@@ -296,4 +326,264 @@ func TestRouterOptions(t *testing.T) {
 	t.Run("Empty", testRouterOptionsEmpty)
 	t.Run("Success", testRouterOptionsSuccess)
 	t.Run("Failure", testRouterOptionsFailure)
+}
+
+func testServerInjectError(t *testing.T) {
+	var (
+		assert = assert.New(t)
+		v      = viper.New()
+	)
+
+	app := fx.New(
+		arrange.TestLogger(t),
+		arrange.ForViper(v),
+		Server().
+			Inject(struct {
+				DoesNotEmbedFxIn string
+			}{}).
+			Provide(),
+		fx.Invoke(
+			func(*mux.Router) {
+				// doesn't matter
+			},
+		),
+	)
+
+	assert.Error(app.Err())
+}
+
+func testServerUnmarshalError(t *testing.T) {
+	const yaml = `
+maxHeaderBytes: "this is not a valid int"
+`
+
+	var (
+		assert  = assert.New(t)
+		require = require.New(t)
+		v       = viper.New()
+	)
+
+	v.SetConfigType("yaml")
+	require.NoError(v.ReadConfig(strings.NewReader(yaml)))
+
+	app := fx.New(
+		arrange.TestLogger(t),
+		arrange.ForViper(v),
+		Server().
+			Provide(),
+		fx.Invoke(
+			func(*mux.Router) {
+				// doesn't matter
+			},
+		),
+	)
+
+	assert.Error(app.Err())
+}
+
+func testServerFactoryError(t *testing.T) {
+	var (
+		assert = assert.New(t)
+		v      = viper.New()
+	)
+
+	app := fx.New(
+		arrange.TestLogger(t),
+		arrange.ForViper(v),
+		Server().
+			ServerFactory(simpleServerFactory{
+				returnErr: errors.New("expected NewServer error"),
+			}).
+			Provide(),
+		fx.Invoke(
+			func(*mux.Router) {
+				// doesn't matter
+			},
+		),
+	)
+
+	assert.Error(app.Err())
+}
+
+func testServerOptionError(t *testing.T) {
+	var (
+		assert = assert.New(t)
+		v      = viper.New()
+
+		injectedServerOptionCalled bool
+		injectedRouterOptionCalled bool
+		externalServerOptionCalled bool
+		externalRouterOptionCalled bool
+	)
+
+	app := fx.New(
+		arrange.TestLogger(t),
+		arrange.ForViper(v),
+		fx.Provide(
+			func() ServerOption {
+				return func(s *http.Server) error {
+					assert.NotNil(s)
+					injectedServerOptionCalled = true
+					return errors.New("expected ServerOption error")
+				}
+			},
+			func() RouterOption {
+				return func(r *mux.Router) error {
+					assert.NotNil(r)
+					injectedRouterOptionCalled = true
+					return errors.New("expected RouterOption error")
+				}
+			},
+		),
+		Server().
+			With(func(s *http.Server) error {
+				assert.NotNil(s)
+				externalServerOptionCalled = true
+				return errors.New("expected ServerOption error")
+			}).
+			WithRouter(func(r *mux.Router) error {
+				assert.NotNil(r)
+				externalRouterOptionCalled = true
+				return errors.New("expected RouterOption error")
+			}).
+			Inject(struct {
+				fx.In
+				O1 ServerOption
+				O2 RouterOption
+			}{}).
+			Provide(),
+		fx.Invoke(
+			func(*mux.Router) {
+				// doesn't matter
+			},
+		),
+	)
+
+	assert.Error(app.Err())
+	assert.True(injectedServerOptionCalled)
+	assert.True(injectedRouterOptionCalled)
+	assert.True(externalServerOptionCalled)
+	assert.True(externalRouterOptionCalled)
+}
+
+func testServerDefaultListenerFactory(t *testing.T) {
+	var (
+		v       = viper.New()
+		address = make(chan net.Addr, 1)
+	)
+
+	app := fxtest.New(
+		t,
+		arrange.TestLogger(t),
+		arrange.ForViper(v),
+		Server().
+			// this ServerFactory does not implement ListenerFactory, thus
+			// forcing the builder to use the default
+			ServerFactory(simpleServerFactory{}).
+			CaptureListenAddress(address).
+			Provide(),
+		fx.Invoke(
+			func(*mux.Router) {},
+		),
+	)
+
+	app.RequireStart()
+	defer app.Stop(context.Background())
+
+	MustGetListenAddress(address, time.After(time.Second))
+	app.RequireStop()
+}
+
+func testServerMiddleware(t *testing.T) {
+	var (
+		assert  = assert.New(t)
+		require = require.New(t)
+
+		v       = viper.New()
+		address = make(chan net.Addr, 1)
+	)
+
+	app := fxtest.New(
+		t,
+		arrange.TestLogger(t),
+		arrange.ForViper(v),
+		fx.Provide(
+			func() mux.MiddlewareFunc {
+				return func(next http.Handler) http.Handler {
+					return http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+						response.Header().Set("Injected-Middleware", "true")
+						next.ServeHTTP(response, request)
+					})
+				}
+			},
+			func() TestServerMiddlewareChain {
+				return TestServerMiddlewareChain{
+					func(next http.Handler) http.Handler {
+						return http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+							response.Header().Set("Injected-Chain-Middleware", "true")
+							next.ServeHTTP(response, request)
+						})
+					},
+				}
+			},
+		),
+		Server().
+			Middleware(
+				func(next http.Handler) http.Handler {
+					return http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+						response.Header().Set("Local-Middleware", "true")
+						next.ServeHTTP(response, request)
+					})
+				},
+			).
+			MiddlewareChain(
+				TestServerMiddlewareChain{
+					func(next http.Handler) http.Handler {
+						return http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+							response.Header().Set("Chain-Middleware", "true")
+							next.ServeHTTP(response, request)
+						})
+					},
+				},
+			).
+			Inject(struct {
+				fx.In
+				M  mux.MiddlewareFunc
+				MC TestServerMiddlewareChain
+			}{}).
+			CaptureListenAddress(address).
+			Provide(),
+		fx.Invoke(
+			func(r *mux.Router) {
+				r.HandleFunc("/test", func(response http.ResponseWriter, request *http.Request) {
+					response.WriteHeader(267)
+				})
+			},
+		),
+	)
+
+	require.NoError(app.Err())
+	app.RequireStart()
+	defer app.Stop(context.Background())
+
+	serverURL := "http://" + MustGetListenAddress(address, time.After(time.Second)).String()
+	response, err := http.Get(serverURL + "/test")
+	require.NoError(err)
+	require.NotNil(response)
+	assert.Equal(267, response.StatusCode)
+	assert.Equal("true", response.Header.Get("Local-Middleware"))
+	assert.Equal("true", response.Header.Get("Chain-Middleware"))
+	assert.Equal("true", response.Header.Get("Injected-Middleware"))
+	assert.Equal("true", response.Header.Get("Injected-Chain-Middleware"))
+
+	app.RequireStop()
+}
+
+func TestServer(t *testing.T) {
+	t.Run("InjectError", testServerInjectError)
+	t.Run("UnmarshalError", testServerUnmarshalError)
+	t.Run("FactoryError", testServerFactoryError)
+	t.Run("OptionError", testServerOptionError)
+	t.Run("DefaultListenerFactory", testServerDefaultListenerFactory)
+	t.Run("Middleware", testServerMiddleware)
 }

@@ -158,8 +158,8 @@ func newSOption(v interface{}) sOption {
 			}).sOption
 		},
 		func(lc ListenerChain) {
-			so = func(_ *http.Server, _ *mux.Router, lc ListenerChain) (ListenerChain, error) {
-				return lc.Extend(lc), nil
+			so = func(_ *http.Server, _ *mux.Router, chain ListenerChain) (ListenerChain, error) {
+				return chain.Extend(lc), nil
 			}
 		},
 		func(o ListenerConstructor) {

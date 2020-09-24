@@ -579,6 +579,212 @@ func testServerMiddleware(t *testing.T) {
 	app.RequireStop()
 }
 
+func testServerOptions(t *testing.T) {
+	var (
+		assert  = assert.New(t)
+		require = require.New(t)
+
+		v       = viper.New()
+		address = make(chan net.Addr, 1)
+
+		injectedServerOptionCalled  bool
+		injectedServerOptionsCalled bool
+		injectedRouterOptionCalled  bool
+		injectedRouterOptionsCalled bool
+
+		externalServerOptionCalled bool
+		externalRouterOptionCalled bool
+	)
+
+	app := fxtest.New(
+		t,
+		arrange.TestLogger(t),
+		arrange.ForViper(v),
+		fx.Provide(
+			fx.Annotated{
+				Name: "serverOption",
+				Target: func() ServerOption {
+					return func(s *http.Server) error {
+						assert.NotNil(s)
+						injectedServerOptionCalled = true
+						return nil
+					}
+				},
+			},
+			fx.Annotated{
+				Name: "serverOptions",
+				Target: func() ServerOption {
+					return ServerOptions(
+						func(s *http.Server) error {
+							assert.NotNil(s)
+							injectedServerOptionsCalled = true
+							return nil
+						},
+					)
+				},
+			},
+			fx.Annotated{
+				Name: "routerOption",
+				Target: func() RouterOption {
+					return func(r *mux.Router) error {
+						assert.NotNil(r)
+						injectedRouterOptionCalled = true
+						return nil
+					}
+				},
+			},
+			fx.Annotated{
+				Name: "routerOptions",
+				Target: func() RouterOption {
+					return RouterOptions(
+						func(r *mux.Router) error {
+							assert.NotNil(r)
+							injectedRouterOptionsCalled = true
+							return nil
+						},
+					)
+				},
+			},
+		),
+		Server().
+			Inject(struct {
+				fx.In
+				O1 ServerOption `name:"serverOption"`
+				O2 ServerOption `name:"serverOptions"`
+				O3 RouterOption `name:"routerOption"`
+				O4 RouterOption `name:"routerOptions"`
+			}{}).
+			With(
+				func(s *http.Server) error {
+					assert.NotNil(s)
+					externalServerOptionCalled = true
+					return nil
+				},
+			).
+			WithRouter(
+				func(r *mux.Router) error {
+					assert.NotNil(r)
+					externalRouterOptionCalled = true
+					return nil
+				},
+			).
+			CaptureListenAddress(address).
+			Provide(),
+		fx.Invoke(
+			func(r *mux.Router) {
+				r.HandleFunc("/test", func(response http.ResponseWriter, request *http.Request) {
+					response.WriteHeader(287)
+				})
+			},
+		),
+	)
+
+	require.NoError(app.Err())
+	app.RequireStart()
+	defer app.Stop(context.Background())
+
+	assert.True(injectedServerOptionCalled)
+	assert.True(injectedServerOptionsCalled)
+	assert.True(injectedRouterOptionCalled)
+	assert.True(injectedRouterOptionsCalled)
+	assert.True(externalServerOptionCalled)
+	assert.True(externalRouterOptionCalled)
+
+	serverURL := "http://" + MustGetListenAddress(address, time.After(time.Second)).String()
+	response, err := http.Get(serverURL + "/test")
+	require.NoError(err)
+	require.NotNil(response)
+	assert.Equal(287, response.StatusCode)
+
+	app.RequireStop()
+}
+
+func testServerListener(t *testing.T) {
+	var (
+		assert  = assert.New(t)
+		require = require.New(t)
+
+		v       = viper.New()
+		address = make(chan net.Addr, 1)
+
+		injectedListenerConstructorCalled bool
+		injectedListenerChainCalled       bool
+
+		externalListenerConstructorCalled bool
+		externalListenerChainCalled       bool
+	)
+
+	app := fxtest.New(
+		t,
+		arrange.TestLogger(t),
+		arrange.ForViper(v),
+		fx.Provide(
+			func() ListenerConstructor {
+				return func(next net.Listener) net.Listener {
+					assert.NotNil(next)
+					injectedListenerConstructorCalled = true
+					return next
+				}
+			},
+			func() ListenerChain {
+				return NewListenerChain(
+					func(next net.Listener) net.Listener {
+						assert.NotNil(next)
+						injectedListenerChainCalled = true
+						return next
+					},
+				)
+			},
+		),
+		Server().
+			Inject(struct {
+				fx.In
+				LC1 ListenerConstructor
+				LC2 ListenerChain
+			}{}).
+			CaptureListenAddress(address).
+			ListenerConstructors(func(next net.Listener) net.Listener {
+				assert.NotNil(next)
+				externalListenerConstructorCalled = true
+				return next
+			}).
+			ListenerChain(
+				NewListenerChain(
+					func(next net.Listener) net.Listener {
+						assert.NotNil(next)
+						externalListenerChainCalled = true
+						return next
+					},
+				),
+			).
+			Provide(),
+		fx.Invoke(
+			func(r *mux.Router) {
+				r.HandleFunc("/test", func(response http.ResponseWriter, request *http.Request) {
+					response.WriteHeader(216)
+				})
+			},
+		),
+	)
+
+	require.NoError(app.Err())
+	app.RequireStart()
+	defer app.Stop(context.Background())
+
+	assert.True(injectedListenerConstructorCalled)
+	assert.True(injectedListenerChainCalled)
+	assert.True(externalListenerConstructorCalled)
+	assert.True(externalListenerChainCalled)
+
+	serverURL := "http://" + MustGetListenAddress(address, time.After(time.Second)).String()
+	response, err := http.Get(serverURL + "/test")
+	require.NoError(err)
+	require.NotNil(response)
+	assert.Equal(216, response.StatusCode)
+
+	app.RequireStop()
+}
+
 func TestServer(t *testing.T) {
 	t.Run("InjectError", testServerInjectError)
 	t.Run("UnmarshalError", testServerUnmarshalError)
@@ -586,4 +792,6 @@ func TestServer(t *testing.T) {
 	t.Run("OptionError", testServerOptionError)
 	t.Run("DefaultListenerFactory", testServerDefaultListenerFactory)
 	t.Run("Middleware", testServerMiddleware)
+	t.Run("Options", testServerOptions)
+	t.Run("Listener", testServerListener)
 }

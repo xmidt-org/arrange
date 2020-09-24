@@ -1,16 +1,29 @@
 package arrangehttp
 
 import (
+	"context"
 	"errors"
 	"net/http"
+	"net/http/httptest"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/spf13/viper"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/xmidt-org/arrange"
 	"github.com/xmidt-org/arrange/arrangetls"
+	"go.uber.org/fx"
+	"go.uber.org/fx/fxtest"
 )
+
+type badClientFactory struct{}
+
+func (bcf badClientFactory) NewClient() (*http.Client, error) {
+	return nil, errors.New("expected NewClient error")
+}
 
 func testTransportConfigBasic(t *testing.T) {
 	var (
@@ -230,5 +243,210 @@ func TestClientOptions(t *testing.T) {
 	t.Run("Failure", testClientOptionsFailure)
 }
 
+func testClientInjectError(t *testing.T) {
+	var (
+		assert = assert.New(t)
+		v      = viper.New()
+	)
+
+	app := fx.New(
+		arrange.TestLogger(t),
+		arrange.ForViper(v),
+		Client().
+			Inject(struct {
+				DoesNotEmbedFxIn string
+			}{}).
+			Provide(),
+		fx.Invoke(
+			func(*http.Client) {},
+		),
+	)
+
+	assert.Error(app.Err())
+}
+
+func testClientUnmarshalError(t *testing.T) {
+	const yaml = `
+timeout: "this is not a valid time.Duration"
+`
+
+	var (
+		assert  = assert.New(t)
+		require = require.New(t)
+		v       = viper.New()
+	)
+
+	v.SetConfigType("yaml")
+	require.NoError(v.ReadConfig(strings.NewReader(yaml)))
+
+	app := fx.New(
+		arrange.TestLogger(t),
+		arrange.ForViper(v),
+		Client().
+			Provide(),
+		fx.Invoke(
+			func(*http.Client) {},
+		),
+	)
+
+	assert.Error(app.Err())
+}
+
+func testClientFactoryError(t *testing.T) {
+	var (
+		assert = assert.New(t)
+		v      = viper.New()
+	)
+
+	app := fx.New(
+		arrange.TestLogger(t),
+		arrange.ForViper(v),
+		Client().
+			ClientFactory(badClientFactory{}).
+			Provide(),
+		fx.Invoke(
+			func(*http.Client) {},
+		),
+	)
+
+	assert.Error(app.Err())
+}
+
+func testClientOptionError(t *testing.T) {
+	var (
+		assert = assert.New(t)
+		v      = viper.New()
+
+		injectedClientOptionCalled bool
+		externalClientOptionCalled bool
+	)
+
+	app := fx.New(
+		arrange.TestLogger(t),
+		arrange.ForViper(v),
+		fx.Provide(
+			func() ClientOption {
+				return func(c *http.Client) error {
+					assert.NotNil(c)
+					injectedClientOptionCalled = true
+					return errors.New("expected ClientOption error")
+				}
+			},
+		),
+		Client().
+			With(func(c *http.Client) error {
+				assert.NotNil(c)
+				externalClientOptionCalled = true
+				return errors.New("expected ClientOption error")
+			}).
+			Inject(struct {
+				fx.In
+				O1 ClientOption
+			}{}).
+			Provide(),
+		fx.Invoke(
+			func(*http.Client) {},
+		),
+	)
+
+	assert.Error(app.Err())
+	assert.True(injectedClientOptionCalled)
+	assert.True(externalClientOptionCalled)
+}
+
+func testClientMiddleware(t *testing.T) {
+	var (
+		assert  = assert.New(t)
+		require = require.New(t)
+
+		v      = viper.New()
+		client *http.Client
+	)
+
+	app := fxtest.New(
+		t,
+		arrange.TestLogger(t),
+		arrange.ForViper(v),
+		fx.Provide(
+			func() RoundTripperConstructor {
+				return func(next http.RoundTripper) http.RoundTripper {
+					return RoundTripperFunc(func(request *http.Request) (*http.Response, error) {
+						request.Header.Set("Injected-Middleware", "true")
+						return next.RoundTrip(request)
+					})
+				}
+			},
+			func() RoundTripperChain {
+				return NewRoundTripperChain(
+					func(next http.RoundTripper) http.RoundTripper {
+						return RoundTripperFunc(func(request *http.Request) (*http.Response, error) {
+							request.Header.Set("Injected-Middleware-Chain", "true")
+							return next.RoundTrip(request)
+						})
+					},
+				)
+			},
+		),
+		Client().
+			Inject(struct {
+				fx.In
+				M1 RoundTripperConstructor
+				M2 RoundTripperChain
+			}{}).
+			Middleware(
+				func(next http.RoundTripper) http.RoundTripper {
+					return RoundTripperFunc(func(request *http.Request) (*http.Response, error) {
+						request.Header.Set("External-Middleware", "true")
+						return next.RoundTrip(request)
+					})
+				},
+			).
+			MiddlewareChain(
+				NewRoundTripperChain(
+					func(next http.RoundTripper) http.RoundTripper {
+						return RoundTripperFunc(func(request *http.Request) (*http.Response, error) {
+							request.Header.Set("External-Middleware-Chain", "true")
+							return next.RoundTrip(request)
+						})
+					},
+				),
+			).
+			Provide(),
+		fx.Populate(&client),
+	)
+
+	require.NoError(app.Err())
+	app.RequireStart()
+	defer app.Stop(context.Background())
+
+	server := httptest.NewServer(
+		http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+			assert.Equal("/test", request.RequestURI)
+			assert.Equal("true", request.Header.Get("Injected-Middleware"))
+			assert.Equal("true", request.Header.Get("Injected-Middleware-Chain"))
+			assert.Equal("true", request.Header.Get("External-Middleware"))
+			assert.Equal("true", request.Header.Get("External-Middleware-Chain"))
+			response.WriteHeader(211)
+		}),
+	)
+
+	defer server.Close()
+
+	request, err := http.NewRequest("GET", server.URL+"/test", nil)
+	require.NoError(err)
+
+	response, err := client.Do(request)
+	require.NoError(err)
+	require.NotNil(response)
+	assert.Equal(211, response.StatusCode)
+
+	app.RequireStop()
+}
+
 func TestClient(t *testing.T) {
+	t.Run("InjectError", testClientInjectError)
+	t.Run("UnmarshalError", testClientUnmarshalError)
+	t.Run("FactoryError", testClientFactoryError)
+	t.Run("OptionError", testClientOptionError)
+	t.Run("Middleware", testClientMiddleware)
 }

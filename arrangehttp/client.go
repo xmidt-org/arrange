@@ -277,7 +277,7 @@ func (c *C) unmarshal(u func(arrange.Unmarshaler, interface{}) error, inputs []r
 				if arrange.IsInjected(f, fv) {
 					// ignore dependencies that can't be converted
 					if co := newClientOption(fv.Interface()); co != nil {
-						p.Printf("CLIENT INJECT => %T.%s %s", dependency, f.Name, f.Tag)
+						p.Printf("CLIENT INJECT => %s.%s %s", dependency.Type(), f.Name, f.Tag)
 						if err = co(client); err != nil {
 							optionErrs = append(optionErrs, err)
 						}

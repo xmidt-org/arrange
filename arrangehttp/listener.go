@@ -5,6 +5,7 @@ import (
 	"crypto/tls"
 	"net"
 	"net/http"
+	"time"
 
 	"go.uber.org/fx"
 )
@@ -113,6 +114,32 @@ func CaptureListenAddress(ch chan<- net.Addr) ListenerConstructor {
 		ch <- next.Addr()
 		return next
 	}
+}
+
+// WaitForListenAddress waits until either a net.Addr is received or the given time channel
+// receives a timer.  The second return indicates whether a net.Addr was actually received
+// before the timer channel was signaled.
+func WaitForListenAddress(ch <-chan net.Addr, t <-chan time.Time) (a net.Addr, ok bool) {
+	select {
+	case a = <-ch:
+		ok = true
+	case <-t:
+	}
+
+	return
+}
+
+// MustGetListenAddress is similar to WaitForListenAddress, save that it will panic
+// if address was received within the timeout.
+//
+// This function is mostly useful for testing.
+func MustGetListenAddress(ch <-chan net.Addr, t <-chan time.Time) net.Addr {
+	a, ok := WaitForListenAddress(ch, t)
+	if !ok {
+		panic("No listen address captured")
+	}
+
+	return a
 }
 
 // DefaultListenerFactory is the default implementation of ListenerFactory.  The

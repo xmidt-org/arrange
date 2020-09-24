@@ -3,7 +3,6 @@ package arrangehttp
 import (
 	"context"
 	"errors"
-	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
@@ -19,6 +18,12 @@ import (
 	"go.uber.org/fx"
 	"go.uber.org/fx/fxtest"
 )
+
+type badClientFactory struct{}
+
+func (bcf badClientFactory) NewClient() (*http.Client, error) {
+	return nil, errors.New("expected NewClient error")
+}
 
 func testTransportConfigBasic(t *testing.T) {
 	var (
@@ -156,386 +161,119 @@ func TestClientConfig(t *testing.T) {
 	t.Run("Error", testClientConfigError)
 }
 
-func testCOptionsSuccess(t *testing.T) {
-	for _, length := range []int{0, 1, 2, 5} {
-		t.Run(fmt.Sprintf("len=%d", length), func(t *testing.T) {
+func testClientOptionsEmpty(t *testing.T) {
+	assert := assert.New(t)
+	assert.NoError(ClientOptions()(nil))
+}
+
+func testClientOptionsSuccess(t *testing.T) {
+	for _, count := range []int{0, 1, 2, 5} {
+		t.Run(strconv.Itoa(count), func(t *testing.T) {
 			var (
-				assert    = assert.New(t)
-				require   = require.New(t)
-				client    = new(http.Client)
-				options   []COption
-				callCount int
+				assert = assert.New(t)
+
+				expectedClient = &http.Client{
+					Timeout: 125 * time.Minute,
+				}
+
+				options       []ClientOption
+				expectedOrder []int
+				actualOrder   []int
 			)
 
-			for i := 0; i < length; i++ {
-				options = append(options, func(c *http.Client) error {
-					assert.Equal(client, c)
-					callCount++
+			for i := 0; i < count; i++ {
+				expectedOrder = append(expectedOrder, i)
+
+				i := i
+				options = append(options, func(actualClient *http.Client) error {
+					assert.Equal(expectedClient, actualClient)
+					actualOrder = append(actualOrder, i)
 					return nil
 				})
 			}
 
-			co := COptions(options...)
-			require.NotNil(co)
-			err := co(client)
-			assert.NoError(err)
-			assert.Equal(length, callCount)
+			assert.NoError(
+				ClientOptions(options...)(expectedClient),
+			)
+
+			assert.Equal(expectedOrder, actualOrder)
 		})
 	}
 }
 
-func testCOptionsFailure(t *testing.T) {
+func testClientOptionsFailure(t *testing.T) {
 	var (
-		assert      = assert.New(t)
-		require     = require.New(t)
-		client      = new(http.Client)
-		expectedErr = errors.New("expected option error")
-		co          = COptions(
-			func(c *http.Client) error {
-				assert.Equal(client, c)
+		assert = assert.New(t)
+
+		expectedClient = &http.Client{
+			Timeout: 45 * time.Second,
+		}
+
+		expectedErr = errors.New("expected")
+		firstCalled bool
+
+		co = ClientOptions(
+			func(actualClient *http.Client) error {
+				firstCalled = true
+				assert.Equal(expectedClient, actualClient)
 				return nil
 			},
-			func(c *http.Client) error {
-				assert.Equal(client, c)
+			func(actualClient *http.Client) error {
+				assert.Equal(expectedClient, actualClient)
 				return expectedErr
 			},
-			func(c *http.Client) error {
+			func(actualClient *http.Client) error {
 				assert.Fail("This option should not have been called")
 				return errors.New("This option should not have been called")
 			},
 		)
 	)
 
-	require.NotNil(co)
-	err := co(client)
-	assert.Equal(expectedErr, err)
-}
-
-func TestCOptions(t *testing.T) {
-	t.Run("Success", testCOptionsSuccess)
-	t.Run("Failure", testCOptionsFailure)
-}
-
-func testNewCOptionUnsupported(t *testing.T) {
-	assert := assert.New(t)
-	co, err := NewCOption("this is not supported as an SOption")
-	assert.Error(err)
-	assert.Nil(co)
-}
-
-func testNewCOptionBasic(t *testing.T) {
-	var (
-		actualClient = new(*http.Client)
-		optionErr    = errors.New("expected option error")
-		testData     = []struct {
-			option      interface{}
-			expectedErr error
-		}{
-			{
-				option: func(c *http.Client) error {
-					*actualClient = c
-					return nil
-				},
-			},
-			{
-				option: []func(*http.Client) error{
-					func(c *http.Client) error {
-						*actualClient = c
-						return nil
-					},
-				},
-			},
-			{
-				option: [1]func(*http.Client) error{
-					func(c *http.Client) error {
-						*actualClient = c
-						return nil
-					},
-				},
-			},
-			{
-				option: func(c *http.Client) error {
-					*actualClient = c
-					return optionErr
-				},
-				expectedErr: optionErr,
-			},
-			{
-				option: func(c *http.Client) {
-					*actualClient = c
-				},
-			},
-			{
-				option: []func(*http.Client){
-					func(c *http.Client) {
-						*actualClient = c
-					},
-				},
-			},
-			{
-				option: [1]func(*http.Client){
-					func(c *http.Client) {
-						*actualClient = c
-					},
-				},
-			},
-		}
+	assert.Equal(
+		expectedErr,
+		co(expectedClient),
 	)
 
-	for i, record := range testData {
-		*actualClient = nil
-		t.Run(strconv.Itoa(i), func(t *testing.T) {
-			var (
-				assert  = assert.New(t)
-				require = require.New(t)
-				client  = new(http.Client)
-				co, err = NewCOption(record.option)
-			)
-
-			require.NoError(err)
-			require.NotNil(co)
-
-			err = co(client)
-			assert.Equal(record.expectedErr, err)
-			assert.Equal(client, *actualClient)
-		})
-	}
+	assert.True(firstCalled)
 }
 
-func testNewCOptionRoundTripper(t *testing.T) {
-	testData := []struct {
-		option   interface{}
-		expected http.Header
-	}{
-		{
-			option: NewHeaders("Option", "true").AddRequest,
-			expected: http.Header{
-				"Option": {"true"},
-			},
-		},
-		{
-			option: RoundTripperConstructor(NewHeaders("Option", "true").AddRequest),
-			expected: http.Header{
-				"Option": {"true"},
-			},
-		},
-		{
-			option: []RoundTripperConstructor{
-				NewHeaders("Option1", "true").AddRequest,
-				NewHeaders("Option2", "true").AddRequest,
-			},
-			expected: http.Header{
-				"Option1": {"true"},
-				"Option2": {"true"},
-			},
-		},
-		{
-			option: [2]RoundTripperConstructor{
-				NewHeaders("Option1", "true").AddRequest,
-				NewHeaders("Option2", "true").AddRequest,
-			},
-			expected: http.Header{
-				"Option1": {"true"},
-				"Option2": {"true"},
-			},
-		},
-		{
-			option: NewRoundTripperChain(
-				NewHeaders("Option1", "true").AddRequest,
-				NewHeaders("Option2", "true").AddRequest,
-			),
-			expected: http.Header{
-				"Option1": {"true"},
-				"Option2": {"true"},
-			},
-		},
-		{
-			option: []RoundTripperChain{
-				NewRoundTripperChain(
-					NewHeaders("Option1", "true").AddRequest,
-					NewHeaders("Option2", "true").AddRequest,
-				),
-				NewRoundTripperChain(
-					NewHeaders("Option3", "true").AddRequest,
-					NewHeaders("Option4", "true").AddRequest,
-				),
-			},
-			expected: http.Header{
-				"Option1": {"true"},
-				"Option2": {"true"},
-				"Option3": {"true"},
-				"Option4": {"true"},
-			},
-		},
-		{
-			option: [2]RoundTripperChain{
-				NewRoundTripperChain(
-					NewHeaders("Option1", "true").AddRequest,
-					NewHeaders("Option2", "true").AddRequest,
-				),
-				NewRoundTripperChain(
-					NewHeaders("Option3", "true").AddRequest,
-					NewHeaders("Option4", "true").AddRequest,
-				),
-			},
-			expected: http.Header{
-				"Option1": {"true"},
-				"Option2": {"true"},
-				"Option3": {"true"},
-				"Option4": {"true"},
-			},
-		},
-	}
-
-	for i, record := range testData {
-		t.Run(strconv.Itoa(i), func(t *testing.T) {
-			var (
-				assert  = assert.New(t)
-				require = require.New(t)
-				client  = new(http.Client)
-
-				roundTripper http.RoundTripper = RoundTripperFunc(func(request *http.Request) (*http.Response, error) {
-					assert.Equal(record.expected, request.Header)
-					return &http.Response{
-						StatusCode: 876,
-					}, nil
-				})
-
-				co, err = NewCOption(record.option)
-			)
-
-			require.NoError(err)
-			require.NotNil(co)
-			client.Transport = roundTripper
-			require.NoError(co(client))
-
-			request, err := http.NewRequest("GET", "/", nil)
-			require.NoError(err)
-
-			response, err := client.Do(request)
-			require.NoError(err)
-			require.NotNil(response)
-			assert.Equal(876, response.StatusCode)
-		})
-	}
+func TestClientOptions(t *testing.T) {
+	t.Run("Empty", testClientOptionsEmpty)
+	t.Run("Success", testClientOptionsSuccess)
+	t.Run("Failure", testClientOptionsFailure)
 }
 
-func TestNewCOption(t *testing.T) {
-	t.Run("Unsupported", testNewCOptionUnsupported)
-	t.Run("Basic", testNewCOptionBasic)
-	t.Run("RoundTripper", testNewCOptionRoundTripper)
-}
-
-func testClientUnmarshal(t *testing.T) {
-	type Dependencies struct {
-		fx.In
-
-		Global      RoundTripperChain
-		NamedOption RoundTripperConstructor   `name:"test"`
-		OptionGroup []RoundTripperConstructor `group:"client"`
-	}
-
-	const yaml = `
-timeout: "100s"
-transport:
-  disableCompression: true
-  writeBufferSize: 4096
-  readBufferSize: 4096
-`
+func testClientInjectError(t *testing.T) {
 	var (
-		assert  = assert.New(t)
-		require = require.New(t)
-
-		v = viper.New()
-
-		client *http.Client
+		assert = assert.New(t)
+		v      = viper.New()
 	)
 
-	v.SetConfigType("yaml")
-	require.NoError(v.ReadConfig(strings.NewReader(yaml)))
-
-	app := fxtest.New(
-		t,
+	app := fx.New(
 		arrange.TestLogger(t),
 		arrange.ForViper(v),
-		fx.Provide(
-			func() RoundTripperChain {
-				return NewRoundTripperChain(
-					NewHeaders("GlobalChain", "true").AddRequest,
-				)
-			},
-			fx.Annotated{
-				Name: "test",
-				Target: func() RoundTripperConstructor {
-					return NewHeaders("Named", "true").AddRequest
-				},
-			},
-			fx.Annotated{
-				Group: "client",
-				Target: func() RoundTripperConstructor {
-					return NewHeaders("Option1", "true").AddRequest
-				},
-			},
-			fx.Annotated{
-				Group: "client",
-				Target: func() RoundTripperConstructor {
-					return NewHeaders("Option2", "true").AddRequest
-				},
-			},
-			Client().
-				Use(
-					NewHeaders("LocalConstructor", "true").AddRequest,
-					NewRoundTripperChain(
-						NewHeaders("LocalChain1", "true").AddRequest,
-						NewHeaders("LocalChain2", "true").AddRequest,
-					),
-				).
-				Inject(Dependencies{}).
-				Unmarshal(),
+		Client().
+			Inject(struct {
+				DoesNotEmbedFxIn string
+			}{}).
+			Provide(),
+		fx.Invoke(
+			func(*http.Client) {},
 		),
-		fx.Populate(&client),
 	)
 
-	app.RequireStart()
-	defer app.Stop(context.Background()) // in case of a failed test
-	require.NotNil(client)
-
-	server := httptest.NewServer(
-		http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
-			assert.Equal("true", request.Header.Get("GlobalChain"))
-			assert.Equal("true", request.Header.Get("Named"))
-			assert.Equal("true", request.Header.Get("Option1"))
-			assert.Equal("true", request.Header.Get("Option2"))
-			assert.Equal("true", request.Header.Get("LocalConstructor"))
-			assert.Equal("true", request.Header.Get("LocalChain1"))
-			assert.Equal("true", request.Header.Get("LocalChain2"))
-			response.WriteHeader(299)
-		}),
-	)
-
-	defer server.Close()
-
-	request, err := http.NewRequest("GET", server.URL, nil)
-	require.NoError(err)
-	require.NotNil(request)
-
-	response, err := client.Do(request)
-	require.NoError(err)
-	require.NotNil(response)
-	assert.Equal(299, response.StatusCode)
-
-	app.RequireStop()
+	assert.Error(app.Err())
 }
 
 func testClientUnmarshalError(t *testing.T) {
 	const yaml = `
-timeout: "this is not a valid golang duration"
+timeout: "this is not a valid time.Duration"
 `
+
 	var (
 		assert  = assert.New(t)
 		require = require.New(t)
 		v       = viper.New()
-		client  *http.Client
 	)
 
 	v.SetConfigType("yaml")
@@ -544,346 +282,171 @@ timeout: "this is not a valid golang duration"
 	app := fx.New(
 		arrange.TestLogger(t),
 		arrange.ForViper(v),
-		fx.Provide(
-			Client().Unmarshal(),
+		Client().
+			Provide(),
+		fx.Invoke(
+			func(*http.Client) {},
 		),
-		fx.Populate(&client),
 	)
 
 	assert.Error(app.Err())
-}
-
-func testClientUnmarshalUseError(t *testing.T) {
-	const yaml = `
-timeout: "90s"
-`
-	var (
-		assert  = assert.New(t)
-		require = require.New(t)
-		v       = viper.New()
-		client  *http.Client
-	)
-
-	v.SetConfigType("yaml")
-	require.NoError(v.ReadConfig(strings.NewReader(yaml)))
-
-	app := fx.New(
-		arrange.TestLogger(t),
-		arrange.ForViper(v),
-		fx.Provide(
-			Client().
-				Use("this is not a supported option").
-				Unmarshal(),
-		),
-		fx.Populate(&client),
-	)
-
-	assert.Error(app.Err())
-}
-
-func testClientUnmarshalInjectError(t *testing.T) {
-	const yaml = `
-timeout: "90s"
-`
-	var (
-		assert  = assert.New(t)
-		require = require.New(t)
-		v       = viper.New()
-		client  *http.Client
-	)
-
-	v.SetConfigType("yaml")
-	require.NoError(v.ReadConfig(strings.NewReader(yaml)))
-
-	app := fx.New(
-		arrange.TestLogger(t),
-		arrange.ForViper(v),
-		fx.Provide(
-			Client().
-				Inject("this is not a struct that embeds fx.In").
-				Unmarshal(),
-		),
-		fx.Populate(&client),
-	)
-
-	assert.Error(app.Err())
-}
-
-func testClientCOptionError(t *testing.T) {
-	var (
-		assert = assert.New(t)
-		client *http.Client
-
-		v = viper.New()
-	)
-
-	v.Set("timeout", "10s")
-	app := fx.New(
-		arrange.TestLogger(t),
-		arrange.ForViper(v),
-		fx.Provide(
-			Client().
-				Use(
-					func(*http.Client) error { return errors.New("expected client option error") },
-				).
-				Unmarshal(),
-		),
-		fx.Populate(&client),
-	)
-
-	assert.Error(app.Err())
-}
-
-type badClientFactory struct {
-	Timeout time.Duration
-}
-
-func (bcf badClientFactory) NewClient() (*http.Client, error) {
-	return nil, errors.New("expected client factory error")
 }
 
 func testClientFactoryError(t *testing.T) {
 	var (
 		assert = assert.New(t)
 		v      = viper.New()
-		client *http.Client
 	)
-
-	v.Set("timeout", "89s")
-	app := fx.New(
-		arrange.TestLogger(t),
-		arrange.ForViper(v),
-		fx.Provide(
-			Client().ClientFactory(badClientFactory{}).Unmarshal(),
-		),
-		fx.Populate(&client),
-	)
-
-	assert.Error(app.Err())
-}
-
-func testClientProvide(t *testing.T) {
-	const yaml = `
-timeout: "120ms"
-transport:
-  tlsHandshakeTimeout: "56s"
-  disableCompression: false
-`
-	var (
-		assert  = assert.New(t)
-		require = require.New(t)
-
-		v = viper.New()
-
-		optionCalled = make(chan struct{})
-		option       = func(client *http.Client) error {
-			defer close(optionCalled)
-			assert.Equal(120*time.Millisecond, client.Timeout)
-			return nil
-		}
-
-		client *http.Client
-	)
-
-	v.SetConfigType("yaml")
-	require.NoError(v.ReadConfig(strings.NewReader(yaml)))
-
-	app := fxtest.New(
-		t,
-		arrange.TestLogger(t),
-		arrange.ForViper(v),
-		Client().Use(option).Provide(),
-		fx.Populate(&client),
-	)
-
-	assert.NotNil(client)
-	select {
-	case <-optionCalled:
-		// passing
-	case <-time.After(2 * time.Second):
-		assert.Fail("The client option was not called")
-	}
-
-	// force the lifecycle to happen
-	app.RequireStart()
-	app.RequireStop()
-}
-
-func testClientUnmarshalKey(t *testing.T) {
-	const yaml = `
-clients:
-  main:
-    timeout: "25m"
-    transport:
-      disableCompression: true
-`
-	var (
-		assert  = assert.New(t)
-		require = require.New(t)
-
-		v = viper.New()
-
-		optionCalled = make(chan struct{})
-		option       = func(client *http.Client) error {
-			defer close(optionCalled)
-			assert.Equal(25*time.Minute, client.Timeout)
-			return nil
-		}
-
-		client *http.Client
-	)
-
-	v.SetConfigType("yaml")
-	require.NoError(v.ReadConfig(strings.NewReader(yaml)))
-
-	app := fxtest.New(
-		t,
-		arrange.TestLogger(t),
-		arrange.ForViper(v),
-		fx.Provide(
-			Client().Use(option).UnmarshalKey("clients.main"),
-		),
-		fx.Populate(&client),
-	)
-
-	assert.NotNil(client)
-	select {
-	case <-optionCalled:
-		// passing
-	case <-time.After(2 * time.Second):
-		assert.Fail("The client option was not called")
-	}
-
-	// force the lifecycle to happen
-	app.RequireStart()
-	app.RequireStop()
-}
-
-func testClientUnmarshalKeyError(t *testing.T) {
-	const yaml = `
-clients:
-  main:
-    timeout: "this is not a valid golang duration"
-`
-	var (
-		assert  = assert.New(t)
-		require = require.New(t)
-		v       = viper.New()
-		client  *http.Client
-	)
-
-	v.SetConfigType("yaml")
-	require.NoError(v.ReadConfig(strings.NewReader(yaml)))
 
 	app := fx.New(
 		arrange.TestLogger(t),
 		arrange.ForViper(v),
-		fx.Provide(
-			Client().UnmarshalKey("clients.main"),
-		),
-		fx.Populate(&client),
-	)
-
-	assert.Error(app.Err())
-}
-
-func testClientUnmarshalKeyUseError(t *testing.T) {
-	const yaml = `
-clients:
-  main:
-    timeout: "90s"
-`
-	var (
-		assert  = assert.New(t)
-		require = require.New(t)
-		v       = viper.New()
-		client  *http.Client
-	)
-
-	v.SetConfigType("yaml")
-	require.NoError(v.ReadConfig(strings.NewReader(yaml)))
-
-	app := fx.New(
-		arrange.TestLogger(t),
-		arrange.ForViper(v),
-		fx.Provide(
-			Client().
-				Use("this is not a supported option").
-				UnmarshalKey("clients.main"),
-		),
-		fx.Populate(&client),
-	)
-
-	assert.Error(app.Err())
-}
-
-func testClientProvideKey(t *testing.T) {
-	const yaml = `
-clients:
-  main:
-    timeout: "1716s"
-    transport:
-      forceAttemptHTTP2: true
-`
-	var (
-		assert  = assert.New(t)
-		require = require.New(t)
-
-		v = viper.New()
-
-		optionCalled = make(chan struct{})
-		option       = func(client *http.Client) error {
-			defer close(optionCalled)
-			assert.Equal(1716*time.Second, client.Timeout)
-			return nil
-		}
-
-		client *http.Client
-	)
-
-	v.SetConfigType("yaml")
-	require.NoError(v.ReadConfig(strings.NewReader(yaml)))
-
-	type ClientIn struct {
-		fx.In
-		Client *http.Client `name:"clients.main"`
-	}
-
-	app := fxtest.New(
-		t,
-		arrange.TestLogger(t),
-		arrange.ForViper(v),
-		Client().Use(option).ProvideKey("clients.main"),
+		Client().
+			ClientFactory(badClientFactory{}).
+			Provide(),
 		fx.Invoke(
-			func(in ClientIn) {
-				client = in.Client
+			func(*http.Client) {},
+		),
+	)
+
+	assert.Error(app.Err())
+}
+
+func testClientOptionError(t *testing.T) {
+	var (
+		assert = assert.New(t)
+		v      = viper.New()
+
+		injectedClientOptionCalled bool
+		externalClientOptionCalled bool
+	)
+
+	app := fx.New(
+		arrange.TestLogger(t),
+		arrange.ForViper(v),
+		fx.Provide(
+			func() ClientOption {
+				return func(c *http.Client) error {
+					assert.NotNil(c)
+					injectedClientOptionCalled = true
+					return errors.New("expected ClientOption error")
+				}
 			},
 		),
+		Client().
+			With(func(c *http.Client) error {
+				assert.NotNil(c)
+				externalClientOptionCalled = true
+				return errors.New("expected ClientOption error")
+			}).
+			Inject(struct {
+				fx.In
+				O1 ClientOption
+			}{}).
+			Provide(),
+		fx.Invoke(
+			func(*http.Client) {},
+		),
 	)
 
-	assert.NotNil(client)
-	select {
-	case <-optionCalled:
-		// passing
-	case <-time.After(2 * time.Second):
-		assert.Fail("The client option was not called")
-	}
+	assert.Error(app.Err())
+	assert.True(injectedClientOptionCalled)
+	assert.True(externalClientOptionCalled)
+}
 
-	// force the lifecycle to happen
+func testClientMiddleware(t *testing.T) {
+	var (
+		assert  = assert.New(t)
+		require = require.New(t)
+
+		v      = viper.New()
+		client *http.Client
+	)
+
+	app := fxtest.New(
+		t,
+		arrange.TestLogger(t),
+		arrange.ForViper(v),
+		fx.Provide(
+			func() RoundTripperConstructor {
+				return func(next http.RoundTripper) http.RoundTripper {
+					return RoundTripperFunc(func(request *http.Request) (*http.Response, error) {
+						request.Header.Set("Injected-Middleware", "true")
+						return next.RoundTrip(request)
+					})
+				}
+			},
+			func() RoundTripperChain {
+				return NewRoundTripperChain(
+					func(next http.RoundTripper) http.RoundTripper {
+						return RoundTripperFunc(func(request *http.Request) (*http.Response, error) {
+							request.Header.Set("Injected-Middleware-Chain", "true")
+							return next.RoundTrip(request)
+						})
+					},
+				)
+			},
+		),
+		Client().
+			Inject(struct {
+				fx.In
+				M1 RoundTripperConstructor
+				M2 RoundTripperChain
+			}{}).
+			Middleware(
+				func(next http.RoundTripper) http.RoundTripper {
+					return RoundTripperFunc(func(request *http.Request) (*http.Response, error) {
+						request.Header.Set("External-Middleware", "true")
+						return next.RoundTrip(request)
+					})
+				},
+			).
+			MiddlewareChain(
+				NewRoundTripperChain(
+					func(next http.RoundTripper) http.RoundTripper {
+						return RoundTripperFunc(func(request *http.Request) (*http.Response, error) {
+							request.Header.Set("External-Middleware-Chain", "true")
+							return next.RoundTrip(request)
+						})
+					},
+				),
+			).
+			Provide(),
+		fx.Populate(&client),
+	)
+
+	require.NoError(app.Err())
 	app.RequireStart()
+	defer app.Stop(context.Background())
+
+	server := httptest.NewServer(
+		http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+			assert.Equal("/test", request.RequestURI)
+			assert.Equal("true", request.Header.Get("Injected-Middleware"))
+			assert.Equal("true", request.Header.Get("Injected-Middleware-Chain"))
+			assert.Equal("true", request.Header.Get("External-Middleware"))
+			assert.Equal("true", request.Header.Get("External-Middleware-Chain"))
+			response.WriteHeader(211)
+		}),
+	)
+
+	defer server.Close()
+
+	request, err := http.NewRequest("GET", server.URL+"/test", nil)
+	require.NoError(err)
+
+	response, err := client.Do(request)
+	require.NoError(err)
+	require.NotNil(response)
+	assert.Equal(211, response.StatusCode)
+
 	app.RequireStop()
 }
 
 func TestClient(t *testing.T) {
-	t.Run("Unmarshal", testClientUnmarshal)
+	t.Run("InjectError", testClientInjectError)
 	t.Run("UnmarshalError", testClientUnmarshalError)
-	t.Run("UnmarshalUseError", testClientUnmarshalUseError)
-	t.Run("UnmarshalInjectError", testClientUnmarshalInjectError)
-	t.Run("COptionError", testClientCOptionError)
 	t.Run("FactoryError", testClientFactoryError)
-	t.Run("Provide", testClientProvide)
-	t.Run("UnmarshalKey", testClientUnmarshalKey)
-	t.Run("UnmarshalKeyError", testClientUnmarshalKeyError)
-	t.Run("UnmarshalKeyUseError", testClientUnmarshalKeyUseError)
-	t.Run("ProvideKey", testClientProvideKey)
+	t.Run("OptionError", testClientOptionError)
+	t.Run("Middleware", testClientMiddleware)
 }

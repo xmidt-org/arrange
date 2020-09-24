@@ -5,11 +5,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
-	"io/ioutil"
 	"net"
 	"net/http"
-	"net/http/httptest"
 	"strconv"
 	"strings"
 	"testing"
@@ -24,6 +21,31 @@ import (
 	"go.uber.org/fx"
 	"go.uber.org/fx/fxtest"
 )
+
+type TestServerMiddlewareChain []func(http.Handler) http.Handler
+
+func (tsmc TestServerMiddlewareChain) Then(next http.Handler) http.Handler {
+	for i := len(tsmc) - 1; i >= 0; i-- {
+		next = tsmc[i](next)
+	}
+
+	return next
+}
+
+type simpleServerFactory struct {
+	Address   string
+	returnErr error
+}
+
+func (ssf simpleServerFactory) NewServer() (*http.Server, error) {
+	if ssf.returnErr != nil {
+		return nil, ssf.returnErr
+	}
+
+	return &http.Server{
+		Addr: ssf.Address,
+	}, nil
+}
 
 func testServerConfigBasic(t *testing.T) {
 	var (
@@ -146,964 +168,199 @@ func TestServerConfig(t *testing.T) {
 	t.Run("TLS", testServerConfigTLS)
 }
 
-func testSOptionsSuccess(t *testing.T) {
-	for _, length := range []int{0, 1, 2, 5} {
-		t.Run(fmt.Sprintf("len=%d", length), func(t *testing.T) {
+func testServerOptionsEmpty(t *testing.T) {
+	assert := assert.New(t)
+	assert.NoError(ServerOptions()(nil))
+}
+
+func testServerOptionsSuccess(t *testing.T) {
+	for _, count := range []int{0, 1, 2, 5} {
+		t.Run(strconv.Itoa(count), func(t *testing.T) {
 			var (
-				assert    = assert.New(t)
-				require   = require.New(t)
-				server    = new(http.Server)
-				router    = mux.NewRouter()
-				chain     ListenerChain
-				options   []SOption
-				callCount int
+				assert = assert.New(t)
+
+				expectedServer = &http.Server{
+					Addr: ":123",
+				}
+
+				options       []ServerOption
+				expectedOrder []int
+				actualOrder   []int
 			)
 
-			for i := 0; i < length; i++ {
-				options = append(options, func(s *http.Server, r *mux.Router, c ListenerChain) (ListenerChain, error) {
-					assert.Equal(server, s)
-					assert.Equal(router, r)
-					assert.Equal(chain, c)
-					callCount++
-					return c, nil
+			for i := 0; i < count; i++ {
+				expectedOrder = append(expectedOrder, i)
+
+				i := i
+				options = append(options, func(actualServer *http.Server) error {
+					assert.Equal(expectedServer, actualServer)
+					actualOrder = append(actualOrder, i)
+					return nil
 				})
 			}
 
-			so := SOptions(options...)
-			require.NotNil(so)
-			c, err := so(server, router, chain)
-			assert.NoError(err)
-			assert.Equal(chain, c)
-			assert.Equal(length, callCount)
+			assert.NoError(
+				ServerOptions(options...)(expectedServer),
+			)
+
+			assert.Equal(expectedOrder, actualOrder)
 		})
 	}
 }
 
-func testSOptionsFailure(t *testing.T) {
+func testServerOptionsFailure(t *testing.T) {
 	var (
-		assert      = assert.New(t)
-		require     = require.New(t)
-		server      = new(http.Server)
-		router      = mux.NewRouter()
-		chain       ListenerChain
-		expectedErr = errors.New("expected option error")
-		so          = SOptions(
-			func(s *http.Server, r *mux.Router, c ListenerChain) (ListenerChain, error) {
-				assert.Equal(server, s)
-				assert.Equal(router, r)
-				assert.Equal(chain, c)
-				return c, nil
+		assert = assert.New(t)
+
+		expectedServer = &http.Server{
+			Addr: ":456",
+		}
+
+		expectedErr = errors.New("expected")
+		firstCalled bool
+
+		so = ServerOptions(
+			func(actualServer *http.Server) error {
+				firstCalled = true
+				assert.Equal(expectedServer, actualServer)
+				return nil
 			},
-			func(s *http.Server, r *mux.Router, c ListenerChain) (ListenerChain, error) {
-				assert.Equal(server, s)
-				assert.Equal(router, r)
-				assert.Equal(chain, c)
-				return c, expectedErr
+			func(actualServer *http.Server) error {
+				assert.Equal(expectedServer, actualServer)
+				return expectedErr
 			},
-			func(s *http.Server, r *mux.Router, c ListenerChain) (ListenerChain, error) {
+			func(actualServer *http.Server) error {
 				assert.Fail("This option should not have been called")
-				return c, errors.New("This option should not have been called")
+				return errors.New("This option should not have been called")
 			},
 		)
 	)
 
-	require.NotNil(so)
-	c, err := so(server, router, chain)
-	assert.Equal(expectedErr, err)
-	assert.Equal(chain, c)
+	assert.Equal(
+		expectedErr,
+		so(expectedServer),
+	)
+
+	assert.True(firstCalled)
 }
 
-func TestSOptions(t *testing.T) {
-	t.Run("Success", testSOptionsSuccess)
-	t.Run("Failure", testSOptionsFailure)
+func TestServerOptions(t *testing.T) {
+	t.Run("Empty", testServerOptionsEmpty)
+	t.Run("Success", testServerOptionsSuccess)
+	t.Run("Failure", testServerOptionsFailure)
 }
 
-func testNewSOptionUnsupported(t *testing.T) {
+func testRouterOptionsEmpty(t *testing.T) {
 	assert := assert.New(t)
-	so, err := NewSOption("this is not supported as an SOption")
-	assert.Error(err)
-	assert.Nil(so)
+	assert.NoError(RouterOptions()(nil))
 }
 
-func testNewSOptionBasic(t *testing.T) {
-	var (
-		actualServer = new(*http.Server)
-		actualRouter = new(*mux.Router)
-		actualChain  = new(ListenerChain)
-		optionErr    = errors.New("expected option error")
-		testData     = []struct {
-			option      interface{}
-			expectedErr error
-		}{
-			{
-				option: func(s *http.Server, r *mux.Router, c ListenerChain) (ListenerChain, error) {
-					*actualServer = s
-					*actualRouter = r
-					*actualChain = c
-					return c, nil
-				},
-			},
-			{
-				option: func(s *http.Server, r *mux.Router, c ListenerChain) (ListenerChain, error) {
-					*actualServer = s
-					*actualRouter = r
-					*actualChain = c
-					return c, optionErr
-				},
-				expectedErr: optionErr,
-			},
-			{
-				option: []func(*http.Server, *mux.Router, ListenerChain) (ListenerChain, error){
-					func(s *http.Server, r *mux.Router, c ListenerChain) (ListenerChain, error) {
-						*actualServer = s
-						*actualRouter = r
-						*actualChain = c
-						return c, nil
-					},
-				},
-			},
-			{
-				option: [1]func(*http.Server, *mux.Router, ListenerChain) (ListenerChain, error){
-					func(s *http.Server, r *mux.Router, c ListenerChain) (ListenerChain, error) {
-						*actualServer = s
-						*actualRouter = r
-						*actualChain = c
-						return c, nil
-					},
-				},
-			},
-			{
-				option: SOption(func(s *http.Server, r *mux.Router, c ListenerChain) (ListenerChain, error) {
-					*actualServer = s
-					*actualRouter = r
-					*actualChain = c
-					return c, nil
-				}),
-			},
-			{
-				option: SOption(func(s *http.Server, r *mux.Router, c ListenerChain) (ListenerChain, error) {
-					*actualServer = s
-					*actualRouter = r
-					*actualChain = c
-					return c, optionErr
-				}),
-				expectedErr: optionErr,
-			},
-			{
-				option: []SOption{
-					func(s *http.Server, r *mux.Router, c ListenerChain) (ListenerChain, error) {
-						*actualServer = s
-						*actualRouter = r
-						*actualChain = c
-						return c, nil
-					},
-				},
-			},
-			{
-				option: [1]SOption{
-					func(s *http.Server, r *mux.Router, c ListenerChain) (ListenerChain, error) {
-						*actualServer = s
-						*actualRouter = r
-						*actualChain = c
-						return c, nil
-					},
-				},
-			},
-		}
-	)
-
-	for i, record := range testData {
-		*actualServer = nil
-		*actualRouter = nil
-		*actualChain = ListenerChain{}
-		t.Run(strconv.Itoa(i), func(t *testing.T) {
+func testRouterOptionsSuccess(t *testing.T) {
+	for _, count := range []int{0, 1, 2, 5} {
+		t.Run(strconv.Itoa(count), func(t *testing.T) {
 			var (
-				assert  = assert.New(t)
-				require = require.New(t)
-				server  = new(http.Server)
-				router  = new(mux.Router)
-				chain   = NewListenerChain(
-					func(next net.Listener) net.Listener {
-						return next
-					},
-				)
+				assert = assert.New(t)
 
-				so, err = NewSOption(record.option)
+				expectedRouter = mux.NewRouter()
+
+				options       []RouterOption
+				expectedOrder []int
+				actualOrder   []int
 			)
 
-			require.NoError(err)
-			require.NotNil(so)
+			for i := 0; i < count; i++ {
+				expectedOrder = append(expectedOrder, i)
 
-			c, err := so(server, router, chain)
-			assert.Equal(record.expectedErr, err)
-			assert.Equal(server, *actualServer)
-			assert.Equal(router, *actualRouter)
-			assert.Equal(c, *actualChain)
-		})
-	}
-}
-
-func testNewSOptionServer(t *testing.T) {
-	var (
-		actualServer = new(*http.Server)
-		optionErr    = errors.New("expected option error")
-		testData     = []struct {
-			option      interface{}
-			expectedErr error
-		}{
-			{
-				option: ServerOption(func(s *http.Server) error {
-					*actualServer = s
+				i := i
+				options = append(options, func(actualRouter *mux.Router) error {
+					assert.Equal(expectedRouter, actualRouter)
+					actualOrder = append(actualOrder, i)
 					return nil
-				}),
-			},
-			{
-				option: []ServerOption{
-					func(s *http.Server) error {
-						*actualServer = s
-						return nil
-					},
-				},
-			},
-			{
-				option: [1]ServerOption{
-					func(s *http.Server) error {
-						*actualServer = s
-						return nil
-					},
-				},
-			},
-			{
-				option: ServerOption(func(s *http.Server) error {
-					*actualServer = s
-					return optionErr
-				}),
-				expectedErr: optionErr,
-			},
-			{
-				option: func(s *http.Server) error {
-					*actualServer = s
-					return nil
-				},
-			},
-			{
-				option: []func(s *http.Server) error{
-					func(s *http.Server) error {
-						*actualServer = s
-						return nil
-					},
-				},
-			},
-			{
-				option: [1]func(s *http.Server) error{
-					func(s *http.Server) error {
-						*actualServer = s
-						return nil
-					},
-				},
-			},
-			{
-				option: func(s *http.Server) error {
-					*actualServer = s
-					return optionErr
-				},
-				expectedErr: optionErr,
-			},
-			{
-				option: func(s *http.Server) {
-					*actualServer = s
-				},
-			},
-			{
-				option: []func(s *http.Server){
-					func(s *http.Server) {
-						*actualServer = s
-					},
-				},
-			},
-			{
-				option: [1]func(s *http.Server){
-					func(s *http.Server) {
-						*actualServer = s
-					},
-				},
-			},
-		}
-	)
-
-	for i, record := range testData {
-		*actualServer = nil
-		t.Run(strconv.Itoa(i), func(t *testing.T) {
-			var (
-				assert  = assert.New(t)
-				require = require.New(t)
-				server  = new(http.Server)
-				chain   ListenerChain
-				so, err = NewSOption(record.option)
-			)
-
-			require.NoError(err)
-			require.NotNil(so)
-			c, err := so(server, nil, chain)
-			assert.Equal(chain, c)
-			assert.Equal(record.expectedErr, err)
-			assert.Equal(server, *actualServer)
-		})
-	}
-}
-
-func testNewSOptionRouter(t *testing.T) {
-	var (
-		actualRouter = new(*mux.Router)
-		optionErr    = errors.New("expected option error")
-		testData     = []struct {
-			option      interface{}
-			expectedErr error
-		}{
-			{
-				option: RouterOption(func(r *mux.Router) error {
-					*actualRouter = r
-					return nil
-				}),
-			},
-			{
-				option: []RouterOption{
-					func(r *mux.Router) error {
-						*actualRouter = r
-						return nil
-					},
-				},
-			},
-			{
-				option: [1]RouterOption{
-					func(r *mux.Router) error {
-						*actualRouter = r
-						return nil
-					},
-				},
-			},
-			{
-				option: RouterOption(func(r *mux.Router) error {
-					*actualRouter = r
-					return optionErr
-				}),
-				expectedErr: optionErr,
-			},
-			{
-				option: func(r *mux.Router) error {
-					*actualRouter = r
-					return nil
-				},
-			},
-			{
-				option: []func(r *mux.Router) error{
-					func(r *mux.Router) error {
-						*actualRouter = r
-						return nil
-					},
-				},
-			},
-			{
-				option: [1]func(r *mux.Router) error{
-					func(r *mux.Router) error {
-						*actualRouter = r
-						return nil
-					},
-				},
-			},
-			{
-				option: func(r *mux.Router) error {
-					*actualRouter = r
-					return optionErr
-				},
-				expectedErr: optionErr,
-			},
-			{
-				option: func(r *mux.Router) {
-					*actualRouter = r
-				},
-			},
-			{
-				option: []func(r *mux.Router){
-					func(r *mux.Router) {
-						*actualRouter = r
-					},
-				},
-			},
-			{
-				option: [1]func(r *mux.Router){
-					func(r *mux.Router) {
-						*actualRouter = r
-					},
-				},
-			},
-		}
-	)
-
-	for i, record := range testData {
-		*actualRouter = nil
-		t.Run(strconv.Itoa(i), func(t *testing.T) {
-			var (
-				assert  = assert.New(t)
-				require = require.New(t)
-				router  = mux.NewRouter()
-				chain   ListenerChain
-				so, err = NewSOption(record.option)
-			)
-
-			require.NoError(err)
-			require.NotNil(so)
-			c, err := so(nil, router, chain)
-			assert.Equal(chain, c)
-			assert.Equal(record.expectedErr, err)
-			assert.Equal(router, *actualRouter)
-		})
-	}
-}
-
-func testNewSOptionListener(t *testing.T) {
-	expected, err := net.Listen("tcp", ":0")
-	require.NoError(t, err)
-	defer expected.Close()
-
-	testData := []struct {
-		option interface{}
-	}{
-		{
-			option: ListenerConstructor(func(next net.Listener) net.Listener {
-				return next
-			}),
-		},
-		{
-			option: []ListenerConstructor{
-				func(next net.Listener) net.Listener {
-					return next
-				},
-				func(next net.Listener) net.Listener {
-					return next
-				},
-			},
-		},
-		{
-			option: [2]ListenerConstructor{
-				func(next net.Listener) net.Listener {
-					return next
-				},
-				func(next net.Listener) net.Listener {
-					return next
-				},
-			},
-		},
-		{
-			option: func(next net.Listener) net.Listener {
-				return next
-			},
-		},
-		{
-			option: []func(net.Listener) net.Listener{
-				func(next net.Listener) net.Listener {
-					return next
-				},
-				func(next net.Listener) net.Listener {
-					return next
-				},
-			},
-		},
-		{
-			option: [2]func(net.Listener) net.Listener{
-				func(next net.Listener) net.Listener {
-					return next
-				},
-				func(next net.Listener) net.Listener {
-					return next
-				},
-			},
-		},
-		{
-			option: NewListenerChain(
-				func(next net.Listener) net.Listener {
-					return next
-				},
-				func(next net.Listener) net.Listener {
-					return next
-				},
-			),
-		},
-		{
-			option: []ListenerChain{
-				NewListenerChain(
-					func(next net.Listener) net.Listener {
-						return next
-					},
-					func(next net.Listener) net.Listener {
-						return next
-					},
-				),
-			},
-		},
-		{
-			option: [1]ListenerChain{
-				NewListenerChain(
-					func(next net.Listener) net.Listener {
-						return next
-					},
-					func(next net.Listener) net.Listener {
-						return next
-					},
-				),
-			},
-		},
-	}
-
-	for i, record := range testData {
-		t.Run(strconv.Itoa(i), func(t *testing.T) {
-			var (
-				assert  = assert.New(t)
-				require = require.New(t)
-				server  = new(http.Server)
-				router  = mux.NewRouter()
-				so, err = NewSOption(record.option)
-			)
-
-			require.NoError(err)
-			require.NotNil(so)
-
-			c, err := so(server, router, ListenerChain{})
-			require.NoError(err)
-
-			assert.Equal(expected, c.Then(expected))
-		})
-	}
-}
-
-func testNewSOptionMiddleware(t *testing.T) {
-	testData := []struct {
-		option   interface{}
-		expected http.Header
-	}{
-		{
-			option: mux.MiddlewareFunc(NewHeaders("Option", "true").AddResponse),
-			expected: http.Header{
-				"Option": {"true"},
-			},
-		},
-		{
-			option: []mux.MiddlewareFunc{
-				NewHeaders("Option1", "true").AddResponse,
-				NewHeaders("Option2", "true").AddResponse,
-			},
-			expected: http.Header{
-				"Option1": {"true"},
-				"Option2": {"true"},
-			},
-		},
-		{
-			option: [2]mux.MiddlewareFunc{
-				NewHeaders("Option1", "true").AddResponse,
-				NewHeaders("Option2", "true").AddResponse,
-			},
-			expected: http.Header{
-				"Option1": {"true"},
-				"Option2": {"true"},
-			},
-		},
-		{
-			option: NewHeaders("Option", "true").AddResponse,
-			expected: http.Header{
-				"Option": {"true"},
-			},
-		},
-		{
-			option: []func(http.Handler) http.Handler{
-				NewHeaders("Option1", "true").AddResponse,
-				NewHeaders("Option2", "true").AddResponse,
-			},
-			expected: http.Header{
-				"Option1": {"true"},
-				"Option2": {"true"},
-			},
-		},
-		{
-			option: [2]func(http.Handler) http.Handler{
-				NewHeaders("Option1", "true").AddResponse,
-				NewHeaders("Option2", "true").AddResponse,
-			},
-			expected: http.Header{
-				"Option1": {"true"},
-				"Option2": {"true"},
-			},
-		},
-	}
-
-	for i, record := range testData {
-		t.Run(strconv.Itoa(i), func(t *testing.T) {
-			var (
-				assert  = assert.New(t)
-				require = require.New(t)
-				server  = new(http.Server)
-				router  = mux.NewRouter()
-				chain   ListenerChain
-				so, err = NewSOption(record.option)
-			)
-
-			require.NoError(err)
-			require.NotNil(so)
-
-			_, err = so(server, router, chain)
-			require.NoError(err)
-
-			router.HandleFunc("/test", func(response http.ResponseWriter, _ *http.Request) {
-				response.WriteHeader(234)
-			})
-
-			response := httptest.NewRecorder()
-			request := httptest.NewRequest("GET", "/test", nil)
-			router.ServeHTTP(response, request)
-
-			assert.Equal(record.expected, response.HeaderMap)
-			assert.Equal(234, response.Code)
-		})
-	}
-}
-
-func TestNewSOption(t *testing.T) {
-	t.Run("Unsupported", testNewSOptionUnsupported)
-	t.Run("Basic", testNewSOptionBasic)
-	t.Run("Server", testNewSOptionServer)
-	t.Run("Router", testNewSOptionRouter)
-	t.Run("Listener", testNewSOptionListener)
-	t.Run("Middleware", testNewSOptionMiddleware)
-}
-
-func testServerListenerConstructors(t *testing.T) {
-	var (
-		assert  = assert.New(t)
-		require = require.New(t)
-		address = make(chan net.Addr, 1)
-
-		v = viper.New()
-	)
-
-	v.Set("address", ":0")
-	app := fxtest.New(
-		t,
-		arrange.TestLogger(t),
-		arrange.ForViper(v),
-		fx.Provide(
-			Server().
-				Use(
-					CaptureListenAddress(address),
-				).
-				Unmarshal(),
-		),
-		fx.Invoke(
-			func(r *mux.Router) {
-				r.HandleFunc("/test", func(response http.ResponseWriter, _ *http.Request) {
-					response.WriteHeader(277)
 				})
-			},
-		),
-	)
+			}
 
-	app.RequireStart()
-	defer app.Stop(context.Background())
+			assert.NoError(
+				RouterOptions(options...)(expectedRouter),
+			)
 
-	var serverAddress net.Addr
-	select {
-	case serverAddress = <-address:
-	case <-time.After(2 * time.Second):
-		require.Fail("No server address returned")
-	}
-
-	response, err := http.Get("http://" + serverAddress.String() + "/test")
-	require.NoError(err)
-	assert.Equal(277, response.StatusCode)
-	io.Copy(ioutil.Discard, response.Body)
-	response.Body.Close()
-}
-
-func testServerUnmarshal(t *testing.T) {
-	var (
-		assert  = assert.New(t)
-		require = require.New(t)
-
-		globalAddress1 = make(chan net.Addr, 1)
-		globalAddress2 = make(chan net.Addr, 1)
-		localAddress   = make(chan net.Addr, 1)
-
-		globalSOptionCalled = make(chan struct{})
-
-		localSOptionCalled = make(chan struct{})
-		localSOption       = ServerOption(func(s *http.Server) error {
-			defer close(localSOptionCalled)
-			assert.NotNil(s)
-			return nil
+			assert.Equal(expectedOrder, actualOrder)
 		})
-
-		v = viper.New()
-	)
-
-	type Dependencies struct {
-		fx.In
-		GlobalSOption             ServerOption
-		GlobalListenerConstructor ListenerConstructor
-		GlobalListenerChain       ListenerChain
 	}
-
-	v.Set("address", ":0")
-	app := fxtest.New(
-		t,
-		arrange.TestLogger(t),
-		arrange.ForViper(v),
-		fx.Provide(
-			func() ListenerChain {
-				return NewListenerChain(
-					CaptureListenAddress(globalAddress1),
-				)
-			},
-			func() ListenerConstructor {
-				return CaptureListenAddress(globalAddress2)
-			},
-			func() ServerOption {
-				return func(*http.Server) error {
-					close(globalSOptionCalled)
-					return nil
-				}
-			},
-			Server(localSOption).
-				Use(NewListenerChain(CaptureListenAddress(localAddress))).
-				Inject(Dependencies{}).
-				Unmarshal(),
-		),
-		fx.Invoke(
-			func(r *mux.Router) {
-				r.HandleFunc("/test", func(response http.ResponseWriter, _ *http.Request) {
-					response.WriteHeader(277)
-				})
-			},
-		),
-	)
-
-	app.RequireStart()
-	defer app.Stop(context.Background())
-
-	select {
-	case <-localSOptionCalled:
-		// passing
-	case <-time.After(2 * time.Second):
-		require.Fail("The local server option was not called")
-	}
-
-	select {
-	case <-globalSOptionCalled:
-		// passing
-	case <-time.After(2 * time.Second):
-		require.Fail("The global server option was not called")
-	}
-
-	var serverAddress net.Addr
-	select {
-	case serverAddress = <-localAddress:
-	case <-time.After(2 * time.Second):
-		require.Fail("No server address returned")
-	}
-
-	select {
-	case globalAddress := <-globalAddress1:
-		assert.Equal(serverAddress, globalAddress)
-	case <-time.After(2 * time.Second):
-		require.Fail("No server address returned")
-	}
-
-	select {
-	case globalAddress := <-globalAddress2:
-		assert.Equal(serverAddress, globalAddress)
-	case <-time.After(2 * time.Second):
-		require.Fail("No server address returned")
-	}
-
-	response, err := http.Get("http://" + serverAddress.String() + "/test")
-	require.NoError(err)
-	assert.Equal(277, response.StatusCode)
-	io.Copy(ioutil.Discard, response.Body)
-	response.Body.Close()
 }
 
-// CustomConfig is a ServerFactory with no ListenerFactory implementation
-type CustomConfig struct {
-}
-
-func (cc CustomConfig) NewServer() (*http.Server, error) {
-	return &http.Server{Addr: ":0"}, nil
-}
-
-func testServerUnmarshalDefaultListenerFactory(t *testing.T) {
-	var (
-		assert  = assert.New(t)
-		require = require.New(t)
-
-		address = make(chan net.Addr, 1)
-		v       = viper.New()
-	)
-
-	type Dependencies struct {
-		fx.In
-
-		L ListenerChain
-	}
-
-	v.Set("address", ":0")
-	app := fxtest.New(
-		t,
-		arrange.TestLogger(t),
-		arrange.ForViper(v),
-		fx.Provide(
-			func() ListenerChain {
-				return NewListenerChain(
-					CaptureListenAddress(address),
-				)
-			},
-			Server().
-				ServerFactory(CustomConfig{}).
-				Inject(Dependencies{}).
-				Unmarshal(),
-		),
-		fx.Invoke(
-			func(r *mux.Router) {
-				r.HandleFunc("/test", func(response http.ResponseWriter, _ *http.Request) {
-					response.WriteHeader(277)
-				})
-			},
-		),
-	)
-
-	app.RequireStart()
-	defer app.Stop(context.Background())
-
-	var serverAddress net.Addr
-	select {
-	case serverAddress = <-address:
-	case <-time.After(2 * time.Second):
-		require.Fail("No server address returned")
-	}
-
-	response, err := http.Get("http://" + serverAddress.String() + "/test")
-	require.NoError(err)
-	assert.Equal(277, response.StatusCode)
-	io.Copy(ioutil.Discard, response.Body)
-	response.Body.Close()
-}
-
-type badServerFactory struct {
-	Address string
-}
-
-func (bsf badServerFactory) NewServer() (*http.Server, error) {
-	return nil, errors.New("factory error")
-}
-
-func testServerServerFactoryError(t *testing.T) {
+func testRouterOptionsFailure(t *testing.T) {
 	var (
 		assert = assert.New(t)
-		router *mux.Router
 
-		v = viper.New()
+		expectedRouter = mux.NewRouter()
+
+		expectedErr = errors.New("expected")
+		firstCalled bool
+
+		ro = RouterOptions(
+			func(actualRouter *mux.Router) error {
+				firstCalled = true
+				assert.Equal(expectedRouter, actualRouter)
+				return nil
+			},
+			func(actualRouter *mux.Router) error {
+				assert.Equal(expectedRouter, actualRouter)
+				return expectedErr
+			},
+			func(actualRouter *mux.Router) error {
+				assert.Fail("This option should not have been called")
+				return errors.New("This option should not have been called")
+			},
+		)
 	)
 
-	v.Set("address", "localhost:8080")
+	assert.Equal(
+		expectedErr,
+		ro(expectedRouter),
+	)
+
+	assert.True(firstCalled)
+}
+
+func TestRouterOptions(t *testing.T) {
+	t.Run("Empty", testRouterOptionsEmpty)
+	t.Run("Success", testRouterOptionsSuccess)
+	t.Run("Failure", testRouterOptionsFailure)
+}
+
+func testServerInjectError(t *testing.T) {
+	var (
+		assert = assert.New(t)
+		v      = viper.New()
+	)
+
 	app := fx.New(
 		arrange.TestLogger(t),
 		arrange.ForViper(v),
-		fx.Provide(
-			Server().
-				ServerFactory(badServerFactory{}).
-				Unmarshal(),
+		Server().
+			Inject(struct {
+				DoesNotEmbedFxIn string
+			}{}).
+			Provide(),
+		fx.Invoke(
+			func(*mux.Router) {
+				// doesn't matter
+			},
 		),
-		fx.Populate(&router),
-	)
-
-	assert.Error(app.Err())
-}
-
-func testServerSOptionError(t *testing.T) {
-	var (
-		assert = assert.New(t)
-		router *mux.Router
-
-		v = viper.New()
-	)
-
-	v.Set("address", "localhost:8080")
-	app := fx.New(
-		arrange.TestLogger(t),
-		arrange.ForViper(v),
-		fx.Provide(
-			Server().
-				Use(
-					ServerOption(func(*http.Server) error { return errors.New("expected server option error") }),
-				).
-				Unmarshal(),
-		),
-		fx.Populate(&router),
 	)
 
 	assert.Error(app.Err())
 }
 
 func testServerUnmarshalError(t *testing.T) {
-	var (
-		assert = assert.New(t)
-		router *mux.Router
-
-		v = viper.New()
-	)
-
-	v.Set("address", ":0")
-	v.Set("readTimeout", "this is not a valid golang time.Duration")
-	app := fx.New(
-		arrange.TestLogger(t),
-		arrange.ForViper(v),
-		fx.Provide(
-			Server().Unmarshal(),
-		),
-		fx.Populate(&router),
-	)
-
-	assert.Error(app.Err())
-}
-
-func testServerUnmarshalUseError(t *testing.T) {
-	var (
-		assert = assert.New(t)
-		router *mux.Router
-
-		v = viper.New()
-	)
-
-	v.Set("address", ":0")
-	app := fx.New(
-		arrange.TestLogger(t),
-		arrange.ForViper(v),
-		fx.Provide(
-			// not a valid option
-			Server().Use(123).Unmarshal(),
-		),
-		fx.Populate(&router),
-	)
-
-	assert.Error(app.Err())
-}
-
-func testServerUnmarshalInjectError(t *testing.T) {
 	const yaml = `
-timeout: "90s"
+maxHeaderBytes: "this is not a valid int"
 `
+
 	var (
 		assert  = assert.New(t)
 		require = require.New(t)
-		router  *mux.Router
-
-		v = viper.New()
+		v       = viper.New()
 	)
 
 	v.SetConfigType("yaml")
@@ -1112,302 +369,429 @@ timeout: "90s"
 	app := fx.New(
 		arrange.TestLogger(t),
 		arrange.ForViper(v),
-		fx.Provide(
-			Server().
-				Inject("this is not a struct that embeds fx.In").
-				Unmarshal(),
+		Server().
+			Provide(),
+		fx.Invoke(
+			func(*mux.Router) {
+				// doesn't matter
+			},
 		),
-		fx.Populate(&router),
 	)
 
 	assert.Error(app.Err())
 }
 
-func testServerProvide(t *testing.T) {
+func testServerFactoryError(t *testing.T) {
 	var (
-		assert  = assert.New(t)
-		require = require.New(t)
-
-		address = make(chan net.Addr, 1)
-
-		sOptionCalled = make(chan struct{})
-		sOption       = RouterOption(func(r *mux.Router) error {
-			defer close(sOptionCalled)
-			assert.NotNil(r)
-			return nil
-		})
-
-		v = viper.New()
+		assert = assert.New(t)
+		v      = viper.New()
 	)
 
-	v.Set("address", ":0")
+	app := fx.New(
+		arrange.TestLogger(t),
+		arrange.ForViper(v),
+		Server().
+			ServerFactory(simpleServerFactory{
+				returnErr: errors.New("expected NewServer error"),
+			}).
+			Provide(),
+		fx.Invoke(
+			func(*mux.Router) {
+				// doesn't matter
+			},
+		),
+	)
+
+	assert.Error(app.Err())
+}
+
+func testServerOptionError(t *testing.T) {
+	var (
+		assert = assert.New(t)
+		v      = viper.New()
+
+		injectedServerOptionCalled bool
+		injectedRouterOptionCalled bool
+		externalServerOptionCalled bool
+		externalRouterOptionCalled bool
+	)
+
+	app := fx.New(
+		arrange.TestLogger(t),
+		arrange.ForViper(v),
+		fx.Provide(
+			func() ServerOption {
+				return func(s *http.Server) error {
+					assert.NotNil(s)
+					injectedServerOptionCalled = true
+					return errors.New("expected ServerOption error")
+				}
+			},
+			func() RouterOption {
+				return func(r *mux.Router) error {
+					assert.NotNil(r)
+					injectedRouterOptionCalled = true
+					return errors.New("expected RouterOption error")
+				}
+			},
+		),
+		Server().
+			With(func(s *http.Server) error {
+				assert.NotNil(s)
+				externalServerOptionCalled = true
+				return errors.New("expected ServerOption error")
+			}).
+			WithRouter(func(r *mux.Router) error {
+				assert.NotNil(r)
+				externalRouterOptionCalled = true
+				return errors.New("expected RouterOption error")
+			}).
+			Inject(struct {
+				fx.In
+				O1 ServerOption
+				O2 RouterOption
+			}{}).
+			Provide(),
+		fx.Invoke(
+			func(*mux.Router) {
+				// doesn't matter
+			},
+		),
+	)
+
+	assert.Error(app.Err())
+	assert.True(injectedServerOptionCalled)
+	assert.True(injectedRouterOptionCalled)
+	assert.True(externalServerOptionCalled)
+	assert.True(externalRouterOptionCalled)
+}
+
+func testServerDefaultListenerFactory(t *testing.T) {
+	var (
+		v       = viper.New()
+		address = make(chan net.Addr, 1)
+	)
+
 	app := fxtest.New(
 		t,
 		arrange.TestLogger(t),
 		arrange.ForViper(v),
-		Server(sOption).
-			Use(
-				CaptureListenAddress(address),
+		Server().
+			// this ServerFactory does not implement ListenerFactory, thus
+			// forcing the builder to use the default
+			ServerFactory(simpleServerFactory{}).
+			CaptureListenAddress(address).
+			Provide(),
+		fx.Invoke(
+			func(*mux.Router) {},
+		),
+	)
+
+	app.RequireStart()
+	defer app.Stop(context.Background())
+
+	MustGetListenAddress(address, time.After(time.Second))
+	app.RequireStop()
+}
+
+func testServerMiddleware(t *testing.T) {
+	var (
+		assert  = assert.New(t)
+		require = require.New(t)
+
+		v       = viper.New()
+		address = make(chan net.Addr, 1)
+	)
+
+	app := fxtest.New(
+		t,
+		arrange.TestLogger(t),
+		arrange.ForViper(v),
+		fx.Provide(
+			func() mux.MiddlewareFunc {
+				return func(next http.Handler) http.Handler {
+					return http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+						response.Header().Set("Injected-Middleware", "true")
+						next.ServeHTTP(response, request)
+					})
+				}
+			},
+			func() TestServerMiddlewareChain {
+				return TestServerMiddlewareChain{
+					func(next http.Handler) http.Handler {
+						return http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+							response.Header().Set("Injected-Chain-Middleware", "true")
+							next.ServeHTTP(response, request)
+						})
+					},
+				}
+			},
+		),
+		Server().
+			Middleware(
+				func(next http.Handler) http.Handler {
+					return http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+						response.Header().Set("Local-Middleware", "true")
+						next.ServeHTTP(response, request)
+					})
+				},
+			).
+			MiddlewareChain(
+				TestServerMiddlewareChain{
+					func(next http.Handler) http.Handler {
+						return http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+							response.Header().Set("Chain-Middleware", "true")
+							next.ServeHTTP(response, request)
+						})
+					},
+				},
+			).
+			Inject(struct {
+				fx.In
+				M  mux.MiddlewareFunc
+				MC TestServerMiddlewareChain
+			}{}).
+			CaptureListenAddress(address).
+			Provide(),
+		fx.Invoke(
+			func(r *mux.Router) {
+				r.HandleFunc("/test", func(response http.ResponseWriter, request *http.Request) {
+					response.WriteHeader(267)
+				})
+			},
+		),
+	)
+
+	require.NoError(app.Err())
+	app.RequireStart()
+	defer app.Stop(context.Background())
+
+	serverURL := "http://" + MustGetListenAddress(address, time.After(time.Second)).String()
+	response, err := http.Get(serverURL + "/test")
+	require.NoError(err)
+	require.NotNil(response)
+	assert.Equal(267, response.StatusCode)
+	assert.Equal("true", response.Header.Get("Local-Middleware"))
+	assert.Equal("true", response.Header.Get("Chain-Middleware"))
+	assert.Equal("true", response.Header.Get("Injected-Middleware"))
+	assert.Equal("true", response.Header.Get("Injected-Chain-Middleware"))
+
+	app.RequireStop()
+}
+
+func testServerOptions(t *testing.T) {
+	var (
+		assert  = assert.New(t)
+		require = require.New(t)
+
+		v       = viper.New()
+		address = make(chan net.Addr, 1)
+
+		injectedServerOptionCalled  bool
+		injectedServerOptionsCalled bool
+		injectedRouterOptionCalled  bool
+		injectedRouterOptionsCalled bool
+
+		externalServerOptionCalled bool
+		externalRouterOptionCalled bool
+	)
+
+	app := fxtest.New(
+		t,
+		arrange.TestLogger(t),
+		arrange.ForViper(v),
+		fx.Provide(
+			fx.Annotated{
+				Name: "serverOption",
+				Target: func() ServerOption {
+					return func(s *http.Server) error {
+						assert.NotNil(s)
+						injectedServerOptionCalled = true
+						return nil
+					}
+				},
+			},
+			fx.Annotated{
+				Name: "serverOptions",
+				Target: func() ServerOption {
+					return ServerOptions(
+						func(s *http.Server) error {
+							assert.NotNil(s)
+							injectedServerOptionsCalled = true
+							return nil
+						},
+					)
+				},
+			},
+			fx.Annotated{
+				Name: "routerOption",
+				Target: func() RouterOption {
+					return func(r *mux.Router) error {
+						assert.NotNil(r)
+						injectedRouterOptionCalled = true
+						return nil
+					}
+				},
+			},
+			fx.Annotated{
+				Name: "routerOptions",
+				Target: func() RouterOption {
+					return RouterOptions(
+						func(r *mux.Router) error {
+							assert.NotNil(r)
+							injectedRouterOptionsCalled = true
+							return nil
+						},
+					)
+				},
+			},
+		),
+		Server().
+			Inject(struct {
+				fx.In
+				O1 ServerOption `name:"serverOption"`
+				O2 ServerOption `name:"serverOptions"`
+				O3 RouterOption `name:"routerOption"`
+				O4 RouterOption `name:"routerOptions"`
+			}{}).
+			With(
+				func(s *http.Server) error {
+					assert.NotNil(s)
+					externalServerOptionCalled = true
+					return nil
+				},
+			).
+			WithRouter(
+				func(r *mux.Router) error {
+					assert.NotNil(r)
+					externalRouterOptionCalled = true
+					return nil
+				},
+			).
+			CaptureListenAddress(address).
+			Provide(),
+		fx.Invoke(
+			func(r *mux.Router) {
+				r.HandleFunc("/test", func(response http.ResponseWriter, request *http.Request) {
+					response.WriteHeader(287)
+				})
+			},
+		),
+	)
+
+	require.NoError(app.Err())
+	app.RequireStart()
+	defer app.Stop(context.Background())
+
+	assert.True(injectedServerOptionCalled)
+	assert.True(injectedServerOptionsCalled)
+	assert.True(injectedRouterOptionCalled)
+	assert.True(injectedRouterOptionsCalled)
+	assert.True(externalServerOptionCalled)
+	assert.True(externalRouterOptionCalled)
+
+	serverURL := "http://" + MustGetListenAddress(address, time.After(time.Second)).String()
+	response, err := http.Get(serverURL + "/test")
+	require.NoError(err)
+	require.NotNil(response)
+	assert.Equal(287, response.StatusCode)
+
+	app.RequireStop()
+}
+
+func testServerListener(t *testing.T) {
+	var (
+		assert  = assert.New(t)
+		require = require.New(t)
+
+		v       = viper.New()
+		address = make(chan net.Addr, 1)
+
+		injectedListenerConstructorCalled bool
+		injectedListenerChainCalled       bool
+
+		externalListenerConstructorCalled bool
+		externalListenerChainCalled       bool
+	)
+
+	app := fxtest.New(
+		t,
+		arrange.TestLogger(t),
+		arrange.ForViper(v),
+		fx.Provide(
+			func() ListenerConstructor {
+				return func(next net.Listener) net.Listener {
+					assert.NotNil(next)
+					injectedListenerConstructorCalled = true
+					return next
+				}
+			},
+			func() ListenerChain {
+				return NewListenerChain(
+					func(next net.Listener) net.Listener {
+						assert.NotNil(next)
+						injectedListenerChainCalled = true
+						return next
+					},
+				)
+			},
+		),
+		Server().
+			Inject(struct {
+				fx.In
+				LC1 ListenerConstructor
+				LC2 ListenerChain
+			}{}).
+			CaptureListenAddress(address).
+			ListenerConstructors(func(next net.Listener) net.Listener {
+				assert.NotNil(next)
+				externalListenerConstructorCalled = true
+				return next
+			}).
+			ListenerChain(
+				NewListenerChain(
+					func(next net.Listener) net.Listener {
+						assert.NotNil(next)
+						externalListenerChainCalled = true
+						return next
+					},
+				),
 			).
 			Provide(),
 		fx.Invoke(
 			func(r *mux.Router) {
-				r.HandleFunc("/test", func(response http.ResponseWriter, _ *http.Request) {
-					response.WriteHeader(277)
+				r.HandleFunc("/test", func(response http.ResponseWriter, request *http.Request) {
+					response.WriteHeader(216)
 				})
 			},
 		),
 	)
 
+	require.NoError(app.Err())
 	app.RequireStart()
 	defer app.Stop(context.Background())
 
-	select {
-	case <-sOptionCalled:
-		// passing
-	case <-time.After(2 * time.Second):
-		assert.Fail("The server option was not called")
-	}
+	assert.True(injectedListenerConstructorCalled)
+	assert.True(injectedListenerChainCalled)
+	assert.True(externalListenerConstructorCalled)
+	assert.True(externalListenerChainCalled)
 
-	var serverAddress net.Addr
-	select {
-	case serverAddress = <-address:
-	case <-time.After(2 * time.Second):
-		require.Fail("No server address returned")
-	}
-
-	response, err := http.Get("http://" + serverAddress.String() + "/test")
+	serverURL := "http://" + MustGetListenAddress(address, time.After(time.Second)).String()
+	response, err := http.Get(serverURL + "/test")
 	require.NoError(err)
-	assert.Equal(277, response.StatusCode)
-	io.Copy(ioutil.Discard, response.Body)
-	response.Body.Close()
-}
+	require.NotNil(response)
+	assert.Equal(216, response.StatusCode)
 
-func testServerUnmarshalKey(t *testing.T) {
-	const yaml = `
-servers:
-  main:
-    address: ":0"
-    readTimeout: "30s"
-`
-
-	var (
-		assert  = assert.New(t)
-		require = require.New(t)
-
-		address = make(chan net.Addr, 1)
-
-		sOptionCalled = make(chan struct{})
-		sOption       = ServerOption(func(s *http.Server) error {
-			defer close(sOptionCalled)
-			if assert.NotNil(s) {
-				assert.Equal(30*time.Second, s.ReadTimeout)
-			}
-
-			return nil
-		})
-
-		v = viper.New()
-	)
-
-	v.SetConfigType("yaml")
-	require.NoError(v.ReadConfig(strings.NewReader(yaml)))
-
-	app := fxtest.New(
-		t,
-		arrange.TestLogger(t),
-		arrange.ForViper(v),
-		fx.Provide(
-			Server(sOption).
-				Use(
-					CaptureListenAddress(address),
-				).
-				UnmarshalKey("servers.main"),
-		),
-		fx.Invoke(
-			func(r *mux.Router) {
-				r.HandleFunc("/test", func(response http.ResponseWriter, _ *http.Request) {
-					response.WriteHeader(277)
-				})
-			},
-		),
-	)
-
-	app.RequireStart()
-	defer app.Stop(context.Background())
-
-	select {
-	case <-sOptionCalled:
-		// passing
-	case <-time.After(2 * time.Second):
-		assert.Fail("The server option was not called")
-	}
-
-	var serverAddress net.Addr
-	select {
-	case serverAddress = <-address:
-	case <-time.After(2 * time.Second):
-		require.Fail("No server address returned")
-	}
-
-	response, err := http.Get("http://" + serverAddress.String() + "/test")
-	require.NoError(err)
-	assert.Equal(277, response.StatusCode)
-	io.Copy(ioutil.Discard, response.Body)
-	response.Body.Close()
-}
-
-func testServerUnmarshalKeyError(t *testing.T) {
-	const yaml = `
-servers:
-  main:
-    address: ":0"
-    readTimeout: "this is not a valid golang time.Duration"
-`
-
-	var (
-		assert  = assert.New(t)
-		require = require.New(t)
-		router  *mux.Router
-
-		v = viper.New()
-	)
-
-	v.SetConfigType("yaml")
-	require.NoError(v.ReadConfig(strings.NewReader(yaml)))
-
-	app := fx.New(
-		arrange.TestLogger(t),
-		arrange.ForViper(v),
-		fx.Provide(
-			Server().UnmarshalKey("servers.main"),
-		),
-		fx.Populate(&router),
-	)
-
-	assert.Error(app.Err())
-}
-
-func testServerUnmarshalKeyBadInject(t *testing.T) {
-	const yaml = `
-servers:
-  main:
-    address: ":0"
-    readTimeout: "15s"
-`
-
-	var (
-		assert  = assert.New(t)
-		require = require.New(t)
-		router  *mux.Router
-
-		v = viper.New()
-	)
-
-	v.SetConfigType("yaml")
-	require.NoError(v.ReadConfig(strings.NewReader(yaml)))
-
-	app := fx.New(
-		arrange.TestLogger(t),
-		arrange.ForViper(v),
-		fx.Provide(
-			Server().Use("this is not an fx.In struct").UnmarshalKey("servers.main"),
-		),
-		fx.Populate(&router),
-	)
-
-	assert.Error(app.Err())
-}
-
-func testServerProvideKey(t *testing.T) {
-	const yaml = `
-servers:
-  main:
-    address: ":0"
-    readTimeout: "30s"
-`
-
-	var (
-		assert  = assert.New(t)
-		require = require.New(t)
-
-		address = make(chan net.Addr, 1)
-
-		sOptionCalled = make(chan struct{})
-		sOption       = ServerOption(func(s *http.Server) error {
-			defer close(sOptionCalled)
-			if assert.NotNil(s) {
-				assert.Equal(30*time.Second, s.ReadTimeout)
-			}
-
-			return nil
-		})
-
-		v = viper.New()
-	)
-
-	v.SetConfigType("yaml")
-	require.NoError(v.ReadConfig(strings.NewReader(yaml)))
-
-	type RouterIn struct {
-		fx.In
-		Router *mux.Router `name:"servers.main"`
-	}
-
-	app := fxtest.New(
-		t,
-		arrange.TestLogger(t),
-		arrange.ForViper(v),
-		Server(sOption).
-			Use(
-				CaptureListenAddress(address),
-			).
-			ProvideKey("servers.main"),
-		fx.Invoke(
-			func(r RouterIn) {
-				r.Router.HandleFunc("/test", func(response http.ResponseWriter, _ *http.Request) {
-					response.WriteHeader(277)
-				})
-			},
-		),
-	)
-
-	app.RequireStart()
-	defer app.Stop(context.Background())
-
-	select {
-	case <-sOptionCalled:
-		// passing
-	case <-time.After(2 * time.Second):
-		assert.Fail("The server option was not called")
-	}
-
-	var serverAddress net.Addr
-	select {
-	case serverAddress = <-address:
-	case <-time.After(2 * time.Second):
-		require.Fail("No server address returned")
-	}
-
-	response, err := http.Get("http://" + serverAddress.String() + "/test")
-	require.NoError(err)
-	assert.Equal(277, response.StatusCode)
-	io.Copy(ioutil.Discard, response.Body)
-	response.Body.Close()
+	app.RequireStop()
 }
 
 func TestServer(t *testing.T) {
-	t.Run("ListenerConstructors", testServerListenerConstructors)
-	t.Run("Unmarshal", testServerUnmarshal)
-	t.Run("UnmarshalDefaultListenerFactory", testServerUnmarshalDefaultListenerFactory)
+	t.Run("InjectError", testServerInjectError)
 	t.Run("UnmarshalError", testServerUnmarshalError)
-	t.Run("UnmarshalUseError", testServerUnmarshalUseError)
-	t.Run("UnmarshalInjectError", testServerUnmarshalInjectError)
-	t.Run("FactoryError", testServerServerFactoryError)
-	t.Run("SOptionError", testServerSOptionError)
-	t.Run("Provide", testServerProvide)
-	t.Run("UnmarshalKey", testServerUnmarshalKey)
-	t.Run("UnmarshalKeyError", testServerUnmarshalKeyError)
-	t.Run("UnmarshalKeyBadInject", testServerUnmarshalKeyBadInject)
-	t.Run("ProvideKey", testServerProvideKey)
+	t.Run("FactoryError", testServerFactoryError)
+	t.Run("OptionError", testServerOptionError)
+	t.Run("DefaultListenerFactory", testServerDefaultListenerFactory)
+	t.Run("Middleware", testServerMiddleware)
+	t.Run("Options", testServerOptions)
+	t.Run("Listener", testServerListener)
 }

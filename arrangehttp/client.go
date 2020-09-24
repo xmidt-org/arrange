@@ -79,86 +79,51 @@ func (cc ClientConfig) NewClient() (client *http.Client, err error) {
 	return
 }
 
-// COption is a functional option for a fluent client builder
-type COption func(*http.Client) error
+// ClientOption is a functional option type that configures an http.Client.
+type ClientOption func(*http.Client) error
 
-// COptions aggregates several COption instances into a single option
-func COptions(options ...COption) COption {
-	if len(options) == 1 {
-		return options[0]
+// ClientOptions glues together multiple options into a single, immutable option.
+// Use this to produce aggregate options within an fx.App, instead of an []ClientOption.
+func ClientOptions(o ...ClientOption) ClientOption {
+	if len(o) == 1 {
+		return o[0]
 	}
 
-	return func(c *http.Client) error {
-		var err error
-		for _, co := range options {
-			err = co(c)
-			if err != nil {
-				break
+	return func(client *http.Client) error {
+		for _, f := range o {
+			if err := f(client); err != nil {
+				return err
 			}
 		}
 
-		return err
+		return nil
 	}
 }
 
-// NewCOption reflects an object and tries to convert it into a COption.  The set
-// of types allowed is flexible:
-//
-//   (1) COption or any type convertible to a COption
-//   (2) Any type convertible to func(*http.Client), which is basically a COption that returns no error
-//   (3) RoundTripperConstructor are any type convertible to RoundTripperConstructor
-//   (4) RoundTripperChain
-//   (5) A slice or array of any of the above, which are applied in slice element order
-//
-// Any other type will produce an error.
-func NewCOption(o interface{}) (COption, error) {
-	v := reflect.ValueOf(o)
-
-	// handled types noted below:
-
-	// COption
-	// []COption
-	if o, ok := tryConvertToOptionSlice(v, COption(nil)); ok {
-		return COptions(o.([]COption)...), nil
-	}
-
-	// explicitly support a COption variant that returns no error
-	// this helps reduce code noise when there are lots of options,
-	// avoiding "return nil" all over the place
-	if o, ok := tryConvertToOptionSlice(v, (func(*http.Client))(nil)); ok {
-		return func(c *http.Client) error {
-			for _, f := range o.([]func(*http.Client)) {
-				f(c)
+// newClientOption reflects v to produce a ClientOption.  If v cannot be converted
+// to a ClientOption, this function returns nil
+func newClientOption(v interface{}) ClientOption {
+	var co ClientOption
+	arrange.TryConvert(
+		v,
+		func(v ClientOption) {
+			co = v
+		},
+		func(chain ClientMiddlewareChain) {
+			co = func(client *http.Client) error {
+				client.Transport = chain.Then(client.Transport)
+				return nil
 			}
-
-			return nil
-		}, nil
-	}
-
-	// RoundTripperConstructor
-	// []RoundTripperConstructor
-	// func(http.RoundTripper) http.RoundTripper
-	// []func(http.RoundTripper) http.RoundTripper
-	if rc, ok := tryConvertToOptionSlice(v, RoundTripperConstructor(nil)); ok {
-		return func(c *http.Client) error {
-			c.Transport = NewRoundTripperChain(rc.([]RoundTripperConstructor)...).Then(c.Transport)
-			return nil
-		}, nil
-	}
-
-	// RoundTripperChain
-	// []RoundTripperChain
-	if rtc, ok := tryConvertToOptionSlice(v, RoundTripperChain{}); ok {
-		return func(c *http.Client) error {
-			for _, chain := range rtc.([]RoundTripperChain) {
-				c.Transport = chain.Then(c.Transport)
+		},
+		func(ctor RoundTripperConstructor) {
+			co = func(client *http.Client) error {
+				client.Transport = NewRoundTripperChain(ctor).Then(client.Transport)
+				return nil
 			}
+		},
+	)
 
-			return nil
-		}, nil
-	}
-
-	return nil, fmt.Errorf("%s is not supported as a COption", reflect.TypeOf(o))
+	return co
 }
 
 // ClientIn is the set of dependencies required to build an *http.Client component.
@@ -183,10 +148,17 @@ type ClientIn struct {
 // C is a Fluent Builder for creating an http.Client as an uber/fx component.
 // This type should be constructed with the Client function.
 type C struct {
-	errs         []error
-	options      []COption
+	// errs are the collected errors that happened during fluent building
+	errs []error
+
+	// options are the explicit options added that are NOT injected
+	options []ClientOption
+
+	// dependencies are extra dependencies beyond ClientIn
 	dependencies []reflect.Type
-	prototype    ClientFactory
+
+	// prototype is the ClientFactory instance that is used for cloning and unmarshaling
+	prototype ClientFactory
 }
 
 // Client begins a Fluent Builder chain for constructing an http.Client from
@@ -206,40 +178,45 @@ func (c *C) ClientFactory(prototype ClientFactory) *C {
 	return c
 }
 
-// Use applies options to this builder.  Each object is passed to NewCOption.
-// Any errors will short circuit fx.App startup.
-//
-// All options passed to this method are evaluated after the http.Client is created
-// but before it has been presented to the enclosing fx.App as a component.
-func (c *C) Use(v ...interface{}) *C {
-	for _, o := range v {
-		if co, err := NewCOption(o); err == nil {
-			c.options = append(c.options, co)
-		} else {
-			c.errs = append(c.errs, err)
-		}
-	}
-
+// With adds any number of externally supplied options that will be applied
+// to the client when the enclosing fx.App asks to instantiate it.
+func (c *C) With(o ...ClientOption) *C {
+	c.options = append(c.options, o...)
 	return c
 }
 
-// Inject supplies structs that are used as dependencies for building an http.Client.
-// Each object passed to Inject must refer to a struct that embeds fx.In.  It can be the
-// actual struct, a pointer, or a reflect.Type.  If any of the objects passed are not
-// structs that embed fx.In, the fx.App will be short-circuited with an error.
+// MiddlewareChain adds a RoundTripperChain as a client option
+func (c *C) MiddlewareChain(rtc RoundTripperChain) *C {
+	return c.With(func(client *http.Client) error {
+		client.Transport = rtc.Then(client.Transport)
+		return nil
+	})
+}
+
+// Middleware adds several RoundTripperConstructors as a client option
+func (c *C) Middleware(m ...RoundTripperConstructor) *C {
+	return c.MiddlewareChain(
+		NewRoundTripperChain(m...),
+	)
+}
+
+// Inject allows additional components to be supplied to build an http.Client.
 //
-// Each injected struct will appear in the parameter list of the function generated by
-// Unmarshal and UnmarshalKey.  Before the http.Client is presented as a component to
-// the enclosing fx.App, each of these structs is scanned for fields that NewCOption can
-// convert.  Any field that is not an option is ignored, without an error.  That allows
-// one fx.In-style struct to server multiple purposes.
-func (c *C) Inject(in ...interface{}) *C {
-	for _, d := range in {
-		if dependency, ok := arrange.IsIn(d); ok {
-			c.dependencies = append(c.dependencies, dependency.Type())
+// Each dependency supplied via this method must be a struct value that embeds
+// fx.In.  The embedding may be at any arbitrarily nested level.
+//
+// When unmarshaling occurs, these structs are injected via the normal usage
+// of uber/fx.  Each field of each struct is examined to see if it can be converted
+// into something that affects the construction of an http.Client.  Any field that
+// cannot be converted is silently ignored, which allows a single struct to
+// be used for more than one purpose.
+func (c *C) Inject(deps ...interface{}) *C {
+	for _, d := range deps {
+		if dt, ok := arrange.IsIn(d); ok {
+			c.dependencies = append(c.dependencies, dt)
 		} else {
 			c.errs = append(c.errs,
-				fmt.Errorf("%T does not refer to a struct that embeds fx.In", d),
+				fmt.Errorf("%s is not an fx.In struct", dt),
 			)
 		}
 	}
@@ -247,109 +224,106 @@ func (c *C) Inject(in ...interface{}) *C {
 	return c
 }
 
-// unmarshalOptions returns a slice of COptions (possibly) created from both this builder's context
-// and the supplied dependencies, if any.  if the supplied dependencies slice is empty, this
-// method simply returns s.options.
-func (c *C) unmarshalOptions(p fx.Printer, dependencies []reflect.Value) (options []COption) {
-	if len(dependencies) > 0 {
-		p = arrange.NewModulePrinter(Module, p)
+// unmarshalFuncOf determines the function signature for Unmarshal or UnmarshalKey.
+// The first input parameter is always a ClientIn struct.  Following that will be any
+// fx.In structs, and following that will be any simple dependencies.
+func (c *C) unmarshalFuncOf() reflect.Type {
+	return reflect.FuncOf(
+		// inputs
+		append(
+			[]reflect.Type{reflect.TypeOf(ClientIn{})},
+			c.dependencies...,
+		),
 
-		// visit struct fields in dependencies, building SOptions where possible
-		for _, d := range dependencies {
-			arrange.VisitFields(
-				d,
-				func(f reflect.StructField, fv reflect.Value) arrange.VisitResult {
-					if arrange.IsDependency(f, fv) {
-						// ignore struct fields that aren't applicable
-						// this allows callers to reuse fx.In structs for different purposes
-						raw := fv.Interface()
-						if co, err := NewCOption(raw); err == nil {
-							p.Printf("CLIENT INJECT => %s.%s %s", d.Type(), f.Name, f.Tag)
-							options = append(options, co)
+		// outputs
+		[]reflect.Type{
+			reflect.TypeOf((*http.Client)(nil)),
+			arrange.ErrorType(),
+		},
+
+		false, // not variadic
+	)
+}
+
+// unmarshal does all the heavy lifting of unmarshaling a ClientFactory and creating an *http.Client.
+// If this method does not return an error, it will have bound the client's CloseIdleConnections
+// to the shutdown of the enclosing fx.App.
+func (c *C) unmarshal(u func(arrange.Unmarshaler, interface{}) error, inputs []reflect.Value) (client *http.Client, err error) {
+	if len(c.errs) > 0 {
+		err = multierr.Combine(c.errs...)
+		return
+	}
+
+	var (
+		target   = arrange.NewTarget(c.prototype)
+		clientIn = inputs[0].Interface().(ClientIn)
+	)
+
+	if err = u(clientIn.Unmarshaler, target.UnmarshalTo.Interface()); err != nil {
+		return
+	}
+
+	factory := target.Component.Interface().(ClientFactory)
+	if client, err = factory.NewClient(); err != nil {
+		return
+	}
+
+	p := arrange.NewModulePrinter(Module, clientIn.Printer)
+	var optionErrs []error
+	for _, dependency := range inputs[1:] {
+		arrange.VisitDependencies(
+			dependency,
+			func(f reflect.StructField, fv reflect.Value) bool {
+				if arrange.IsInjected(f, fv) {
+					// ignore dependencies that can't be converted
+					if co := newClientOption(fv.Interface()); co != nil {
+						p.Printf("CLIENT INJECT => %s.%s %s", dependency.Type(), f.Name, f.Tag)
+						if err = co(client); err != nil {
+							optionErrs = append(optionErrs, err)
 						}
 					}
+				}
 
-					return arrange.VisitContinue
-				},
-			)
+				return true
+			},
+		)
+	}
+
+	for _, o := range c.options {
+		if err = o(client); err != nil {
+			optionErrs = append(optionErrs, err)
 		}
+	}
 
-		// locally defined options execute after injected options, allowing
-		// local options to override global ones
-		options = append(options, c.options...)
+	if len(optionErrs) > 0 {
+		err = multierr.Combine(optionErrs...)
+		client = nil
 	} else {
-		// optimization: for the case with no dependencies, don't bother
-		// making a copy and just return the builder's options as is
-		options = c.options
+		// if all went well, ensure that the client closes idle connections
+		// when the fx.App is shutdown
+		clientIn.Lifecycle.Append(fx.Hook{
+			OnStop: func(context.Context) error {
+				client.CloseIdleConnections()
+				return nil
+			},
+		})
 	}
 
 	return
 }
 
-// applyUnmarshal does all the heavy-lifting of creating an http.Client and applying any options.
-// The returned function will always return the tuple of (*http.Client, error), and its first input
-// parameter will always be a ClientIn.  Subsequent input parameters, if necessary, will be the
-// dependencies supplied during building.
-func (c *C) applyUnmarshal(uf func(arrange.Unmarshaler, interface{}) error) interface{} {
+// makeUnmarshalFunc dynamically creates the function to be passed as a constructor to the fx.App.
+func (c *C) makeUnmarshalFunc(u func(arrange.Unmarshaler, interface{}) error) reflect.Value {
 	return reflect.MakeFunc(
-		reflect.FuncOf(
-			// inputs
-			append(
-				[]reflect.Type{reflect.TypeOf(ClientIn{})},
-				c.dependencies...,
-			),
-
-			// outputs
-			[]reflect.Type{
-				reflect.TypeOf((*http.Client)(nil)),
-				arrange.ErrorType(),
-			},
-
-			false, // not variadic
-		),
+		c.unmarshalFuncOf(),
 		func(inputs []reflect.Value) []reflect.Value {
-			var (
-				client *http.Client
-				err    error
-			)
-
-			if len(c.errs) > 0 {
-				err = multierr.Combine(c.errs...)
-			} else {
-				target := arrange.NewTarget(c.prototype)
-				in := inputs[0].Interface().(ClientIn)
-				err = uf(in.Unmarshaler, target.UnmarshalTo.Interface())
-				if err == nil {
-					factory := target.Component.Interface().(ClientFactory)
-					client, err = factory.NewClient()
-				}
-
-				if err == nil {
-					for _, co := range c.unmarshalOptions(in.Printer, inputs[1:]) {
-						err = co(client)
-						if err != nil {
-							break
-						}
-					}
-				}
-
-				if err == nil {
-					// if everything's good, ensure that idle connections are closed on shutdown
-					in.Lifecycle.Append(fx.Hook{
-						OnStop: func(context.Context) error {
-							client.CloseIdleConnections()
-							return nil
-						},
-					})
-				}
-			}
-
+			client, err := c.unmarshal(u, inputs)
 			return []reflect.Value{
 				reflect.ValueOf(client),
 				arrange.NewErrorValue(err),
 			}
 		},
-	).Interface()
+	)
 }
 
 // Unmarshal creates a function at runtime that produces an *http.Client using this builder's
@@ -361,11 +335,11 @@ func (c *C) applyUnmarshal(uf func(arrange.Unmarshaler, interface{}) error) inte
 // The dependencies will be each of the structs passed to Inject in order.  If no Inject dependencies
 // were supplied, then the returned function will only accept a ClientIn as its sole input parameter.
 func (c *C) Unmarshal() interface{} {
-	return c.applyUnmarshal(
+	return c.makeUnmarshalFunc(
 		func(u arrange.Unmarshaler, v interface{}) error {
 			return u.Unmarshal(v)
 		},
-	)
+	).Interface()
 }
 
 // Provide is the simplest way to leverage a client builder.  This method invokes Unmarshal
@@ -379,11 +353,11 @@ func (c *C) Provide() fx.Option {
 // UnmarshalKey is the same as Unmarshal, save that it unmarshals the ClientFactory from
 // a specific configuration key.
 func (c *C) UnmarshalKey(key string) interface{} {
-	return c.applyUnmarshal(
+	return c.makeUnmarshalFunc(
 		func(u arrange.Unmarshaler, v interface{}) error {
 			return u.UnmarshalKey(key, v)
 		},
-	)
+	).Interface()
 }
 
 // ProvideKey unmarshals from a given configuration key using UnmarshalKey.  It then returns

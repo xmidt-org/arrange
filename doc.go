@@ -14,7 +14,7 @@
 //
 //   v := viper.New()
 //   fx.New(
-//     arrange.Supply(v), // you can use fx.Supply, but this has some extra features
+//     arrange.FromViper(v),
 //     arrange.Provide(Config{}), // this could also be a pointer
 //     fx.Invoke(
 //       func(cfg Config) error {
@@ -25,7 +25,6 @@
 //
 // Configuration keys are also supported:
 //
-//
 //   type Components struct {
 //     fx.In
 //     Config Config `name:"server.main"`
@@ -33,7 +32,7 @@
 //
 //   v := viper.New()
 //   fx.New(
-//     arrange.Supply(v),
+//     arrange.ForViper(v),
 //     arrange.ProvideKey("server.main", Config{}), // this will be a named component
 //     fx.Invoke(
 //       func(c Components) error {
@@ -69,7 +68,7 @@
 //   //     address: "localhost:8500"
 //
 //   fx.New(
-//     arrange.Supply(v),
+//     arrange.ForViper(v),
 //     arrange.Keys(
 //       "server.main",
 //       "server.health",
@@ -115,7 +114,7 @@
 //   l := zap.NewDevelopment()
 //   fx.New(
 //     // All DI container output is sent to the given logger at the INFO level
-//     arrange.LoggerFunc(l.SugaredLogger().Infof),
+//     arrange.LoggerFunc(l.Sugar().Infof),
 //
 //     // carry on ...
 //   )

@@ -26,13 +26,6 @@ address: ":0"
 	v.SetConfigType("yaml")
 	v.ReadConfig(strings.NewReader(yaml))
 
-	type ServerDependencies struct {
-		fx.In
-
-		L ListenerConstructor
-		M mux.MiddlewareFunc
-	}
-
 	type Handlers struct {
 		fx.In
 
@@ -61,11 +54,6 @@ address: ":0"
 					})
 				},
 			},
-			func() ListenerConstructor {
-				// we do this so we can grab the server's URL
-				// you can imagine any net.Listener decoration you want, or none at all
-				return CaptureListenAddress(address)
-			},
 			func() mux.MiddlewareFunc {
 				return func(next http.Handler) http.Handler {
 					return http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
@@ -75,7 +63,11 @@ address: ":0"
 				}
 			},
 			Server().
-				Inject(ServerDependencies{}). // this will include the middleware and listen decoration
+				CaptureListenAddress(address).
+				Inject(struct {
+					fx.In
+					M mux.MiddlewareFunc
+				}{}).
 				Unmarshal(),
 		),
 		fx.Invoke(
@@ -92,15 +84,7 @@ address: ":0"
 	}
 
 	defer app.Stop(context.Background())
-	var serverURL string
-	select {
-	case a := <-address:
-		serverURL = "http://" + a.String()
-	case <-time.After(time.Second):
-		fmt.Fprintf(os.Stderr, "No address captured")
-		return
-	}
-
+	serverURL := "http://" + MustGetListenAddress(address, time.After(time.Second)).String()
 	if response, err := http.Get(serverURL + "/api"); err == nil {
 		io.Copy(os.Stdout, response.Body)
 		response.Body.Close()
@@ -130,17 +114,6 @@ servers:
 	v.SetConfigType("yaml")
 	v.ReadConfig(strings.NewReader(yaml))
 
-	type ServerDependencies struct {
-		fx.In
-
-		L ListenerConstructor
-
-		// NOTE: the order in which middleware is applied is the
-		// same as the declarted order in this struct
-		M1 mux.MiddlewareFunc `name:"first"`
-		M2 mux.MiddlewareFunc `name:"second"`
-	}
-
 	type RouterIn struct {
 		fx.In
 
@@ -157,11 +130,6 @@ servers:
 				return http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
 					response.Write([]byte("Baking the API cookies\n"))
 				})
-			},
-			func() ListenerConstructor {
-				// we do this so we can grab the server's URL
-				// you can imagine any net.Listener decoration you want, or none at all
-				return CaptureListenAddress(address)
 			},
 			fx.Annotated{
 				Name: "first",
@@ -188,7 +156,15 @@ servers:
 		),
 		// this is outside fx.Provide(...)
 		Server().
-			Inject(ServerDependencies{}). // this will include the middleware and listen decoration
+			Inject(struct {
+				fx.In
+
+				// NOTE: the order in which middleware is applied is the
+				// same as the declared order in this struct
+				M1 mux.MiddlewareFunc `name:"first"`
+				M2 mux.MiddlewareFunc `name:"second"`
+			}{}).
+			CaptureListenAddress(address).
 			ProvideKey("servers.main"),
 		fx.Invoke(
 			func(in RouterIn) {
@@ -203,15 +179,7 @@ servers:
 	}
 
 	defer app.Stop(context.Background())
-	var serverURL string
-	select {
-	case a := <-address:
-		serverURL = "http://" + a.String()
-	case <-time.After(time.Second):
-		fmt.Fprintf(os.Stderr, "No address captured")
-		return
-	}
-
+	serverURL := "http://" + MustGetListenAddress(address, time.After(time.Second)).String()
 	if response, err := http.Get(serverURL + "/api"); err == nil {
 		io.Copy(os.Stdout, response.Body)
 		response.Body.Close()

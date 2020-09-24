@@ -1,6 +1,8 @@
 package arrangehttp
 
-import "net/http"
+import (
+	"net/http"
+)
 
 // RoundTripperFunc is a function type that implements http.RoundTripper.
 // Useful for simple decoration and testing.
@@ -69,4 +71,11 @@ func (lc RoundTripperChain) Then(next http.RoundTripper) http.RoundTripper {
 	}
 
 	return next
+}
+
+// ClientMiddlewareChain is the strategy interface for decorating an http.RoundTripper.
+// RoundTripperChain in this package implements this interface.  Other infrastructure,
+// such as metrics libraries, often provide types that implement this interface as well.
+type ClientMiddlewareChain interface {
+	Then(http.RoundTripper) http.RoundTripper
 }

@@ -245,6 +245,128 @@ func TestCaptureListenAddress(t *testing.T) {
 	}
 }
 
+func testWaitForListenAddressSuccess(t *testing.T) {
+	var (
+		assert = assert.New(t)
+
+		expected = &net.IPAddr{
+			IP:   []byte{127, 0, 0, 1},
+			Zone: "test",
+		}
+
+		address = make(chan net.Addr, 1)
+		timer   = make(chan time.Time, 1)
+		done    = make(chan struct{})
+	)
+
+	go func() {
+		defer close(done)
+		a, ok := WaitForListenAddress(address, timer)
+		assert.Equal(expected, a)
+		assert.True(ok)
+	}()
+
+	address <- expected
+	select {
+	case <-done:
+		// passing
+	case <-time.After(time.Second):
+		assert.Fail("did not receive test result")
+	}
+}
+
+func testWaitForListenAddressTimeout(t *testing.T) {
+	var (
+		assert = assert.New(t)
+
+		address = make(chan net.Addr, 1)
+		timer   = make(chan time.Time, 1)
+		done    = make(chan struct{})
+	)
+
+	go func() {
+		defer close(done)
+		a, ok := WaitForListenAddress(address, timer)
+		assert.Nil(a)
+		assert.False(ok)
+	}()
+
+	timer <- time.Time{}
+	select {
+	case <-done:
+		// passing
+	case <-time.After(time.Second):
+		assert.Fail("did not receive test result")
+	}
+}
+
+func TestWaitForListenAddress(t *testing.T) {
+	t.Run("Success", testWaitForListenAddressSuccess)
+	t.Run("Timeout", testWaitForListenAddressTimeout)
+}
+
+func testMustGetListenAddressSuccess(t *testing.T) {
+	var (
+		assert = assert.New(t)
+
+		expected = &net.IPAddr{
+			IP:   []byte{127, 0, 0, 1},
+			Zone: "test",
+		}
+
+		address = make(chan net.Addr, 1)
+		timer   = make(chan time.Time, 1)
+		done    = make(chan struct{})
+	)
+
+	go func() {
+		defer close(done)
+
+		assert.NotPanics(func() {
+			a := MustGetListenAddress(address, timer)
+			assert.Equal(expected, a)
+		})
+	}()
+
+	address <- expected
+	select {
+	case <-done:
+		// passing
+	case <-time.After(time.Second):
+		assert.Fail("did not receive test result")
+	}
+}
+
+func testMustGetListenAddressTimeout(t *testing.T) {
+	var (
+		assert = assert.New(t)
+
+		address = make(chan net.Addr, 1)
+		timer   = make(chan time.Time, 1)
+		done    = make(chan struct{})
+	)
+
+	go func() {
+		defer close(done)
+		assert.Panics(func() {
+			MustGetListenAddress(address, timer)
+		})
+	}()
+
+	timer <- time.Time{}
+	select {
+	case <-done:
+		// passing
+	case <-time.After(time.Second):
+		assert.Fail("did not receive test result")
+	}
+}
+
+func TestMustGetListenAddress(t *testing.T) {
+	t.Run("Success", testMustGetListenAddressSuccess)
+	t.Run("Timeout", testMustGetListenAddressTimeout)
+}
+
 type testShutdowner struct {
 	Called bool
 }

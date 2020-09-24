@@ -1,7 +1,9 @@
 package arrangehttp
 
 import (
+	"errors"
 	"net/http"
+	"strconv"
 	"testing"
 	"time"
 
@@ -144,6 +146,88 @@ func testClientConfigError(t *testing.T) {
 func TestClientConfig(t *testing.T) {
 	t.Run("Basic", testClientConfigBasic)
 	t.Run("Error", testClientConfigError)
+}
+
+func testClientOptionsEmpty(t *testing.T) {
+	assert := assert.New(t)
+	assert.NoError(ClientOptions()(nil))
+}
+
+func testClientOptionsSuccess(t *testing.T) {
+	for _, count := range []int{0, 1, 2, 5} {
+		t.Run(strconv.Itoa(count), func(t *testing.T) {
+			var (
+				assert = assert.New(t)
+
+				expectedClient = &http.Client{
+					Timeout: 125 * time.Minute,
+				}
+
+				options       []ClientOption
+				expectedOrder []int
+				actualOrder   []int
+			)
+
+			for i := 0; i < count; i++ {
+				expectedOrder = append(expectedOrder, i)
+
+				i := i
+				options = append(options, func(actualClient *http.Client) error {
+					assert.Equal(expectedClient, actualClient)
+					actualOrder = append(actualOrder, i)
+					return nil
+				})
+			}
+
+			assert.NoError(
+				ClientOptions(options...)(expectedClient),
+			)
+
+			assert.Equal(expectedOrder, actualOrder)
+		})
+	}
+}
+
+func testClientOptionsFailure(t *testing.T) {
+	var (
+		assert = assert.New(t)
+
+		expectedClient = &http.Client{
+			Timeout: 45 * time.Second,
+		}
+
+		expectedErr = errors.New("expected")
+		firstCalled bool
+
+		co = ClientOptions(
+			func(actualClient *http.Client) error {
+				firstCalled = true
+				assert.Equal(expectedClient, actualClient)
+				return nil
+			},
+			func(actualClient *http.Client) error {
+				assert.Equal(expectedClient, actualClient)
+				return expectedErr
+			},
+			func(actualClient *http.Client) error {
+				assert.Fail("This option should not have been called")
+				return errors.New("This option should not have been called")
+			},
+		)
+	)
+
+	assert.Equal(
+		expectedErr,
+		co(expectedClient),
+	)
+
+	assert.True(firstCalled)
+}
+
+func TestClientOptions(t *testing.T) {
+	t.Run("Empty", testClientOptionsEmpty)
+	t.Run("Success", testClientOptionsSuccess)
+	t.Run("Failure", testClientOptionsFailure)
 }
 
 func TestClient(t *testing.T) {

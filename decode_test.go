@@ -157,6 +157,53 @@ func TestMerge(t *testing.T) {
 	)
 }
 
+func TestDefaultDecodeHooks(t *testing.T) {
+	var (
+		assert  = assert.New(t)
+		require = require.New(t)
+
+		config mapstructure.DecoderConfig
+	)
+
+	const timeString = "1998-11-13T12:11:56Z"
+
+	expectedTime, err := time.Parse(time.RFC3339, timeString)
+	require.NoError(err)
+
+	DefaultDecodeHooks(&config)
+	require.NotNil(config.DecodeHook)
+
+	result, err := mapstructure.DecodeHookExec(
+		config.DecodeHook,
+		reflect.TypeOf(""),
+		reflect.TypeOf(time.Duration(0)),
+		"15s",
+	)
+
+	assert.Equal(15*time.Second, result)
+	assert.NoError(err)
+
+	result, err = mapstructure.DecodeHookExec(
+		config.DecodeHook,
+		reflect.TypeOf(""),
+		reflect.TypeOf([]string{}),
+		"a,b,c",
+	)
+
+	assert.Equal([]string{"a", "b", "c"}, result)
+	assert.NoError(err)
+
+	result, err = mapstructure.DecodeHookExec(
+		config.DecodeHook,
+		reflect.TypeOf(""),
+		reflect.TypeOf(time.Time{}),
+		timeString,
+	)
+
+	assert.Equal(expectedTime, result)
+	assert.NoError(err)
+}
+
 func testComposeDecodeHooksInitiallyNil(t *testing.T) {
 	for _, length := range []int{1, 2, 5} {
 		t.Run(fmt.Sprintf("len=%d", length), func(t *testing.T) {

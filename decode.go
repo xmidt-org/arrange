@@ -83,6 +83,21 @@ func Merge(opts ...[]viper.DecoderConfigOption) viper.DecoderConfigOption {
 	}
 }
 
+// DefaultDecodeHooks is a viper option that sets the decode hooks to more useful defaults.
+// This includes the ones set by viper itself, plus hooks defined by this package.
+//
+// Note that you can still use ComposeDecodeHooks with this option as long as you use
+// it after this one.
+//
+// See https://pkg.go.dev/github.com/spf13/viper#DecodeHook
+func DefaultDecodeHooks(dc *mapstructure.DecoderConfig) {
+	dc.DecodeHook = mapstructure.ComposeDecodeHookFunc(
+		mapstructure.StringToTimeDurationHookFunc(),
+		mapstructure.StringToSliceHookFunc(","),
+		TextUnmarshalerHookFunc,
+	)
+}
+
 // ComposeDecodeHooks adds more decode hook functions to mapstructure's DecoderConfig.  If
 // there are already decode hooks, they are preserved and the given hooks are appended.
 //

@@ -1,6 +1,9 @@
 package arrange
 
 import (
+	"encoding"
+	"reflect"
+
 	"github.com/mitchellh/mapstructure"
 	"github.com/spf13/viper"
 )
@@ -78,4 +81,79 @@ func Merge(opts ...[]viper.DecoderConfigOption) viper.DecoderConfigOption {
 			}
 		}
 	}
+}
+
+// ComposeDecodeHooks adds more decode hook functions to mapstructure's DecoderConfig.  If
+// there are already decode hooks, they are preserved and the given hooks are appended.
+//
+// See https://pkg.go.dev/github.com/mitchellh/mapstructure#ComposeDecodeHookFunc
+func ComposeDecodeHooks(fs ...mapstructure.DecodeHookFunc) viper.DecoderConfigOption {
+	return func(dc *mapstructure.DecoderConfig) {
+		if dc.DecodeHook != nil {
+			dc.DecodeHook = mapstructure.ComposeDecodeHookFunc(
+				append([]mapstructure.DecodeHookFunc{dc.DecodeHook},
+					fs...,
+				)...,
+			)
+		} else {
+			dc.DecodeHook = mapstructure.ComposeDecodeHookFunc(fs...)
+		}
+	}
+}
+
+var (
+	textUnmarshalerType = reflect.TypeOf((*encoding.TextUnmarshaler)(nil)).Elem()
+)
+
+// TextUnmarshalerHookFunc is a mapstructure.DecodeHookFunc that honors the destination
+// type's encoding.TextUnmarshaler implementation, using it to convert the src.  The src
+// parameter must be a string, or else this function does not attempt any conversion.
+//
+// The to type must be one of two kinds:
+//
+// First, to can be a non-pointer type which implements encoding.TextUnmarshaler through a
+// pointer receiver.  The time.Time type is an example of this.  In this case, this function
+// uses reflect.New to create a new instance and invokes UnmarshalText through that pointer.
+// The pointer's element is returned, along with any error.
+//
+// Second, to can be a pointer type which itself implements encoding.TextUnmarshaler.  In this
+// case reflect.New is used to create a new instances, then UnmarshalText is invoked through
+// that pointer.  That pointer is then returned, along with any error.
+//
+// This function explicitly does not support more than one level of indirection.  For example,
+// **T where *T implements encoding.TextUnmarshaler.
+//
+// In any case where this function does no conversion, it returns src and a nil error.  This
+// is the contract required by mapstructure.DecodeHookFunc.
+func TextUnmarshalerHookFunc(_, to reflect.Type, src interface{}) (interface{}, error) {
+	if text, ok := src.(string); ok {
+		switch {
+		// the "to" type is not a pointer and a pointer to "to" implements encoding.TextUnmarshaler
+		// this is by far the most common case.  For example:
+		//
+		// struct {
+		//   Time time.Time // non-pointer, but *time.Time implements encoding.TextUnmarshaler
+		// }
+		case to.Kind() != reflect.Ptr && reflect.PtrTo(to).Implements(textUnmarshalerType):
+			ptr := reflect.New(to)
+			tu := ptr.Interface().(encoding.TextUnmarshaler)
+			err := tu.UnmarshalText([]byte(text))
+			return ptr.Elem().Interface(), err
+
+		// the "to" type is a pointer to a value and it implements encoding.TextUnmarshaler
+		// commonly occurs with "optional" properties, where a nil value means
+		// it wasn't set
+		//
+		// struct {
+		//   Time *time.Time
+		// }
+		case to.Kind() == reflect.Ptr && to.Elem().Kind() != reflect.Ptr && to.Implements(textUnmarshalerType):
+			ptr := reflect.New(to.Elem()) // this will be the same type as "to"
+			tu := ptr.Interface().(encoding.TextUnmarshaler)
+			err := tu.UnmarshalText([]byte(text))
+			return tu, err
+		}
+	}
+
+	return src, nil
 }

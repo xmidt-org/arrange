@@ -7,6 +7,7 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 ## [Unreleased]
 - added a viper option for aggregating decode hooks
 - added a viper option for decoding encoding.TextUnmarshaler implementations
+- added a set of default decode hooks
 
 ## [v0.1.7]
 - added sonar integration

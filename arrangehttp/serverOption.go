@@ -2,6 +2,7 @@ package arrangehttp
 
 import (
 	"context"
+	"log"
 	"net"
 	"net/http"
 
@@ -112,6 +113,15 @@ func ConnContext(builders ...func(context.Context, net.Conn) context.Context) Se
 			}
 		}
 
+		return nil
+	}
+}
+
+// ErrorLog defines a ServerOption that sets http.Server.ErrorLog.  This option overwrites
+// any previous value for ErrorLog, even if its l parameter is nil.
+func ErrorLog(l *log.Logger) ServerOption {
+	return func(s *http.Server) error {
+		s.ErrorLog = l
 		return nil
 	}
 }

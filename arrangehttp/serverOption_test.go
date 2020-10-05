@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io/ioutil"
+	"log"
 	"net"
 	"net/http"
 	"strconv"
@@ -278,4 +280,21 @@ func testConnContextWithBuilders(t *testing.T) {
 func TestConnContext(t *testing.T) {
 	t.Run("NoBuilders", testConnContextNoBuilders)
 	t.Run("WithBuilders", testConnContextWithBuilders)
+}
+
+func TestErrorLog(t *testing.T) {
+	var (
+		assert = assert.New(t)
+		logger = log.New(ioutil.Discard, "", 0)
+		server http.Server
+	)
+
+	ErrorLog(nil)(&server)
+	assert.Nil(server.ErrorLog)
+
+	ErrorLog(logger)(&server)
+	assert.Equal(logger, server.ErrorLog)
+
+	ErrorLog(nil)(&server)
+	assert.Nil(server.ErrorLog)
 }

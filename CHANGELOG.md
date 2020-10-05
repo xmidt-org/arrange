@@ -6,6 +6,7 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 - added server options for building contexts
+- added ErrorLog server option
 
 ## [v0.1.8]
 - added a viper option for aggregating decode hooks

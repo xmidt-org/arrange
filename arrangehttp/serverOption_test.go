@@ -298,3 +298,65 @@ func TestErrorLog(t *testing.T) {
 	ErrorLog(nil)(&server)
 	assert.Nil(server.ErrorLog)
 }
+
+func testConnStateNoClosures(t *testing.T) {
+	var (
+		assert = assert.New(t)
+		server http.Server
+	)
+
+	assert.NoError(ConnState()(&server))
+	assert.Nil(server.ConnState)
+}
+
+func testConnStateWithClosures(t *testing.T) {
+	type Result struct {
+		Address net.Addr
+		State   http.ConnState
+	}
+
+	for _, count := range []int{1, 2, 5} {
+		t.Run(fmt.Sprintf("count=%d", count), func(t *testing.T) {
+			var (
+				assert   = assert.New(t)
+				require  = require.New(t)
+				server   http.Server
+				closures []func(net.Conn, http.ConnState)
+
+				expected []Result
+				actual   []Result
+			)
+
+			conn, w := net.Pipe()
+			defer conn.Close()
+			defer w.Close()
+
+			for i := 0; i < count; i++ {
+				expected = append(expected, Result{
+					Address: conn.LocalAddr(),
+					State:   http.StateHijacked,
+				})
+
+				closures = append(closures, func(c net.Conn, cs http.ConnState) {
+					actual = append(actual, Result{
+						Address: c.LocalAddr(),
+						State:   cs,
+					})
+				})
+			}
+
+			require.NoError(ConnState(closures...)(&server))
+			require.NotNil(server.ConnState)
+
+			server.ConnState(conn, http.StateHijacked)
+
+			// verify that each closure was called
+			assert.Equal(expected, actual)
+		})
+	}
+}
+
+func TestConnState(t *testing.T) {
+	t.Run("NoClosures", testConnStateNoClosures)
+	t.Run("WithClosures", testConnStateWithClosures)
+}

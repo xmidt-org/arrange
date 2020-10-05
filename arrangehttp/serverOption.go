@@ -14,6 +14,10 @@ import (
 // This type exists primarily to make fx.Provide constructors more concise.
 type ServerOption func(*http.Server) error
 
+// NopServerOption is a ServerOption that does nothing.  Used mainly in cases where
+// no input is supplied to something that would otherwise build an option.
+func NopServerOption(*http.Server) error { return nil }
+
 // ServerMiddlewareChain is a strategy for decorating an http.Handler.  Various
 // packages implement this interface, such as justinas/alice.
 type ServerMiddlewareChain interface {
@@ -78,16 +82,18 @@ func RouterOptions(o ...RouterOption) RouterOption {
 //
 // If builders is empty, the returned option does nothing.
 func BaseContext(builders ...func(context.Context, net.Listener) context.Context) ServerOption {
-	return func(s *http.Server) error {
-		if len(builders) > 0 {
-			s.BaseContext = func(l net.Listener) context.Context {
-				ctx := context.Background()
-				for _, f := range builders {
-					ctx = f(ctx, l)
-				}
+	if len(builders) == 0 {
+		return NopServerOption
+	}
 
-				return ctx
+	return func(s *http.Server) error {
+		s.BaseContext = func(l net.Listener) context.Context {
+			ctx := context.Background()
+			for _, f := range builders {
+				ctx = f(ctx, l)
 			}
+
+			return ctx
 		}
 
 		return nil
@@ -102,15 +108,17 @@ func BaseContext(builders ...func(context.Context, net.Listener) context.Context
 //
 // If builders is empty, the returned option does nothing.
 func ConnContext(builders ...func(context.Context, net.Conn) context.Context) ServerOption {
-	return func(s *http.Server) error {
-		if len(builders) > 0 {
-			s.ConnContext = func(ctx context.Context, c net.Conn) context.Context {
-				for _, f := range builders {
-					ctx = f(ctx, c)
-				}
+	if len(builders) == 0 {
+		return NopServerOption
+	}
 
-				return ctx
+	return func(s *http.Server) error {
+		s.ConnContext = func(ctx context.Context, c net.Conn) context.Context {
+			for _, f := range builders {
+				ctx = f(ctx, c)
 			}
+
+			return ctx
 		}
 
 		return nil
@@ -122,6 +130,24 @@ func ConnContext(builders ...func(context.Context, net.Conn) context.Context) Se
 func ErrorLog(l *log.Logger) ServerOption {
 	return func(s *http.Server) error {
 		s.ErrorLog = l
+		return nil
+	}
+}
+
+// ConnState defines a ServerOption that sets http.Server.ConnState.  Each closure
+// is invoked in order.  If no closures are defined, the returned option does nothing.
+func ConnState(cf ...func(net.Conn, http.ConnState)) ServerOption {
+	if len(cf) == 0 {
+		return NopServerOption
+	}
+
+	return func(s *http.Server) error {
+		s.ConnState = func(c net.Conn, cs http.ConnState) {
+			for _, f := range cf {
+				f(c, cs)
+			}
+		}
+
 		return nil
 	}
 }

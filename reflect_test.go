@@ -693,3 +693,31 @@ func TestTryConvert(t *testing.T) {
 	t.Run("Interface", testTryConvertInterface)
 	t.Run("Value", testTryConvertValue)
 }
+
+type Attributes interface {
+	Get(string) (interface{}, bool)
+}
+
+type BasicAttributes map[string]interface{}
+
+func (ba BasicAttributes) Get(key string) (interface{}, bool) {
+	v, ok := ba[key]
+	return v, ok
+}
+
+func TestBascule(t *testing.T) {
+	var (
+		assert                 = assert.New(t)
+		attributes interface{} = BasicAttributes{}
+		result     interface{}
+	)
+
+	assert.True(TryConvert(
+		attributes,
+		func(value Attributes) {
+			result = value
+		},
+	))
+
+	assert.Equal(attributes, result)
+}

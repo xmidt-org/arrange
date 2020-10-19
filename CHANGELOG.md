@@ -6,6 +6,7 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 - Unmarshaler is now optional for the arrangehttp package
+- Configurable response headers for both clients and servers 
 
 ## [v0.1.9]
 - added server options for building contexts

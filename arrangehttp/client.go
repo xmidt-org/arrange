@@ -9,6 +9,7 @@ import (
 
 	"github.com/xmidt-org/arrange"
 	"github.com/xmidt-org/arrange/arrangetls"
+	"github.com/xmidt-org/httpaux"
 	"go.uber.org/fx"
 	"go.uber.org/multierr"
 )
@@ -66,6 +67,7 @@ func (tc TransportConfig) NewTransport(c *arrangetls.Config) (transport *http.Tr
 type ClientConfig struct {
 	Timeout   time.Duration
 	Transport TransportConfig
+	Header    http.Header
 	TLS       *arrangetls.Config
 }
 
@@ -75,7 +77,12 @@ func (cc ClientConfig) NewClient() (client *http.Client, err error) {
 		Timeout: cc.Timeout,
 	}
 
-	client.Transport, err = cc.Transport.NewTransport(cc.TLS)
+	header := httpaux.NewHeader(cc.Header)
+	transport, err := cc.Transport.NewTransport(cc.TLS)
+	if err == nil {
+		client.Transport = header.RoundTrip(transport)
+	}
+
 	return
 }
 

@@ -11,6 +11,7 @@ import (
 	"github.com/gorilla/mux"
 	"github.com/xmidt-org/arrange"
 	"github.com/xmidt-org/arrange/arrangetls"
+	"github.com/xmidt-org/httpaux"
 	"go.uber.org/fx"
 	"go.uber.org/multierr"
 )
@@ -23,31 +24,60 @@ import (
 // over how the net.Listener for a server is created.
 type ServerFactory interface {
 	// NewServer is responsible for creating an http.Server using whatever
-	// information was unmarshaled into this instance.
-	NewServer() (*http.Server, error)
+	// information was unmarshaled into this instance.  The supplied http.Handler
+	// is used as http.Server.Handler, though implementations are free to
+	// decorate it arbitrarily.
+	NewServer(http.Handler) (*http.Server, error)
 }
 
 // ServerConfig is the built-in ServerFactory implementation for this package.
 // This struct can be unmarshaled via Viper, thus allowing an http.Server to
 // be bootstrapped from external configuration.
 type ServerConfig struct {
-	Network           string
-	Address           string
-	ReadTimeout       time.Duration
+	// Network is the tcp network to listen on.  The default is "tcp".
+	Network string
+
+	// Address is the bind address of the server.  If unset, the server binds to
+	// the first port available.  In that case, CaptureListenAddress can be used
+	// to obtain the bind address for the server.
+	Address string
+
+	// ReadTimeout corresponds to http.Server.ReadTimeout
+	ReadTimeout time.Duration
+
+	// ReadHeaderTimeout corresponds to http.Server.ReadHeaderTimeout
 	ReadHeaderTimeout time.Duration
-	WriteTimeout      time.Duration
-	IdleTimeout       time.Duration
-	MaxHeaderBytes    int
-	KeepAlive         time.Duration
-	TLS               *arrangetls.Config
+
+	// WriteTime corresponds to http.Server.WriteTimeout
+	WriteTimeout time.Duration
+
+	// IdleTimeout corresponds to http.Server.IdleTimeout
+	IdleTimeout time.Duration
+
+	// MaxHeaderBytes corresponds to http.Server.MaxHeaderBytes
+	MaxHeaderBytes int
+
+	// KeepAlive corresponds to net.ListenConfig.KeepAlive.  This value is
+	// only used for listeners created via Listen.
+	KeepAlive time.Duration
+
+	// Header supplies HTTP headers to emit on every response from this server
+	Header http.Header
+
+	// TLS is the optional unmarshaled TLS configuration.  If set, the resulting
+	// server will use HTTPS.
+	TLS *arrangetls.Config
 }
 
 // NewServer is the built-in implementation of ServerFactory in this package.
 // This should serve most needs.  Nothing needs to be done to use this implementation.
 // By default, a Fluent Builder chain begun with Server() will use ServerConfig.
-func (sc ServerConfig) NewServer() (server *http.Server, err error) {
+func (sc ServerConfig) NewServer(h http.Handler) (server *http.Server, err error) {
+	header := httpaux.NewHeader(sc.Header)
+
 	server = &http.Server{
 		Addr:              sc.Address,
+		Handler:           header.Then(h),
 		ReadTimeout:       sc.ReadTimeout,
 		ReadHeaderTimeout: sc.ReadHeaderTimeout,
 		WriteTimeout:      sc.WriteTimeout,
@@ -272,13 +302,17 @@ func (s *S) unmarshal(u func(arrange.Unmarshaler, interface{}) error, inputs []r
 	}
 
 	var server *http.Server
+	router = mux.NewRouter()
 	factory := target.Component.Interface().(ServerFactory)
-	if server, err = factory.NewServer(); err != nil {
+	if server, err = factory.NewServer(router); err != nil {
 		return
 	}
 
-	router = mux.NewRouter()
-	server.Handler = router
+	// if the factory did not set a handler, use the router
+	if server.Handler == nil {
+		server.Handler = router
+	}
+
 	var lc ListenerChain
 	var optionErrs []error
 	for _, dependency := range inputs[1:] {

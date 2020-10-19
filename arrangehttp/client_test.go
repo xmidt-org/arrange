@@ -443,6 +443,54 @@ func testClientMiddleware(t *testing.T) {
 	app.RequireStop()
 }
 
+func testClientHeader(t *testing.T) {
+	var (
+		assert  = assert.New(t)
+		require = require.New(t)
+
+		client *http.Client
+	)
+
+	app := fxtest.New(
+		t,
+		arrange.TestLogger(t),
+		Client().
+			ClientFactory(ClientConfig{
+				Header: http.Header{
+					"test1": {"true"},
+					"test2": {"1", "2"},
+				},
+			}).
+			Provide(),
+		fx.Populate(&client),
+	)
+
+	require.NoError(app.Err())
+	app.RequireStart()
+	defer app.Stop(context.Background())
+
+	server := httptest.NewServer(
+		http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+			assert.Equal("/test", request.RequestURI)
+			assert.Equal([]string{"true"}, request.Header["Test1"])
+			assert.Equal([]string{"1", "2"}, request.Header["Test2"])
+			response.WriteHeader(258)
+		}),
+	)
+
+	defer server.Close()
+
+	request, err := http.NewRequest("GET", server.URL+"/test", nil)
+	require.NoError(err)
+
+	response, err := client.Do(request)
+	require.NoError(err)
+	require.NotNil(response)
+	assert.Equal(258, response.StatusCode)
+
+	app.RequireStop()
+}
+
 func testClientNoUnmarshaler(t *testing.T) {
 	var (
 		assert  = assert.New(t)
@@ -479,5 +527,6 @@ func TestClient(t *testing.T) {
 	t.Run("FactoryError", testClientFactoryError)
 	t.Run("OptionError", testClientOptionError)
 	t.Run("Middleware", testClientMiddleware)
+	t.Run("Header", testClientHeader)
 	t.Run("NoUnmarshaler", testClientNoUnmarshaler)
 }

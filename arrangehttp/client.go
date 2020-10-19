@@ -132,9 +132,9 @@ func newClientOption(v interface{}) ClientOption {
 type ClientIn struct {
 	fx.In
 
-	// Unmarshaler is the required arrange Unmarshaler component used to unmarshal
-	// a ClientFactory
-	Unmarshaler arrange.Unmarshaler
+	// Unmarshaler is the optional arrange Unmarshaler component used to unmarshal
+	// a ClientFactory.  If this component is not supplied, the ClientFactory is used as is.
+	Unmarshaler arrange.Unmarshaler `optional:"true"`
 
 	// Printer is the optional fx.Printer used to output informational messages about
 	// client unmarshaling and configuration.  If unset, arrange.DefaultPrinter() is used.
@@ -257,10 +257,16 @@ func (c *C) unmarshal(u func(arrange.Unmarshaler, interface{}) error, inputs []r
 	var (
 		target   = arrange.NewTarget(c.prototype)
 		clientIn = inputs[0].Interface().(ClientIn)
+
+		p = arrange.NewModulePrinter(Module, clientIn.Printer)
 	)
 
-	if err = u(clientIn.Unmarshaler, target.UnmarshalTo.Interface()); err != nil {
-		return
+	if clientIn.Unmarshaler != nil {
+		if err = u(clientIn.Unmarshaler, target.UnmarshalTo.Interface()); err != nil {
+			return
+		}
+	} else {
+		p.Printf("CLIENT => No Unmarshaler supplied")
 	}
 
 	factory := target.Component.Interface().(ClientFactory)
@@ -268,7 +274,6 @@ func (c *C) unmarshal(u func(arrange.Unmarshaler, interface{}) error, inputs []r
 		return
 	}
 
-	p := arrange.NewModulePrinter(Module, clientIn.Printer)
 	var optionErrs []error
 	for _, dependency := range inputs[1:] {
 		arrange.VisitDependencies(

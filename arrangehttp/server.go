@@ -74,9 +74,10 @@ func (sc ServerConfig) Listen(ctx context.Context, s *http.Server) (net.Listener
 type ServerIn struct {
 	fx.In
 
-	// Unmarshaler is the required arrange Unmarshaler component used to unmarshal
-	// a ServerFactory
-	Unmarshaler arrange.Unmarshaler
+	// Unmarshaler is the optional arrange Unmarshaler component used to unmarshal
+	// a ServerFactory.  If this component is not supplied, then the ServerFactory
+	// is used as is.
+	Unmarshaler arrange.Unmarshaler `optional:"true"`
 
 	// Printer is the optional fx.Printer used to output informational messages about
 	// server unmarshaling and configuration.  If unset, arrange.DefaultPrinter() is used.
@@ -258,10 +259,16 @@ func (s *S) unmarshal(u func(arrange.Unmarshaler, interface{}) error, inputs []r
 	var (
 		target   = arrange.NewTarget(s.prototype)
 		serverIn = inputs[0].Interface().(ServerIn)
+
+		p = arrange.NewModulePrinter(Module, serverIn.Printer)
 	)
 
-	if err = u(serverIn.Unmarshaler, target.UnmarshalTo.Interface()); err != nil {
-		return
+	if serverIn.Unmarshaler != nil {
+		if err = u(serverIn.Unmarshaler, target.UnmarshalTo.Interface()); err != nil {
+			return
+		}
+	} else {
+		p.Printf("SERVER => No unmarshaler supplied")
 	}
 
 	var server *http.Server
@@ -273,7 +280,6 @@ func (s *S) unmarshal(u func(arrange.Unmarshaler, interface{}) error, inputs []r
 	router = mux.NewRouter()
 	server.Handler = router
 	var lc ListenerChain
-	p := arrange.NewModulePrinter(Module, serverIn.Printer)
 	var optionErrs []error
 	for _, dependency := range inputs[1:] {
 		arrange.VisitDependencies(

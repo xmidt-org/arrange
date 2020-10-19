@@ -298,7 +298,7 @@ func (s *S) unmarshal(u func(arrange.Unmarshaler, interface{}) error, inputs []r
 			return
 		}
 	} else {
-		p.Printf("SERVER => No unmarshaler supplied")
+		p.Printf("SERVER => No Unmarshaler supplied")
 	}
 
 	var server *http.Server

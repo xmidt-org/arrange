@@ -8,6 +8,7 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"net/http/httptest"
 	"strconv"
 	"testing"
 	"time"
@@ -16,6 +17,47 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+type TestServerMiddlewareChain struct {
+	handlers []func(http.Handler) http.Handler
+}
+
+func (tsmc TestServerMiddlewareChain) Then(next http.Handler) http.Handler {
+	for i := len(tsmc.handlers) - 1; i >= 0; i-- {
+		next = tsmc.handlers[i](next)
+	}
+
+	return next
+}
+
+var _ ServerMiddlewareChain = TestServerMiddlewareChain{}
+
+type TestListener struct {
+	R net.Conn
+	W net.Conn
+}
+
+var _ net.Listener = (*TestListener)(nil)
+
+func NewTestListener() *TestListener {
+	tl := new(TestListener)
+	tl.R, tl.W = net.Pipe()
+	return tl
+}
+
+func (tl *TestListener) Accept() (net.Conn, error) {
+	return tl.R, nil
+}
+
+func (tl *TestListener) Close() error {
+	tl.R.Close()
+	tl.W.Close()
+	return nil
+}
+
+func (tl *TestListener) Addr() net.Addr {
+	return tl.W.RemoteAddr()
+}
 
 func testServerOptionsEmpty(t *testing.T) {
 	assert := assert.New(t)
@@ -359,4 +401,389 @@ func testConnStateWithClosures(t *testing.T) {
 func TestConnState(t *testing.T) {
 	t.Run("NoClosures", testConnStateNoClosures)
 	t.Run("WithClosures", testConnStateWithClosures)
+}
+
+func testNewSOptionUnsupported(t *testing.T) {
+	assert := assert.New(t)
+	assert.Nil(newSOption("unsupported type"))
+}
+
+func testNewSOptionSimple(t *testing.T) {
+	var (
+		assert  = assert.New(t)
+		require = require.New(t)
+
+		expected = new(http.Server)
+		chain    ListenerChain
+
+		literalCalled bool
+		literal       = func(actual *http.Server) error {
+			assert.True(expected == actual)
+			literalCalled = true
+			return nil
+		}
+
+		optionCalled bool
+		option       ServerOption = func(actual *http.Server) error {
+			assert.True(expected == actual)
+			optionCalled = true
+			return nil
+		}
+	)
+
+	so := newSOption(literal)
+	require.NotNil(so)
+	lc, err := so(expected, nil, chain)
+	assert.Equal(chain, lc)
+	assert.NoError(err)
+	assert.True(literalCalled)
+
+	so = newSOption(option)
+	require.NotNil(so)
+	lc, err = so(expected, nil, chain)
+	assert.Equal(chain, lc)
+	assert.NoError(err)
+	assert.True(optionCalled)
+}
+
+func testNewSOptionRouter(t *testing.T) {
+	var (
+		assert  = assert.New(t)
+		require = require.New(t)
+
+		expected = new(mux.Router)
+		chain    ListenerChain
+
+		literalCalled bool
+		literal       = func(actual *mux.Router) error {
+			assert.True(expected == actual)
+			literalCalled = true
+			return nil
+		}
+
+		optionCalled bool
+		option       RouterOption = func(actual *mux.Router) error {
+			assert.True(expected == actual)
+			optionCalled = true
+			return nil
+		}
+	)
+
+	so := newSOption(literal)
+	require.NotNil(so)
+	lc, err := so(nil, expected, chain)
+	assert.Equal(chain, lc)
+	assert.NoError(err)
+	assert.True(literalCalled)
+
+	so = newSOption(option)
+	require.NotNil(so)
+	lc, err = so(nil, expected, chain)
+	assert.Equal(chain, lc)
+	assert.NoError(err)
+	assert.True(optionCalled)
+}
+
+func testNewSOptionMiddleware(t *testing.T) {
+	type TestConstructor func(http.Handler) http.Handler
+
+	var (
+		assert  = assert.New(t)
+		require = require.New(t)
+
+		literal = func(next http.Handler) http.Handler {
+			return http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+				response.Header().Set("Literal", "true")
+				next.ServeHTTP(response, request)
+			})
+		}
+
+		option TestConstructor = func(next http.Handler) http.Handler {
+			return http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+				response.Header().Set("TestConstructor", "true")
+				next.ServeHTTP(response, request)
+			})
+		}
+
+		handler = http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+			response.WriteHeader(267)
+		})
+	)
+
+	so := newSOption(literal)
+	require.NotNil(so)
+	router := new(mux.Router)
+	_, err := so(nil, router, ListenerChain{})
+	assert.NoError(err)
+	router.Handle("/", handler)
+	response := httptest.NewRecorder()
+	request := httptest.NewRequest("GET", "/", nil)
+	router.ServeHTTP(response, request)
+	assert.Equal(267, response.Code)
+	assert.Equal("true", response.HeaderMap.Get("Literal"))
+
+	so = newSOption(option)
+	require.NotNil(so)
+	router = new(mux.Router)
+	_, err = so(nil, router, ListenerChain{})
+	assert.NoError(err)
+	router.Handle("/", handler)
+	response = httptest.NewRecorder()
+	request = httptest.NewRequest("GET", "/", nil)
+	router.ServeHTTP(response, request)
+	assert.Equal(267, response.Code)
+	assert.Equal("true", response.HeaderMap.Get("TestConstructor"))
+}
+
+func testNewSOptionMiddlewareSlice(t *testing.T) {
+	var (
+		assert  = assert.New(t)
+		require = require.New(t)
+
+		literal = []func(next http.Handler) http.Handler{
+			func(next http.Handler) http.Handler {
+				return http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+					response.Header().Set("Literal-1", "true")
+					next.ServeHTTP(response, request)
+				})
+			},
+			func(next http.Handler) http.Handler {
+				return http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+					response.Header().Set("Literal-2", "true")
+					next.ServeHTTP(response, request)
+				})
+			},
+		}
+
+		option = []mux.MiddlewareFunc{
+			func(next http.Handler) http.Handler {
+				return http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+					response.Header().Set("TestConstructor-1", "true")
+					next.ServeHTTP(response, request)
+				})
+			},
+			func(next http.Handler) http.Handler {
+				return http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+					response.Header().Set("TestConstructor-2", "true")
+					next.ServeHTTP(response, request)
+				})
+			},
+		}
+
+		handler = http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+			response.WriteHeader(278)
+		})
+	)
+
+	so := newSOption(literal)
+	require.NotNil(so)
+	router := new(mux.Router)
+	_, err := so(nil, router, ListenerChain{})
+	assert.NoError(err)
+	router.Handle("/", handler)
+	response := httptest.NewRecorder()
+	request := httptest.NewRequest("GET", "/", nil)
+	router.ServeHTTP(response, request)
+	assert.Equal(278, response.Code)
+	assert.Equal("true", response.HeaderMap.Get("Literal-1"))
+	assert.Equal("true", response.HeaderMap.Get("Literal-2"))
+
+	so = newSOption(option)
+	require.NotNil(so)
+	router = new(mux.Router)
+	_, err = so(nil, router, ListenerChain{})
+	assert.NoError(err)
+	router.Handle("/", handler)
+	response = httptest.NewRecorder()
+	request = httptest.NewRequest("GET", "/", nil)
+	router.ServeHTTP(response, request)
+	assert.Equal(278, response.Code)
+	assert.Equal("true", response.HeaderMap.Get("TestConstructor-1"))
+	assert.Equal("true", response.HeaderMap.Get("TestConstructor-2"))
+}
+
+func testNewSOptionMiddlewareChain(t *testing.T) {
+	var (
+		assert  = assert.New(t)
+		require = require.New(t)
+
+		router = new(mux.Router)
+
+		chain = TestServerMiddlewareChain{
+			handlers: []func(http.Handler) http.Handler{
+				func(next http.Handler) http.Handler {
+					return http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+						response.Header().Set("Chain-1", "true")
+						next.ServeHTTP(response, request)
+					})
+				},
+				func(next http.Handler) http.Handler {
+					return http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+						response.Header().Set("Chain-2", "true")
+						next.ServeHTTP(response, request)
+					})
+				},
+			},
+		}
+
+		handler = http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+			response.WriteHeader(215)
+		})
+
+		so = newSOption(chain)
+	)
+
+	require.NotNil(so)
+	_, err := so(nil, router, ListenerChain{})
+	assert.NoError(err)
+	response := httptest.NewRecorder()
+	request := httptest.NewRequest("GET", "/", nil)
+	router.Handle("/", handler)
+	router.ServeHTTP(response, request)
+	assert.Equal(215, response.Code)
+	assert.Equal("true", response.HeaderMap.Get("Chain-1"))
+	assert.Equal("true", response.HeaderMap.Get("Chain-2"))
+}
+
+func testNewSOptionListenerChain(t *testing.T) {
+	var (
+		assert  = assert.New(t)
+		require = require.New(t)
+
+		listener    = NewTestListener()
+		chainCalled []bool
+		chain       = NewListenerChain(
+			func(next net.Listener) net.Listener {
+				chainCalled = append(chainCalled, true)
+				return next
+			},
+			func(next net.Listener) net.Listener {
+				chainCalled = append(chainCalled, true)
+				return next
+			},
+		)
+
+		so = newSOption(chain)
+	)
+
+	defer listener.Close()
+	require.NotNil(so)
+	lc, err := so(nil, nil, NewListenerChain())
+	assert.NoError(err)
+	decorated := lc.Then(listener)
+	assert.Equal([]bool{true, true}, chainCalled)
+	require.NotNil(decorated)
+	c, err := decorated.Accept()
+	assert.NoError(err)
+	assert.Equal(listener.R, c)
+}
+
+func testNewSOptionListenerConstructor(t *testing.T) {
+	var (
+		assert  = assert.New(t)
+		require = require.New(t)
+
+		listener = NewTestListener()
+
+		literalCalled bool
+		literal       = func(next net.Listener) net.Listener {
+			literalCalled = true
+			return next
+		}
+
+		optionCalled bool
+		option       ListenerConstructor = func(next net.Listener) net.Listener {
+			optionCalled = true
+			return next
+		}
+	)
+
+	defer listener.Close()
+
+	so := newSOption(literal)
+	lc, err := so(nil, nil, NewListenerChain())
+	assert.NoError(err)
+	decorated := lc.Then(listener)
+	assert.True(literalCalled)
+	require.NotNil(decorated)
+	c, err := decorated.Accept()
+	assert.NoError(err)
+	assert.Equal(listener.R, c)
+
+	so = newSOption(option)
+	lc, err = so(nil, nil, NewListenerChain())
+	assert.NoError(err)
+	decorated = lc.Then(listener)
+	assert.True(optionCalled)
+	require.NotNil(decorated)
+	c, err = decorated.Accept()
+	assert.NoError(err)
+	assert.Equal(listener.R, c)
+}
+
+func testNewSOptionListenerConstructorSlice(t *testing.T) {
+	var (
+		assert  = assert.New(t)
+		require = require.New(t)
+
+		listener = NewTestListener()
+
+		literalCalled []bool
+		literal       = []func(net.Listener) net.Listener{
+			func(next net.Listener) net.Listener {
+				literalCalled = append(literalCalled, true)
+				return next
+			},
+			func(next net.Listener) net.Listener {
+				literalCalled = append(literalCalled, true)
+				return next
+			},
+		}
+
+		optionCalled []bool
+		option       = []ListenerConstructor{
+			func(next net.Listener) net.Listener {
+				optionCalled = append(optionCalled, true)
+				return next
+			},
+			func(next net.Listener) net.Listener {
+				optionCalled = append(optionCalled, true)
+				return next
+			},
+		}
+	)
+
+	defer listener.Close()
+
+	so := newSOption(literal)
+	lc, err := so(nil, nil, NewListenerChain())
+	assert.NoError(err)
+	decorated := lc.Then(listener)
+	assert.Equal([]bool{true, true}, literalCalled)
+	require.NotNil(decorated)
+	c, err := decorated.Accept()
+	assert.NoError(err)
+	assert.Equal(listener.R, c)
+
+	so = newSOption(option)
+	lc, err = so(nil, nil, NewListenerChain())
+	assert.NoError(err)
+	decorated = lc.Then(listener)
+	assert.Equal([]bool{true, true}, optionCalled)
+	require.NotNil(decorated)
+	c, err = decorated.Accept()
+	assert.NoError(err)
+	assert.Equal(listener.R, c)
+}
+
+func TestNewSOption(t *testing.T) {
+	t.Run("Unsupported", testNewSOptionUnsupported)
+	t.Run("Simple", testNewSOptionSimple)
+	t.Run("Router", testNewSOptionRouter)
+	t.Run("Middleware", testNewSOptionMiddleware)
+	t.Run("MiddlewareSlice", testNewSOptionMiddlewareSlice)
+	t.Run("MiddlewareChain", testNewSOptionMiddlewareChain)
+	t.Run("ListenerChain", testNewSOptionListenerChain)
+	t.Run("ListenerConstructor", testNewSOptionListenerConstructor)
+	t.Run("ListenerConstructorSlice", testNewSOptionListenerConstructorSlice)
 }

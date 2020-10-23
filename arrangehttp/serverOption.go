@@ -174,6 +174,13 @@ func newSOption(v interface{}) sOption {
 				return nil
 			}).sOption
 		},
+		// NOTE: supports value groups
+		func(m []mux.MiddlewareFunc) {
+			so = RouterOption(func(router *mux.Router) error {
+				router.Use(m...)
+				return nil
+			}).sOption
+		},
 		func(smc ServerMiddlewareChain) {
 			so = RouterOption(func(router *mux.Router) error {
 				router.Use(smc.Then)
@@ -188,6 +195,12 @@ func newSOption(v interface{}) sOption {
 		func(o ListenerConstructor) {
 			so = func(_ *http.Server, _ *mux.Router, lc ListenerChain) (ListenerChain, error) {
 				return lc.Append(o), nil
+			}
+		},
+		// separate support for a slice of constructors allows injection of value groups
+		func(o []ListenerConstructor) {
+			so = func(_ *http.Server, _ *mux.Router, lc ListenerChain) (ListenerChain, error) {
+				return lc.Append(o...), nil
 			}
 		},
 	)

@@ -128,6 +128,13 @@ func newClientOption(v interface{}) ClientOption {
 				return nil
 			}
 		},
+		// support value groups
+		func(ctors []RoundTripperConstructor) {
+			co = func(client *http.Client) error {
+				client.Transport = NewRoundTripperChain(ctors...).Then(client.Transport)
+				return nil
+			}
+		},
 	)
 
 	return co

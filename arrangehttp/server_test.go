@@ -23,16 +23,6 @@ import (
 	"go.uber.org/fx/fxtest"
 )
 
-type TestServerMiddlewareChain []func(http.Handler) http.Handler
-
-func (tsmc TestServerMiddlewareChain) Then(next http.Handler) http.Handler {
-	for i := len(tsmc) - 1; i >= 0; i-- {
-		next = tsmc[i](next)
-	}
-
-	return next
-}
-
 type simpleServerFactory struct {
 	Address   string
 	returnErr error
@@ -407,11 +397,13 @@ func testServerMiddleware(t *testing.T) {
 			},
 			func() TestServerMiddlewareChain {
 				return TestServerMiddlewareChain{
-					func(next http.Handler) http.Handler {
-						return http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
-							response.Header().Set("Injected-Chain-Middleware", "true")
-							next.ServeHTTP(response, request)
-						})
+					handlers: []func(http.Handler) http.Handler{
+						func(next http.Handler) http.Handler {
+							return http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+								response.Header().Set("Injected-Chain-Middleware", "true")
+								next.ServeHTTP(response, request)
+							})
+						},
 					},
 				}
 			},
@@ -427,11 +419,13 @@ func testServerMiddleware(t *testing.T) {
 			).
 			MiddlewareChain(
 				TestServerMiddlewareChain{
-					func(next http.Handler) http.Handler {
-						return http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
-							response.Header().Set("Chain-Middleware", "true")
-							next.ServeHTTP(response, request)
-						})
+					handlers: []func(http.Handler) http.Handler{
+						func(next http.Handler) http.Handler {
+							return http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+								response.Header().Set("Chain-Middleware", "true")
+								next.ServeHTTP(response, request)
+							})
+						},
 					},
 				},
 			).

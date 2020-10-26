@@ -5,12 +5,22 @@ import (
 	"io"
 	"log"
 	"os"
+	"reflect"
 
 	"go.uber.org/fx"
 )
 
 // Module is the fx.Printer module (NOT the golang module) for all output in this package
 const Module = "Arrange"
+
+// printerType is the cached reflection lookup for the fx.Printer type
+var printerType reflect.Type = reflect.TypeOf((*fx.Printer)(nil)).Elem()
+
+// PrinterType returns the reflect.Type for fx.Printer.  Useful when dynamically
+// building In or Out structs.
+func PrinterType() reflect.Type {
+	return printerType
+}
 
 // PrinterFunc is a function type that implements fx.Printer.  This is useful
 // for passing functions as printers, such as when using go.uber.org/zap with

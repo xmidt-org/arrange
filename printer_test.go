@@ -3,6 +3,7 @@ package arrange
 import (
 	"bytes"
 	"fmt"
+	"reflect"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -10,6 +11,27 @@ import (
 	"go.uber.org/fx"
 	"go.uber.org/fx/fxtest"
 )
+
+func TestPrinterType(t *testing.T) {
+	var (
+		st = reflect.StructOf(
+			[]reflect.StructField{
+				{
+					Name: "Printer",
+					Type: PrinterType(),
+				},
+			},
+		)
+
+		s = reflect.New(st)
+	)
+
+	// the main use case for PrinterType() is building dynamic structs,
+	// so make sure that works
+	s.Elem().Field(0).Set(
+		reflect.ValueOf(DefaultPrinter()),
+	)
+}
 
 func TestPrinterFunc(t *testing.T) {
 	var (

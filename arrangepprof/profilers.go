@@ -133,12 +133,7 @@ func (h *Heap) stop() (err error) {
 		}
 
 		err = pprof.WriteHeapProfile(file)
-		if err == nil {
-			err = file.Close()
-		} else {
-			// don't overwrite any previous error
-			file.Close()
-		}
+		file.Close()
 	}
 
 	return
@@ -159,7 +154,12 @@ func (h Heap) Provide() fx.Option {
 				in.Lifecycle.Append(fx.Hook{
 					OnStop: func(context.Context) error {
 						err := h.stop()
-						p.Printf("Wrote heap profile data to %s", h.Path)
+						if err != nil {
+							p.Printf("Error writing heap profile to %s: %s", h.Path, err)
+						} else {
+							p.Printf("Wrote heap profile data to %s", h.Path)
+						}
+
 						return err
 					},
 				})

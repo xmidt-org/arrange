@@ -114,7 +114,7 @@ type Heap struct {
 	Overwrite bool
 
 	// DisableGCOnStop indicates whether runtime.GC is called when the fx.App stops.
-	// By default, runtime.GC is called prior to writing help profile data, as this gives
+	// By default, runtime.GC is called prior to writing heap profile data, as this gives
 	// more accurate information.  Setting this will write heap profile data without
 	// doing a runtime.GC.
 	DisableGCOnStop bool

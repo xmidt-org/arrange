@@ -76,7 +76,7 @@ func (hr *HTTP) buildRouterIn() reflect.Type {
 	}
 
 	if len(hr.RouterName) > 0 {
-		fields[1].Tag = reflect.StructTag(`name:"` + hr.RouterName + `"`)
+		fields[2].Tag = reflect.StructTag(`name:"` + hr.RouterName + `"`)
 	}
 
 	return reflect.StructOf(fields)

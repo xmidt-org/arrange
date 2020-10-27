@@ -371,6 +371,7 @@ func testClientHeader(t *testing.T) {
 	app := fxtest.New(
 		t,
 		arrange.TestLogger(t),
+		arrange.ForViper(viper.New()),
 		Client().
 			ClientFactory(ClientConfig{
 				Header: http.Header{
@@ -408,36 +409,6 @@ func testClientHeader(t *testing.T) {
 	app.RequireStop()
 }
 
-func testClientNoUnmarshaler(t *testing.T) {
-	var (
-		assert  = assert.New(t)
-		require = require.New(t)
-
-		client *http.Client
-	)
-
-	app := fxtest.New(
-		t,
-		arrange.TestLogger(t),
-		// no ForViper call
-		Client().
-			ClientFactory(ClientConfig{
-				Timeout: 17 * time.Hour,
-			}).
-			Provide(),
-		fx.Populate(&client),
-	)
-
-	require.NoError(app.Err())
-	app.RequireStart()
-	defer app.Stop(context.Background())
-
-	require.NotNil(client)
-	assert.Equal(17*time.Hour, client.Timeout)
-
-	app.RequireStop()
-}
-
 func TestClient(t *testing.T) {
 	t.Run("InjectError", testClientInjectError)
 	t.Run("UnmarshalError", testClientUnmarshalError)
@@ -445,5 +416,4 @@ func TestClient(t *testing.T) {
 	t.Run("OptionError", testClientOptionError)
 	t.Run("Middleware", testClientMiddleware)
 	t.Run("Header", testClientHeader)
-	t.Run("NoUnmarshaler", testClientNoUnmarshaler)
 }

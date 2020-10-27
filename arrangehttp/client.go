@@ -92,9 +92,9 @@ func (cc ClientConfig) NewClient() (client *http.Client, err error) {
 type ClientIn struct {
 	fx.In
 
-	// Unmarshaler is the optional arrange Unmarshaler component used to unmarshal
-	// a ClientFactory.  If this component is not supplied, the ClientFactory is used as is.
-	Unmarshaler arrange.Unmarshaler `optional:"true"`
+	// Unmarshaler is the required arrange Unmarshaler component used to unmarshal
+	// a ClientFactory
+	Unmarshaler arrange.Unmarshaler
 
 	// Printer is the optional fx.Printer used to output informational messages about
 	// client unmarshaling and configuration.  If unset, arrange.DefaultPrinter() is used.
@@ -221,12 +221,8 @@ func (c *C) unmarshal(u func(arrange.Unmarshaler, interface{}) error, inputs []r
 		p = arrange.NewModulePrinter(Module, clientIn.Printer)
 	)
 
-	if clientIn.Unmarshaler != nil {
-		if err = u(clientIn.Unmarshaler, target.UnmarshalTo.Interface()); err != nil {
-			return
-		}
-	} else {
-		p.Printf("CLIENT => No Unmarshaler supplied")
+	if err = u(clientIn.Unmarshaler, target.UnmarshalTo.Interface()); err != nil {
+		return
 	}
 
 	factory := target.Component.Interface().(ClientFactory)

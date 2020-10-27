@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 - Support more slice types for server and client options
 - CPU and heap profiling bound to the fx.App lifecycle
 - Easy configuration of net/http/pprof handlers for injected gorilla/mux routers
+- Reverted optional Unmarshaler for arrangehttp, as it caused more problems than it solved
 
 ## [v0.2.0]
 - Unmarshaler is now optional for the arrangehttp package

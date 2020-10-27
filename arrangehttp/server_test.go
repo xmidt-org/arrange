@@ -668,34 +668,6 @@ func testServerListener(t *testing.T) {
 	app.RequireStop()
 }
 
-func testServerNoUnmarshaler(t *testing.T) {
-	var (
-		assert = assert.New(t)
-		router *mux.Router
-	)
-
-	app := fxtest.New(
-		t,
-		arrange.TestLogger(t),
-		// no ForViper call
-		Server().
-			ServerFactory(ServerConfig{
-				ReadTimeout: 176 * time.Second,
-			}).
-			With(func(s *http.Server) error {
-				assert.Equal(176*time.Second, s.ReadTimeout)
-				return nil
-			}).
-			Provide(),
-		fx.Populate(&router),
-	)
-
-	app.RequireStart()
-	defer app.Stop(context.Background())
-
-	app.RequireStop()
-}
-
 func TestServer(t *testing.T) {
 	t.Run("InjectError", testServerInjectError)
 	t.Run("UnmarshalError", testServerUnmarshalError)
@@ -705,5 +677,4 @@ func TestServer(t *testing.T) {
 	t.Run("Middleware", testServerMiddleware)
 	t.Run("Options", testServerOptions)
 	t.Run("Listener", testServerListener)
-	t.Run("NoUnmarshaler", testServerNoUnmarshaler)
 }

@@ -104,10 +104,9 @@ func (sc ServerConfig) Listen(ctx context.Context, s *http.Server) (net.Listener
 type ServerIn struct {
 	fx.In
 
-	// Unmarshaler is the optional arrange Unmarshaler component used to unmarshal
-	// a ServerFactory.  If this component is not supplied, then the ServerFactory
-	// is used as is.
-	Unmarshaler arrange.Unmarshaler `optional:"true"`
+	// Unmarshaler is the required arrange Unmarshaler component used to unmarshal
+	// a ServerFactory
+	Unmarshaler arrange.Unmarshaler
 
 	// Printer is the optional fx.Printer used to output informational messages about
 	// server unmarshaling and configuration.  If unset, arrange.DefaultPrinter() is used.
@@ -293,12 +292,8 @@ func (s *S) unmarshal(u func(arrange.Unmarshaler, interface{}) error, inputs []r
 		p = arrange.NewModulePrinter(Module, serverIn.Printer)
 	)
 
-	if serverIn.Unmarshaler != nil {
-		if err = u(serverIn.Unmarshaler, target.UnmarshalTo.Interface()); err != nil {
-			return
-		}
-	} else {
-		p.Printf("SERVER => No Unmarshaler supplied")
+	if err = u(serverIn.Unmarshaler, target.UnmarshalTo.Interface()); err != nil {
+		return
 	}
 
 	var server *http.Server

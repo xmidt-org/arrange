@@ -14,14 +14,18 @@ import (
 // when no HTTPRoutes.PathPrefix field is supplied
 const DefaultPathPrefix = "/debug/pprof"
 
-// ConfigureRoutes adds the various pprof routes to a *mux.Route.  This
+// ConfigureRoutes adds the various pprof routes to a *mux.Router.  This
 // function can be used as a standalone mechanism for adding pprof routes
 // to any router.
+//
+// The typical way to use this function is to call it against a Subrouter, e.g.:
+//
+//   ConfigureRoutes(router.PathPrefix("/foo/").Subrouter())
 //
 // NOTE: This method does not do the special mapping for pprof.Index for
 // a path prefix with no trailing slash, e.g. "/debug/pprof".  Callers will
 // need to implement that.  HTTP.Provide handles that case.
-func ConfigureRoutes(r *mux.Route) {
+func ConfigureRoutes(r *mux.Router) {
 	r.Path("/").HandlerFunc(pprof.Index)
 	r.Path("/cmdline").HandlerFunc(pprof.Cmdline)
 	r.Path("/profile").HandlerFunc(pprof.Profile)
@@ -121,7 +125,7 @@ func (hr *HTTP) invoke(args []reflect.Value) []reflect.Value {
 
 	// NOTE: this works if prefix was "/", as mapping to "" is valid
 	r.HandleFunc(prefix, pprof.Index)
-	ConfigureRoutes(r.PathPrefix(prefix + "/"))
+	ConfigureRoutes(r.PathPrefix(prefix + "/").Subrouter())
 	return nil
 }
 

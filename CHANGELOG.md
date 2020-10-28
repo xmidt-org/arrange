@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 - CPU and heap profiling bound to the fx.App lifecycle
 - Easy configuration of net/http/pprof handlers for injected gorilla/mux routers
 - Reverted optional Unmarshaler for arrangehttp, as it caused more problems than it solved
+- Preserve total order of all middleware, whether injected or supplied externally
 
 ## [v0.2.0]
 - Unmarshaler is now optional for the arrangehttp package

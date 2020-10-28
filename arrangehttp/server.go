@@ -154,6 +154,9 @@ func (s *S) ServerFactory(prototype ServerFactory) *S {
 
 // With adds functional options that tailor the *http.Server supplied by
 // this builder chain.
+//
+// This method is intended for options created outside the enclosing fx.App.
+// For options created as components, use Inject.
 func (s *S) With(o ...ServerOption) *S {
 	s.options = append(
 		s.options,
@@ -165,6 +168,9 @@ func (s *S) With(o ...ServerOption) *S {
 
 // WithRouter adds functional options that tailor the *mux.Router supplied
 // by this builder chain.
+//
+// This method is intended for options created outside the enclosing fx.App.
+// For options created as components, use Inject.
 func (s *S) WithRouter(o ...RouterOption) *S {
 	s.options = append(
 		s.options,
@@ -176,6 +182,9 @@ func (s *S) WithRouter(o ...RouterOption) *S {
 
 // Middleware is a shorthand for a RouterOption that adds several middlewares
 // to the *mux.Router being built.
+//
+// This method is intended for middleware created outside the enclosing fx.App.
+// For middleware created as components, use Inject.
 func (s *S) Middleware(m ...func(http.Handler) http.Handler) *S {
 	return s.WithRouter(func(router *mux.Router) error {
 		for _, f := range m {
@@ -188,6 +197,9 @@ func (s *S) Middleware(m ...func(http.Handler) http.Handler) *S {
 
 // MiddlewareChain is a shorthand for a RouterOption that adds a chain
 // of server middlewares.  Various packages can be used here, such as justinas/alice.
+//
+// This method is intended for middleware created outside the enclosing fx.App.
+// For middleware created as components, use Inject.
 func (s *S) MiddlewareChain(smc ServerMiddlewareChain) *S {
 	return s.WithRouter(func(router *mux.Router) error {
 		router.Use(smc.Then)
@@ -197,11 +209,15 @@ func (s *S) MiddlewareChain(smc ServerMiddlewareChain) *S {
 
 // ListenerChain adds a ListenerChain that decorates the listener used to accept
 // traffic for this server.
+//
+// This method is intended for chains created outside the enclosing fx.App.
+// For chains created as components, use Inject.
 func (s *S) ListenerChain(lc ListenerChain) *S {
 	s.options = append(
 		s.options,
-		func(_ *http.Server, _ *mux.Router, chain ListenerChain) (ListenerChain, error) {
-			return chain.Extend(lc), nil
+		func(si *serverInfo) error {
+			si.listenerChain = si.listenerChain.Extend(lc)
+			return nil
 		},
 	)
 
@@ -210,11 +226,15 @@ func (s *S) ListenerChain(lc ListenerChain) *S {
 
 // ListenerConstructors adds several decorators for the listener used to accept
 // traffic for this server.
+//
+// This method is intended for constructors created outside the enclosing fx.App.
+// For constructors created as components, use Inject.
 func (s *S) ListenerConstructors(l ...ListenerConstructor) *S {
 	s.options = append(
 		s.options,
-		func(_ *http.Server, _ *mux.Router, chain ListenerChain) (ListenerChain, error) {
-			return chain.Append(l...), nil
+		func(si *serverInfo) error {
+			si.listenerChain = si.listenerChain.Append(l...)
+			return nil
 		},
 	)
 
@@ -240,6 +260,10 @@ func (s *S) CaptureListenAddress(ch chan<- net.Addr) *S {
 // When the constructor for this server is called, each field of each struct is examined to
 // see if it is a type that can apply to tailoring a server, router, or listener.  Any fields
 // that cannot be used are silently ignored.
+//
+// Injected objects are applied before any external options are supplied.  For example,
+// middleware that has been injected will execute before anything added with
+// the Middleware method.
 func (s *S) Inject(deps ...interface{}) *S {
 	for _, d := range deps {
 		if dt, ok := arrange.IsIn(d); ok {
@@ -279,36 +303,35 @@ func (s *S) unmarshalFuncOf() reflect.Type {
 // and binding a listener to the fx.App lifecycle.
 //
 // If this method does not return an error, it will have bound the listener to the fx.App's Lifecycle.
-func (s *S) unmarshal(u func(arrange.Unmarshaler, interface{}) error, inputs []reflect.Value) (router *mux.Router, err error) {
+func (s *S) unmarshal(u func(arrange.Unmarshaler, interface{}) error, inputs []reflect.Value) (*mux.Router, error) {
 	if len(s.errs) > 0 {
-		err = multierr.Combine(s.errs...)
-		return
+		return nil, multierr.Combine(s.errs...)
 	}
 
 	var (
 		target   = arrange.NewTarget(s.prototype)
 		serverIn = inputs[0].Interface().(ServerIn)
-
-		p = arrange.NewModulePrinter(Module, serverIn.Printer)
+		p        = arrange.NewModulePrinter(Module, serverIn.Printer)
 	)
 
-	if err = u(serverIn.Unmarshaler, target.UnmarshalTo.Interface()); err != nil {
-		return
+	// apply the unmarshaling strategy against the ServerFactory target
+	if err := u(serverIn.Unmarshaler, target.UnmarshalTo.Interface()); err != nil {
+		return nil, err
 	}
 
-	var server *http.Server
-	router = mux.NewRouter()
+	// create a serverInfo that will provide context to all the option code
+	si := serverInfo{
+		router: mux.NewRouter(),
+	}
+
+	// use the unmarshaled ServerFactory to create the *http.Server
 	factory := target.Component.Interface().(ServerFactory)
-	if server, err = factory.NewServer(router); err != nil {
-		return
+	var err error
+	if si.server, err = factory.NewServer(si.router); err != nil {
+		return nil, err
 	}
 
-	// if the factory did not set a handler, use the router
-	if server.Handler == nil {
-		server.Handler = router
-	}
-
-	var lc ListenerChain
+	// first apply all the injected dependencies
 	var optionErrs []error
 	for _, dependency := range inputs[1:] {
 		arrange.VisitDependencies(
@@ -316,9 +339,9 @@ func (s *S) unmarshal(u func(arrange.Unmarshaler, interface{}) error, inputs []r
 			func(f reflect.StructField, fv reflect.Value) bool {
 				if arrange.IsInjected(f, fv) {
 					// ignore dependencies that can't be converted
-					if so := newSOption(fv.Interface()); so != nil {
+					if o := newSOption(fv.Interface()); o != nil {
 						p.Printf("SERVER INJECT => %s.%s %s", dependency.Type(), f.Name, f.Tag)
-						if lc, err = so(server, router, lc); err != nil {
+						if err := o(&si); err != nil {
 							optionErrs = append(optionErrs, err)
 						}
 					}
@@ -329,16 +352,17 @@ func (s *S) unmarshal(u func(arrange.Unmarshaler, interface{}) error, inputs []r
 		)
 	}
 
+	// now apply all the options directly specified on this builder
 	for _, o := range s.options {
-		if lc, err = o(server, router, lc); err != nil {
+		if err := o(&si); err != nil {
 			optionErrs = append(optionErrs, err)
 		}
 	}
 
 	if len(optionErrs) > 0 {
-		err = multierr.Combine(optionErrs...)
-		router = nil
+		return nil, multierr.Combine(optionErrs...)
 	} else {
+		si.applyMiddleware()
 		var lf ListenerFactory
 		ok := false
 		if lf, ok = factory.(ListenerFactory); !ok {
@@ -347,18 +371,18 @@ func (s *S) unmarshal(u func(arrange.Unmarshaler, interface{}) error, inputs []r
 
 		serverIn.Lifecycle.Append(fx.Hook{
 			OnStart: ServerOnStart(
-				server,
-				lc.Factory(lf),
+				si.server,
+				si.listenerChain.Factory(lf),
 				func() {
 					// ensure that if this server exits for any reason,
 					// the enclosing fx.App is shutdown
 					serverIn.Shutdowner.Shutdown()
 				}),
-			OnStop: server.Shutdown,
+			OnStop: si.server.Shutdown,
 		})
-	}
 
-	return
+		return si.router, nil
+	}
 }
 
 // makeUnmarshalFunc dynamically creates the function to be passed as a constructor to the fx.App.

@@ -438,6 +438,7 @@ func testServerMiddleware(t *testing.T) {
 			Provide(),
 		fx.Invoke(
 			func(r *mux.Router) {
+				require.NotNil(r)
 				r.HandleFunc("/test", func(response http.ResponseWriter, request *http.Request) {
 					response.WriteHeader(267)
 				})
@@ -555,6 +556,7 @@ func testServerOptions(t *testing.T) {
 			Provide(),
 		fx.Invoke(
 			func(r *mux.Router) {
+				require.NotNil(r)
 				r.HandleFunc("/test", func(response http.ResponseWriter, request *http.Request) {
 					response.WriteHeader(287)
 				})
@@ -643,6 +645,7 @@ func testServerListener(t *testing.T) {
 			Provide(),
 		fx.Invoke(
 			func(r *mux.Router) {
+				require.NotNil(r)
 				r.HandleFunc("/test", func(response http.ResponseWriter, request *http.Request) {
 					response.WriteHeader(216)
 				})

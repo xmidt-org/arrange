@@ -298,7 +298,7 @@ func (s *S) unmarshal(u func(arrange.Unmarshaler, interface{}) error, inputs []r
 	}
 
 	// create a serverInfo that will provide context to all the option code
-	si := &serverInfo{
+	si := serverInfo{
 		router: mux.NewRouter(),
 	}
 
@@ -319,7 +319,7 @@ func (s *S) unmarshal(u func(arrange.Unmarshaler, interface{}) error, inputs []r
 					// ignore dependencies that can't be converted
 					if o := newSOption(fv.Interface()); o != nil {
 						p.Printf("SERVER INJECT => %s.%s %s", dependency.Type(), f.Name, f.Tag)
-						if err := o(si); err != nil {
+						if err := o(&si); err != nil {
 							optionErrs = append(optionErrs, err)
 						}
 					}
@@ -332,7 +332,7 @@ func (s *S) unmarshal(u func(arrange.Unmarshaler, interface{}) error, inputs []r
 
 	// now apply all the options directly specified on this builder
 	for _, o := range s.options {
-		if err := o(si); err != nil {
+		if err := o(&si); err != nil {
 			optionErrs = append(optionErrs, err)
 		}
 	}

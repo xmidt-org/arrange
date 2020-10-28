@@ -93,12 +93,12 @@ func TestClientOptions(t *testing.T) {
 	t.Run("Failure", testClientOptionsFailure)
 }
 
-func testNewClientOptionUnsupported(t *testing.T) {
+func testNewCOptionUnsupported(t *testing.T) {
 	assert := assert.New(t)
-	assert.Nil(newClientOption("unsupported type"))
+	assert.Nil(newCOption("unsupported type"))
 }
 
-func testNewClientOptionSimple(t *testing.T) {
+func testNewCOptionSimple(t *testing.T) {
 	var (
 		assert  = assert.New(t)
 		require = require.New(t)
@@ -120,23 +120,23 @@ func testNewClientOptionSimple(t *testing.T) {
 		}
 	)
 
-	co := newClientOption(literal)
+	ci := &clientInfo{client: expected}
+	co := newCOption(literal)
 	require.NotNil(co)
-	assert.NoError(co(expected))
+	assert.NoError(co(ci))
 	assert.True(literalCalled)
 
-	co = newClientOption(option)
+	ci = &clientInfo{client: expected}
+	co = newCOption(option)
 	require.NotNil(co)
-	assert.NoError(co(expected))
+	assert.NoError(co(ci))
 	assert.True(optionCalled)
 }
 
-func testNewClientOptionClientMiddlewareChain(t *testing.T) {
+func testNewCOptionClientMiddlewareChain(t *testing.T) {
 	var (
 		assert  = assert.New(t)
 		require = require.New(t)
-
-		client = new(http.Client)
 
 		chainCalled bool
 		chain       = NewRoundTripperChain(
@@ -146,21 +146,21 @@ func testNewClientOptionClientMiddlewareChain(t *testing.T) {
 			},
 		)
 
-		co = newClientOption(chain)
+		ci = &clientInfo{client: new(http.Client)}
+		co = newCOption(chain)
 	)
 
 	require.NotNil(co)
-	assert.NoError(co(client))
-	assert.NotNil(client.Transport)
+	assert.NoError(co(ci))
+	ci.applyMiddleware()
+	assert.NotNil(ci.client.Transport)
 	assert.True(chainCalled)
 }
 
-func testNewClientOptionConstructor(t *testing.T) {
+func testNewCOptionConstructor(t *testing.T) {
 	var (
 		assert  = assert.New(t)
 		require = require.New(t)
-
-		client = new(http.Client)
 
 		literalCalled bool
 		literal       = func(next http.RoundTripper) http.RoundTripper {
@@ -175,26 +175,27 @@ func testNewClientOptionConstructor(t *testing.T) {
 		}
 	)
 
-	co := newClientOption(literal)
+	ci := &clientInfo{client: new(http.Client)}
+	co := newCOption(literal)
 	require.NotNil(co)
-	assert.NoError(co(client))
-	assert.NotNil(client.Transport)
+	assert.NoError(co(ci))
+	ci.applyMiddleware()
+	assert.NotNil(ci.client.Transport)
 	assert.True(literalCalled)
 
-	client.Transport = nil
-	co = newClientOption(constructor)
+	ci = &clientInfo{client: new(http.Client)}
+	co = newCOption(constructor)
 	require.NotNil(co)
-	assert.NoError(co(client))
-	assert.NotNil(client.Transport)
+	assert.NoError(co(ci))
+	ci.applyMiddleware()
+	assert.NotNil(ci.client.Transport)
 	assert.True(constructorCalled)
 }
 
-func testNewClientOptionConstructorSlice(t *testing.T) {
+func testNewCOptionConstructorSlice(t *testing.T) {
 	var (
 		assert  = assert.New(t)
 		require = require.New(t)
-
-		client = new(http.Client)
 
 		literalsCalled []bool
 		literals       = []func(http.RoundTripper) http.RoundTripper{
@@ -221,24 +222,27 @@ func testNewClientOptionConstructorSlice(t *testing.T) {
 		}
 	)
 
-	co := newClientOption(literals)
+	ci := &clientInfo{client: new(http.Client)}
+	co := newCOption(literals)
 	require.NotNil(co)
-	assert.NoError(co(client))
-	assert.NotNil(client.Transport)
+	assert.NoError(co(ci))
+	ci.applyMiddleware()
+	assert.NotNil(ci.client.Transport)
 	assert.Equal([]bool{true, true}, literalsCalled)
 
-	client.Transport = nil
-	co = newClientOption(constructors)
+	ci = &clientInfo{client: new(http.Client)}
+	co = newCOption(constructors)
 	require.NotNil(co)
-	assert.NoError(co(client))
-	assert.NotNil(client.Transport)
+	assert.NoError(co(ci))
+	ci.applyMiddleware()
+	assert.NotNil(ci.client.Transport)
 	assert.Equal([]bool{true, true}, constructorsCalled)
 }
 
-func TestNewClientOption(t *testing.T) {
-	t.Run("Unsupported", testNewClientOptionUnsupported)
-	t.Run("Simple", testNewClientOptionSimple)
-	t.Run("ClientMiddlewareChain", testNewClientOptionClientMiddlewareChain)
-	t.Run("Constructor", testNewClientOptionConstructor)
-	t.Run("ConstructorSlice", testNewClientOptionConstructorSlice)
+func TestNewCOption(t *testing.T) {
+	t.Run("Unsupported", testNewCOptionUnsupported)
+	t.Run("Simple", testNewCOptionSimple)
+	t.Run("ClientMiddlewareChain", testNewCOptionClientMiddlewareChain)
+	t.Run("Constructor", testNewCOptionConstructor)
+	t.Run("ConstructorSlice", testNewCOptionConstructorSlice)
 }

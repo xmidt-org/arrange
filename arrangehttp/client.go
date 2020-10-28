@@ -112,7 +112,7 @@ type C struct {
 	errs []error
 
 	// options are the explicit options added that are NOT injected
-	options []ClientOption
+	options []cOption
 
 	// dependencies are extra dependencies beyond ClientIn
 	dependencies []reflect.Type
@@ -141,7 +141,11 @@ func (c *C) ClientFactory(prototype ClientFactory) *C {
 // With adds any number of externally supplied options that will be applied
 // to the client when the enclosing fx.App asks to instantiate it.
 func (c *C) With(o ...ClientOption) *C {
-	c.options = append(c.options, o...)
+	c.options = append(
+		c.options,
+		ClientOptions(o...).cOption,
+	)
+
 	return c
 }
 
@@ -208,10 +212,9 @@ func (c *C) unmarshalFuncOf() reflect.Type {
 // unmarshal does all the heavy lifting of unmarshaling a ClientFactory and creating an *http.Client.
 // If this method does not return an error, it will have bound the client's CloseIdleConnections
 // to the shutdown of the enclosing fx.App.
-func (c *C) unmarshal(u func(arrange.Unmarshaler, interface{}) error, inputs []reflect.Value) (client *http.Client, err error) {
+func (c *C) unmarshal(u func(arrange.Unmarshaler, interface{}) error, inputs []reflect.Value) (*http.Client, error) {
 	if len(c.errs) > 0 {
-		err = multierr.Combine(c.errs...)
-		return
+		return nil, multierr.Combine(c.errs...)
 	}
 
 	var (
@@ -221,15 +224,22 @@ func (c *C) unmarshal(u func(arrange.Unmarshaler, interface{}) error, inputs []r
 		p = arrange.NewModulePrinter(Module, clientIn.Printer)
 	)
 
-	if err = u(clientIn.Unmarshaler, target.UnmarshalTo.Interface()); err != nil {
-		return
+	// unmarshal the ClientFactory object
+	if err := u(clientIn.Unmarshaler, target.UnmarshalTo.Interface()); err != nil {
+		return nil, err
 	}
 
+	// create a clientInfo that will provide context to all the options
+	var ci clientInfo
+
+	// use the unmarshaled factory to create the *http.Client
 	factory := target.Component.Interface().(ClientFactory)
-	if client, err = factory.NewClient(); err != nil {
-		return
+	var err error
+	if ci.client, err = factory.NewClient(); err != nil {
+		return nil, err
 	}
 
+	// apply any injected dependencies first
 	var optionErrs []error
 	for _, dependency := range inputs[1:] {
 		arrange.VisitDependencies(
@@ -237,9 +247,9 @@ func (c *C) unmarshal(u func(arrange.Unmarshaler, interface{}) error, inputs []r
 			func(f reflect.StructField, fv reflect.Value) bool {
 				if arrange.IsInjected(f, fv) {
 					// ignore dependencies that can't be converted
-					if co := newClientOption(fv.Interface()); co != nil {
+					if co := newCOption(fv.Interface()); co != nil {
 						p.Printf("CLIENT INJECT => %s.%s %s", dependency.Type(), f.Name, f.Tag)
-						if err = co(client); err != nil {
+						if err = co(&ci); err != nil {
 							optionErrs = append(optionErrs, err)
 						}
 					}
@@ -251,26 +261,27 @@ func (c *C) unmarshal(u func(arrange.Unmarshaler, interface{}) error, inputs []r
 	}
 
 	for _, o := range c.options {
-		if err = o(client); err != nil {
+		if err = o(&ci); err != nil {
 			optionErrs = append(optionErrs, err)
 		}
 	}
 
 	if len(optionErrs) > 0 {
-		err = multierr.Combine(optionErrs...)
-		client = nil
+		return nil, multierr.Combine(optionErrs...)
 	} else {
+		ci.applyMiddleware()
+
 		// if all went well, ensure that the client closes idle connections
 		// when the fx.App is shutdown
 		clientIn.Lifecycle.Append(fx.Hook{
 			OnStop: func(context.Context) error {
-				client.CloseIdleConnections()
+				ci.client.CloseIdleConnections()
 				return nil
 			},
 		})
-	}
 
-	return
+		return ci.client, nil
+	}
 }
 
 // makeUnmarshalFunc dynamically creates the function to be passed as a constructor to the fx.App.

@@ -140,6 +140,9 @@ func (c *C) ClientFactory(prototype ClientFactory) *C {
 
 // With adds any number of externally supplied options that will be applied
 // to the client when the enclosing fx.App asks to instantiate it.
+//
+// This method is used to provide options created outside the enclosing fx.App.
+// For options that are built as components within the fx.App, use Inject.
 func (c *C) With(o ...ClientOption) *C {
 	c.options = append(
 		c.options,
@@ -149,7 +152,10 @@ func (c *C) With(o ...ClientOption) *C {
 	return c
 }
 
-// MiddlewareChain adds a RoundTripperChain as a client option
+// MiddlewareChain adds an external RoundTripperChain as a client option.
+//
+// This method is used to provide middleware created outside the enclosing fx.App.
+// For middleware built as components within the fx.App, use Inject.
 func (c *C) MiddlewareChain(rtc RoundTripperChain) *C {
 	return c.With(func(client *http.Client) error {
 		client.Transport = rtc.Then(client.Transport)
@@ -157,14 +163,18 @@ func (c *C) MiddlewareChain(rtc RoundTripperChain) *C {
 	})
 }
 
-// Middleware adds several RoundTripperConstructors as a client option
+// Middleware adds external RoundTripperConstructors as middleware.
+//
+// This method is used to provide middleware created outside the enclosing fx.App.
+// For middleware built as components within the fx.App, use Inject.
 func (c *C) Middleware(m ...RoundTripperConstructor) *C {
 	return c.MiddlewareChain(
 		NewRoundTripperChain(m...),
 	)
 }
 
-// Inject allows additional components to be supplied to build an http.Client.
+// Inject allows additional components to be supplied to build an http.Client
+// from the enclosing fx.App.
 //
 // Each dependency supplied via this method must be a struct value that embeds
 // fx.In.  The embedding may be at any arbitrarily nested level.
@@ -174,6 +184,10 @@ func (c *C) Middleware(m ...RoundTripperConstructor) *C {
 // into something that affects the construction of an http.Client.  Any field that
 // cannot be converted is silently ignored, which allows a single struct to
 // be used for more than one purpose.
+//
+// Injected objects are applied before any external options are supplied.  For example,
+// middleware that has been injected will execute before anything added with
+// the Middleware method.
 func (c *C) Inject(deps ...interface{}) *C {
 	for _, d := range deps {
 		if dt, ok := arrange.IsIn(d); ok {

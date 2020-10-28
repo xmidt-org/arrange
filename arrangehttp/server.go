@@ -154,6 +154,9 @@ func (s *S) ServerFactory(prototype ServerFactory) *S {
 
 // With adds functional options that tailor the *http.Server supplied by
 // this builder chain.
+//
+// This method is intended for options created outside the enclosing fx.App.
+// For options created as components, use Inject.
 func (s *S) With(o ...ServerOption) *S {
 	s.options = append(
 		s.options,
@@ -165,6 +168,9 @@ func (s *S) With(o ...ServerOption) *S {
 
 // WithRouter adds functional options that tailor the *mux.Router supplied
 // by this builder chain.
+//
+// This method is intended for options created outside the enclosing fx.App.
+// For options created as components, use Inject.
 func (s *S) WithRouter(o ...RouterOption) *S {
 	s.options = append(
 		s.options,
@@ -176,6 +182,9 @@ func (s *S) WithRouter(o ...RouterOption) *S {
 
 // Middleware is a shorthand for a RouterOption that adds several middlewares
 // to the *mux.Router being built.
+//
+// This method is intended for middleware created outside the enclosing fx.App.
+// For middleware created as components, use Inject.
 func (s *S) Middleware(m ...func(http.Handler) http.Handler) *S {
 	return s.WithRouter(func(router *mux.Router) error {
 		for _, f := range m {
@@ -188,6 +197,9 @@ func (s *S) Middleware(m ...func(http.Handler) http.Handler) *S {
 
 // MiddlewareChain is a shorthand for a RouterOption that adds a chain
 // of server middlewares.  Various packages can be used here, such as justinas/alice.
+//
+// This method is intended for middleware created outside the enclosing fx.App.
+// For middleware created as components, use Inject.
 func (s *S) MiddlewareChain(smc ServerMiddlewareChain) *S {
 	return s.WithRouter(func(router *mux.Router) error {
 		router.Use(smc.Then)
@@ -197,6 +209,9 @@ func (s *S) MiddlewareChain(smc ServerMiddlewareChain) *S {
 
 // ListenerChain adds a ListenerChain that decorates the listener used to accept
 // traffic for this server.
+//
+// This method is intended for chains created outside the enclosing fx.App.
+// For chains created as components, use Inject.
 func (s *S) ListenerChain(lc ListenerChain) *S {
 	s.options = append(
 		s.options,
@@ -211,6 +226,9 @@ func (s *S) ListenerChain(lc ListenerChain) *S {
 
 // ListenerConstructors adds several decorators for the listener used to accept
 // traffic for this server.
+//
+// This method is intended for constructors created outside the enclosing fx.App.
+// For constructors created as components, use Inject.
 func (s *S) ListenerConstructors(l ...ListenerConstructor) *S {
 	s.options = append(
 		s.options,
@@ -242,6 +260,10 @@ func (s *S) CaptureListenAddress(ch chan<- net.Addr) *S {
 // When the constructor for this server is called, each field of each struct is examined to
 // see if it is a type that can apply to tailoring a server, router, or listener.  Any fields
 // that cannot be used are silently ignored.
+//
+// Injected objects are applied before any external options are supplied.  For example,
+// middleware that has been injected will execute before anything added with
+// the Middleware method.
 func (s *S) Inject(deps ...interface{}) *S {
 	for _, d := range deps {
 		if dt, ok := arrange.IsIn(d); ok {

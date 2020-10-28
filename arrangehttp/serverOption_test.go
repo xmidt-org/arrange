@@ -433,15 +433,17 @@ func testNewSOptionSimple(t *testing.T) {
 
 	so := newSOption(literal)
 	require.NotNil(so)
-	lc, err := so(expected, nil, chain)
-	assert.Equal(chain, lc)
+	si := &serverInfo{server: expected}
+	err := so(si)
+	assert.Equal(chain, si.listenerChain)
 	assert.NoError(err)
 	assert.True(literalCalled)
 
 	so = newSOption(option)
 	require.NotNil(so)
-	lc, err = so(expected, nil, chain)
-	assert.Equal(chain, lc)
+	si = &serverInfo{server: expected}
+	err = so(si)
+	assert.Equal(chain, si.listenerChain)
 	assert.NoError(err)
 	assert.True(optionCalled)
 }
@@ -451,7 +453,7 @@ func testNewSOptionRouter(t *testing.T) {
 		assert  = assert.New(t)
 		require = require.New(t)
 
-		expected = new(mux.Router)
+		expected = mux.NewRouter()
 		chain    ListenerChain
 
 		literalCalled bool
@@ -471,15 +473,17 @@ func testNewSOptionRouter(t *testing.T) {
 
 	so := newSOption(literal)
 	require.NotNil(so)
-	lc, err := so(nil, expected, chain)
-	assert.Equal(chain, lc)
+	si := &serverInfo{router: expected}
+	err := so(si)
+	assert.Equal(chain, si.listenerChain)
 	assert.NoError(err)
 	assert.True(literalCalled)
 
 	so = newSOption(option)
 	require.NotNil(so)
-	lc, err = so(nil, expected, chain)
-	assert.Equal(chain, lc)
+	si = &serverInfo{router: expected}
+	err = so(si)
+	assert.Equal(chain, si.listenerChain)
 	assert.NoError(err)
 	assert.True(optionCalled)
 }
@@ -512,25 +516,29 @@ func testNewSOptionMiddleware(t *testing.T) {
 
 	so := newSOption(literal)
 	require.NotNil(so)
-	router := new(mux.Router)
-	_, err := so(nil, router, ListenerChain{})
+	si := &serverInfo{server: new(http.Server), router: mux.NewRouter()}
+	err := so(si)
 	assert.NoError(err)
-	router.Handle("/", handler)
+	si.router.Handle("/", handler)
+	si.applyMiddleware()
+	require.NotNil(si.server.Handler)
 	response := httptest.NewRecorder()
 	request := httptest.NewRequest("GET", "/", nil)
-	router.ServeHTTP(response, request)
+	si.server.Handler.ServeHTTP(response, request)
 	assert.Equal(267, response.Code)
 	assert.Equal("true", response.HeaderMap.Get("Literal"))
 
 	so = newSOption(option)
 	require.NotNil(so)
-	router = new(mux.Router)
-	_, err = so(nil, router, ListenerChain{})
+	si = &serverInfo{server: new(http.Server), router: new(mux.Router)}
+	err = so(si)
 	assert.NoError(err)
-	router.Handle("/", handler)
+	si.router.Handle("/", handler)
+	si.applyMiddleware()
+	require.NotNil(si.server.Handler)
 	response = httptest.NewRecorder()
 	request = httptest.NewRequest("GET", "/", nil)
-	router.ServeHTTP(response, request)
+	si.server.Handler.ServeHTTP(response, request)
 	assert.Equal(267, response.Code)
 	assert.Equal("true", response.HeaderMap.Get("TestConstructor"))
 }
@@ -577,26 +585,30 @@ func testNewSOptionMiddlewareSlice(t *testing.T) {
 
 	so := newSOption(literal)
 	require.NotNil(so)
-	router := new(mux.Router)
-	_, err := so(nil, router, ListenerChain{})
+	si := &serverInfo{server: new(http.Server), router: mux.NewRouter()}
+	err := so(si)
 	assert.NoError(err)
-	router.Handle("/", handler)
+	si.router.Handle("/", handler)
+	si.applyMiddleware()
+	require.NotNil(si.server.Handler)
 	response := httptest.NewRecorder()
 	request := httptest.NewRequest("GET", "/", nil)
-	router.ServeHTTP(response, request)
+	si.server.Handler.ServeHTTP(response, request)
 	assert.Equal(278, response.Code)
 	assert.Equal("true", response.HeaderMap.Get("Literal-1"))
 	assert.Equal("true", response.HeaderMap.Get("Literal-2"))
 
 	so = newSOption(option)
 	require.NotNil(so)
-	router = new(mux.Router)
-	_, err = so(nil, router, ListenerChain{})
+	si = &serverInfo{server: new(http.Server), router: mux.NewRouter()}
+	err = so(si)
 	assert.NoError(err)
-	router.Handle("/", handler)
+	si.router.Handle("/", handler)
+	si.applyMiddleware()
+	require.NotNil(si.server.Handler)
 	response = httptest.NewRecorder()
 	request = httptest.NewRequest("GET", "/", nil)
-	router.ServeHTTP(response, request)
+	si.server.Handler.ServeHTTP(response, request)
 	assert.Equal(278, response.Code)
 	assert.Equal("true", response.HeaderMap.Get("TestConstructor-1"))
 	assert.Equal("true", response.HeaderMap.Get("TestConstructor-2"))
@@ -606,8 +618,6 @@ func testNewSOptionMiddlewareChain(t *testing.T) {
 	var (
 		assert  = assert.New(t)
 		require = require.New(t)
-
-		router = new(mux.Router)
 
 		chain = TestServerMiddlewareChain{
 			handlers: []func(http.Handler) http.Handler{
@@ -634,12 +644,15 @@ func testNewSOptionMiddlewareChain(t *testing.T) {
 	)
 
 	require.NotNil(so)
-	_, err := so(nil, router, ListenerChain{})
+	si := &serverInfo{server: new(http.Server), router: mux.NewRouter()}
+	err := so(si)
 	assert.NoError(err)
 	response := httptest.NewRecorder()
 	request := httptest.NewRequest("GET", "/", nil)
-	router.Handle("/", handler)
-	router.ServeHTTP(response, request)
+	si.router.Handle("/", handler)
+	si.applyMiddleware()
+	require.NotNil(si.server.Handler)
+	si.server.Handler.ServeHTTP(response, request)
 	assert.Equal(215, response.Code)
 	assert.Equal("true", response.HeaderMap.Get("Chain-1"))
 	assert.Equal("true", response.HeaderMap.Get("Chain-2"))
@@ -668,9 +681,10 @@ func testNewSOptionListenerChain(t *testing.T) {
 
 	defer listener.Close()
 	require.NotNil(so)
-	lc, err := so(nil, nil, NewListenerChain())
+	si := &serverInfo{}
+	err := so(si)
 	assert.NoError(err)
-	decorated := lc.Then(listener)
+	decorated := si.listenerChain.Then(listener)
 	assert.Equal([]bool{true, true}, chainCalled)
 	require.NotNil(decorated)
 	c, err := decorated.Accept()
@@ -701,9 +715,11 @@ func testNewSOptionListenerConstructor(t *testing.T) {
 	defer listener.Close()
 
 	so := newSOption(literal)
-	lc, err := so(nil, nil, NewListenerChain())
+	require.NotNil(so)
+	si := &serverInfo{}
+	err := so(si)
 	assert.NoError(err)
-	decorated := lc.Then(listener)
+	decorated := si.listenerChain.Then(listener)
 	assert.True(literalCalled)
 	require.NotNil(decorated)
 	c, err := decorated.Accept()
@@ -711,9 +727,11 @@ func testNewSOptionListenerConstructor(t *testing.T) {
 	assert.Equal(listener.R, c)
 
 	so = newSOption(option)
-	lc, err = so(nil, nil, NewListenerChain())
+	require.NotNil(so)
+	si = &serverInfo{}
+	err = so(si)
 	assert.NoError(err)
-	decorated = lc.Then(listener)
+	decorated = si.listenerChain.Then(listener)
 	assert.True(optionCalled)
 	require.NotNil(decorated)
 	c, err = decorated.Accept()
@@ -756,9 +774,11 @@ func testNewSOptionListenerConstructorSlice(t *testing.T) {
 	defer listener.Close()
 
 	so := newSOption(literal)
-	lc, err := so(nil, nil, NewListenerChain())
+	require.NotNil(so)
+	si := &serverInfo{}
+	err := so(si)
 	assert.NoError(err)
-	decorated := lc.Then(listener)
+	decorated := si.listenerChain.Then(listener)
 	assert.Equal([]bool{true, true}, literalCalled)
 	require.NotNil(decorated)
 	c, err := decorated.Accept()
@@ -766,9 +786,11 @@ func testNewSOptionListenerConstructorSlice(t *testing.T) {
 	assert.Equal(listener.R, c)
 
 	so = newSOption(option)
-	lc, err = so(nil, nil, NewListenerChain())
+	require.NotNil(so)
+	si = &serverInfo{}
+	err = so(si)
 	assert.NoError(err)
-	decorated = lc.Then(listener)
+	decorated = si.listenerChain.Then(listener)
 	assert.Equal([]bool{true, true}, optionCalled)
 	require.NotNil(decorated)
 	c, err = decorated.Accept()

@@ -10,6 +10,98 @@ import (
 	"github.com/xmidt-org/arrange"
 )
 
+// serverInfo represents the bucket of objects surrounding a server that can
+// be tailored with functional options or dependency injection
+type serverInfo struct {
+	server        *http.Server
+	router        *mux.Router
+	listenerChain ListenerChain
+	middleware    []func(http.Handler) http.Handler
+}
+
+// applyMiddleware is a helper to apply the middleware collected from options.
+// If the server has a Handler set, that is used as the starting point
+// for decoration.  This will be the case if a ServerFactory decorated
+// the router initially.
+//
+// If the server has no Handler, the router is decorated instead.
+//
+// In either case, after this function exits the server will have a handler
+// decorated appropriately.
+func (si *serverInfo) applyMiddleware() {
+	next := si.server.Handler
+	if next == nil {
+		next = si.router
+	}
+
+	// decorate in reverse order so that the middleware is executed
+	// in declared order
+	for i := len(si.middleware) - 1; i >= 0; i-- {
+		next = si.middleware[i](next)
+	}
+
+	si.server.Handler = next
+}
+
+// sOption is the internal option type used to configure an http.Server, its
+// associated mux.Router, and any listener decoration.
+type sOption func(*serverInfo) error
+
+// newSOption reflects v to determine if it can be used as a functional option
+// for building an HTTP server.  If v is not a recognized type, this function returns nil.
+func newSOption(v interface{}) sOption {
+	var so sOption
+	arrange.TryConvert(
+		v,
+		func(o ServerOption) {
+			so = o.sOption
+		},
+		func(o RouterOption) {
+			so = o.sOption
+		},
+		func(m func(http.Handler) http.Handler) {
+			so = func(si *serverInfo) error {
+				si.middleware = append(si.middleware, m)
+				return nil
+			}
+		},
+		// NOTE: supports value groups
+		func(m []func(http.Handler) http.Handler) {
+			so = func(si *serverInfo) error {
+				si.middleware = append(si.middleware, m...)
+				return nil
+			}
+		},
+		func(smc ServerMiddlewareChain) {
+			so = func(si *serverInfo) error {
+				si.middleware = append(si.middleware, smc.Then)
+				return nil
+			}
+		},
+		func(lc ListenerChain) {
+			so = func(si *serverInfo) error {
+				si.listenerChain = si.listenerChain.Extend(lc)
+				return nil
+			}
+		},
+		func(o ListenerConstructor) {
+			so = func(si *serverInfo) error {
+				si.listenerChain = si.listenerChain.Append(o)
+				return nil
+			}
+		},
+		// separate support for a slice of constructors allows injection of value groups
+		func(o []ListenerConstructor) {
+			so = func(si *serverInfo) error {
+				si.listenerChain = si.listenerChain.Append(o...)
+				return nil
+			}
+		},
+	)
+
+	return so
+}
+
 // ServerOption is a functional option type that can be converted to an SOption.
 // This type exists primarily to make fx.Provide constructors more concise.
 type ServerOption func(*http.Server) error
@@ -25,11 +117,11 @@ type ServerMiddlewareChain interface {
 }
 
 // sOption converts this ServerOption into the more general internal sOption
-func (so ServerOption) sOption(server *http.Server, _ *mux.Router, lc ListenerChain) (ListenerChain, error) {
-	return lc, so(server)
+func (so ServerOption) sOption(si *serverInfo) error {
+	return so(si.server)
 }
 
-// ServerOptions binds several options into one.  Useful when providing
+// ServerOptions binds several server options into one.  Useful when providing
 // several options as a component.
 func ServerOptions(o ...ServerOption) ServerOption {
 	if len(o) == 1 {
@@ -52,11 +144,11 @@ func ServerOptions(o ...ServerOption) ServerOption {
 type RouterOption func(*mux.Router) error
 
 // sOption converts this RouterOption into the more general internal sOption
-func (ro RouterOption) sOption(_ *http.Server, router *mux.Router, lc ListenerChain) (ListenerChain, error) {
-	return lc, ro(router)
+func (ro RouterOption) sOption(si *serverInfo) error {
+	return ro(si.router)
 }
 
-// RouterOptions binds several options into one.  Useful when providing
+// RouterOptions binds several router options into one.  Useful when providing
 // several options as a component.
 func RouterOptions(o ...RouterOption) RouterOption {
 	if len(o) == 1 {
@@ -150,60 +242,4 @@ func ConnState(cf ...func(net.Conn, http.ConnState)) ServerOption {
 
 		return nil
 	}
-}
-
-// sOption is the internal option type used to configure an http.Server, its
-// associated mux.Router, and any listener decoration.
-type sOption func(*http.Server, *mux.Router, ListenerChain) (ListenerChain, error)
-
-// newSOption reflects v to determine if it can be used as a functional option
-// for building an HTTP server.  If v is not a recognized type, this function returns nil.
-func newSOption(v interface{}) sOption {
-	var so sOption
-	arrange.TryConvert(
-		v,
-		func(o ServerOption) {
-			so = o.sOption
-		},
-		func(o RouterOption) {
-			so = o.sOption
-		},
-		func(m func(http.Handler) http.Handler) {
-			so = RouterOption(func(router *mux.Router) error {
-				router.Use(m)
-				return nil
-			}).sOption
-		},
-		// NOTE: supports value groups
-		func(m []mux.MiddlewareFunc) {
-			so = RouterOption(func(router *mux.Router) error {
-				router.Use(m...)
-				return nil
-			}).sOption
-		},
-		func(smc ServerMiddlewareChain) {
-			so = RouterOption(func(router *mux.Router) error {
-				router.Use(smc.Then)
-				return nil
-			}).sOption
-		},
-		func(lc ListenerChain) {
-			so = func(_ *http.Server, _ *mux.Router, chain ListenerChain) (ListenerChain, error) {
-				return chain.Extend(lc), nil
-			}
-		},
-		func(o ListenerConstructor) {
-			so = func(_ *http.Server, _ *mux.Router, lc ListenerChain) (ListenerChain, error) {
-				return lc.Append(o), nil
-			}
-		},
-		// separate support for a slice of constructors allows injection of value groups
-		func(o []ListenerConstructor) {
-			so = func(_ *http.Server, _ *mux.Router, lc ListenerChain) (ListenerChain, error) {
-				return lc.Append(o...), nil
-			}
-		},
-	)
-
-	return so
 }

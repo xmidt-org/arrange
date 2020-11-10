@@ -10,6 +10,7 @@ import (
 	"github.com/xmidt-org/arrange"
 	"github.com/xmidt-org/arrange/arrangetls"
 	"github.com/xmidt-org/httpaux"
+	"go.uber.org/dig"
 	"go.uber.org/fx"
 	"go.uber.org/multierr"
 )
@@ -190,7 +191,8 @@ func (c *C) Middleware(m ...RoundTripperConstructor) *C {
 // the Middleware method.
 func (c *C) Inject(deps ...interface{}) *C {
 	for _, d := range deps {
-		if dt, ok := arrange.IsIn(d); ok {
+		dt := arrange.ValueOf(d).Type()
+		if dig.IsIn(dt) {
 			c.dependencies = append(c.dependencies, dt)
 		} else {
 			c.errs = append(c.errs,
@@ -255,24 +257,22 @@ func (c *C) unmarshal(u func(arrange.Unmarshaler, interface{}) error, inputs []r
 
 	// apply any injected dependencies first
 	var optionErrs []error
-	for _, dependency := range inputs[1:] {
-		arrange.VisitDependencies(
-			dependency,
-			func(f reflect.StructField, fv reflect.Value) bool {
-				if arrange.IsInjected(f, fv) {
-					// ignore dependencies that can't be converted
-					if co := newCOption(fv.Interface()); co != nil {
-						p.Printf("CLIENT INJECT => %s.%s %s", dependency.Type(), f.Name, f.Tag)
-						if err = co(&ci); err != nil {
-							optionErrs = append(optionErrs, err)
-						}
+	arrange.VisitDependencies(
+		func(d arrange.Dependency) bool {
+			if d.Injected() {
+				// ignore dependencies that can't be converted
+				if co := newCOption(d.Value.Interface()); co != nil {
+					p.Printf("CLIENT INJECT => %s", d)
+					if err = co(&ci); err != nil {
+						optionErrs = append(optionErrs, err)
 					}
 				}
+			}
 
-				return true
-			},
-		)
-	}
+			return true
+		},
+		inputs[1:]...,
+	)
 
 	for _, o := range c.options {
 		if err = o(&ci); err != nil {

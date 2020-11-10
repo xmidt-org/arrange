@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"go.uber.org/fx"
 )
 
@@ -113,357 +114,247 @@ func TestNewTarget(t *testing.T) {
 	t.Run("Nil", testNewTargetNil)
 }
 
-func TestIsIn(t *testing.T) {
-	type SimpleIn struct {
-		fx.In
-
-		Foo int
-		bar string
-	}
-
-	type NestedIn struct {
-		SimpleIn
-		Another float64
-	}
-
-	type FieldIn struct {
-		Test fx.In
-	}
-
-	type NotIn struct {
-		Name string
-		Age  int
-	}
-
-	testData := []struct {
-		input     interface{}
-		inspected reflect.Type
-		expected  bool
-	}{
-		{
-			input:     SimpleIn{},
-			inspected: reflect.TypeOf(SimpleIn{}),
-			expected:  true,
-		},
-		{
-			input:     reflect.TypeOf(SimpleIn{}),
-			inspected: reflect.TypeOf(SimpleIn{}),
-			expected:  true,
-		},
-		{
-			input:     reflect.ValueOf(SimpleIn{}),
-			inspected: reflect.TypeOf(SimpleIn{}),
-			expected:  true,
-		},
-		{
-			input:     NestedIn{},
-			inspected: reflect.TypeOf(NestedIn{}),
-			expected:  true,
-		},
-		{
-			input:     reflect.TypeOf(NestedIn{}),
-			inspected: reflect.TypeOf(NestedIn{}),
-			expected:  true,
-		},
-		{
-			input:     reflect.ValueOf(NestedIn{}),
-			inspected: reflect.TypeOf(NestedIn{}),
-			expected:  true,
-		},
-		{
-			input:     FieldIn{},
-			inspected: reflect.TypeOf(FieldIn{}),
-			expected:  false,
-		},
-		{
-			input:     NotIn{},
-			inspected: reflect.TypeOf(NotIn{}),
-			expected:  false,
-		},
-		{
-			input:     new(int),
-			inspected: reflect.TypeOf((*int)(nil)),
-			expected:  false,
-		},
-		{
-			input:     "this is most certainly not an fx.In struct",
-			inspected: reflect.TypeOf(""),
-			expected:  false,
-		},
-	}
-
-	for i, record := range testData {
-		t.Run(strconv.Itoa(i), func(t *testing.T) {
-			var (
-				assert         = assert.New(t)
-				actual, result = IsIn(record.input)
-			)
-
-			assert.Equal(record.inspected, actual)
-			assert.Equal(record.expected, result)
-		})
-	}
-}
-
-func TestIsInjected(t *testing.T) {
-	type Dependencies struct {
-		// NOTE: IsOptional doesn't depend on embedding fx.In
-
-		Simple   *bytes.Buffer
-		Required *bytes.Buffer `optional:"false"`
-		Optional *bytes.Buffer `optional:"true"`
-	}
-
+func testVisitDependenciesSimple(t *testing.T) {
 	var (
-		assert = assert.New(t)
-		actual = map[string]bool{}
+		assert   = assert.New(t)
+		require  = require.New(t)
+		expected = new(bytes.Buffer)
+
+		called bool
 	)
 
 	VisitDependencies(
-		Dependencies{},
-		func(f reflect.StructField, fv reflect.Value) bool {
-			actual[f.Name] = IsInjected(f, fv)
-			return true
-		},
-	)
-
-	assert.Equal(
-		map[string]bool{
-			"Simple":   true,
-			"Required": true,
-			"Optional": false,
-		},
-		actual,
-	)
-}
-
-func testVisitDependenciesNotAStruct(t *testing.T) {
-	testData := []interface{}{
-		123,
-		new(int),
-		new((*int)),
-	}
-
-	for i, root := range testData {
-		t.Run(strconv.Itoa(i), func(t *testing.T) {
-			assert := assert.New(t)
-			VisitDependencies(root, func(reflect.StructField, reflect.Value) bool {
-				assert.Fail("The visitor should not have been called")
+		func(d Dependency) bool {
+			if called {
+				assert.Fail("the visitor should not have been called after returning false")
 				return false
-			})
-		})
-	}
+			}
+
+			t.Log("visited", d)
+			assert.Empty(d.Name)
+			assert.Empty(d.Group)
+			assert.False(d.Optional)
+			assert.Empty(d.Tag)
+			assert.Nil(d.Container)
+
+			require.True(d.Value.IsValid())
+			assert.Equal(d.Value.Interface(), expected)
+			assert.True(d.Injected())
+			assert.NotEmpty(d.String())
+
+			called = true
+			return false // skip everything else
+		},
+		reflect.ValueOf(expected), reflect.ValueOf(new(http.Request)),
+	)
 }
 
-func testVisitDependenciesSimple(t *testing.T) {
-	type Simple struct {
-		unexported string
-		Value1     int
-		Value2     string
-		Value3     float64
-		Value4     []string
+func testVisitDependenciesIn(t *testing.T) {
+	type In struct {
+		fx.In
+		A *bytes.Buffer
+		B *bytes.Buffer   `name:"named" optional:"true"`
+		C []*bytes.Buffer `group:"buffers"`
 	}
 
-	testData := []interface{}{
-		Simple{
-			Value1: 123,
-			Value2: "test",
-			Value3: 3.14,
-			Value4: []string{"more", "testing"},
-		},
-		reflect.ValueOf(Simple{
-			Value1: 123,
-			Value2: "test",
-			Value3: 3.14,
-			Value4: []string{"more", "testing"},
-		}),
-		&Simple{
-			Value1: 123,
-			Value2: "test",
-			Value3: 3.14,
-			Value4: []string{"more", "testing"},
-		},
-		reflect.ValueOf(&Simple{
-			Value1: 123,
-			Value2: "test",
-			Value3: 3.14,
-			Value4: []string{"more", "testing"},
-		}),
+	type Skipped struct {
+		fx.In
+		B *bytes.Buffer
 	}
 
-	t.Run("All", func(t *testing.T) {
-		for i, root := range testData {
-			t.Run(strconv.Itoa(i), func(t *testing.T) {
-				var (
-					assert       = assert.New(t)
-					actualNames  []string
-					actualValues []interface{}
-				)
+	var (
+		assert  = assert.New(t)
+		require = require.New(t)
 
-				VisitDependencies(
-					root,
-					func(f reflect.StructField, fv reflect.Value) bool {
-						actualNames = append(actualNames, f.Name)
-						actualValues = append(actualValues, fv.Interface())
-						assert.Empty(f.PkgPath)
-						assert.Equal(f.Type, fv.Type())
-						assert.True(fv.IsValid())
-						assert.True(fv.CanInterface())
-						return true
-					})
-
-				assert.ElementsMatch(
-					[]string{"Value1", "Value2", "Value3", "Value4"},
-					actualNames,
-				)
-
-				assert.ElementsMatch(
-					[]interface{}{123, "test", 3.14, []string{"more", "testing"}},
-					actualValues,
-				)
-			})
+		in = In{
+			A: bytes.NewBufferString("A"),
+			C: []*bytes.Buffer{bytes.NewBufferString("C1"), bytes.NewBufferString("C2")},
 		}
-	})
 
-	t.Run("Terminate", func(t *testing.T) {
-		for i, simple := range testData {
-			t.Run(strconv.Itoa(i), func(t *testing.T) {
-				var (
-					assert       = assert.New(t)
-					actualNames  []string
-					actualValues []interface{}
+		expecteds = []DependencyVisitor{
+			// A
+			func(d Dependency) bool {
+				t.Log("visited", d)
+				assert.Empty(d.Name)
+				assert.Empty(d.Group)
+				assert.False(d.Optional)
+				assert.Empty(d.Tag)
+				assert.Equal(reflect.TypeOf(In{}), d.Container)
+				require.True(d.Value.IsValid())
+				assert.Equal(bytes.NewBufferString("A"), d.Value.Interface())
+				assert.True(d.Injected())
+				assert.NotEmpty(d.String())
+				return true
+			},
+			// B
+			func(d Dependency) bool {
+				t.Log("visited", d)
+				assert.Equal("named", d.Name)
+				assert.Empty(d.Group)
+				assert.True(d.Optional)
+				assert.Equal(
+					reflect.StructTag(`name:"named" optional:"true"`),
+					d.Tag,
 				)
 
-				VisitDependencies(
-					simple,
-					func(f reflect.StructField, fv reflect.Value) bool {
-						actualNames = append(actualNames, f.Name)
-						actualValues = append(actualValues, fv.Interface())
-						assert.Empty(f.PkgPath)
-						assert.Equal(f.Type, fv.Type())
-						assert.True(fv.IsValid())
-						assert.True(fv.CanInterface())
-						return false
-					})
-
-				assert.ElementsMatch(
-					[]string{"Value1"},
-					actualNames,
+				assert.Equal(reflect.TypeOf(In{}), d.Container)
+				assert.True(d.Value.IsValid())
+				assert.False(d.Injected())
+				assert.NotEmpty(d.String())
+				return true
+			},
+			// C
+			func(d Dependency) bool {
+				t.Log("visited", d)
+				assert.Empty(d.Name)
+				assert.Equal("buffers", d.Group)
+				assert.False(d.Optional)
+				assert.Equal(
+					reflect.StructTag(`group:"buffers"`),
+					d.Tag,
 				)
 
-				assert.ElementsMatch(
-					[]interface{}{123},
-					actualValues,
+				assert.Equal(reflect.TypeOf(In{}), d.Container)
+				require.True(d.Value.IsValid())
+				assert.Equal(
+					[]*bytes.Buffer{
+						bytes.NewBufferString("C1"), bytes.NewBufferString("C2"),
+					},
+					d.Value.Interface(),
 				)
-			})
+
+				assert.True(d.Injected())
+				assert.NotEmpty(d.String())
+				return false
+			},
 		}
-	})
+
+		counter int
+	)
+
+	VisitDependencies(
+		func(d Dependency) bool {
+			if counter >= len(expecteds) {
+				assert.Fail("Too many calls to the visitor")
+				return false
+			}
+
+			v := expecteds[counter](d)
+			counter++
+			return v
+		},
+		reflect.ValueOf(in), reflect.ValueOf(Skipped{}),
+	)
 }
 
-func testVisitDependenciesEmbedded(t *testing.T) {
-	type Leaf struct {
-		unexported int
-		Leaf1      int
-		Leaf2      string
+func testVisitDependenciesRecursion(t *testing.T) {
+	type Embedded struct {
+		fx.In
+		B *bytes.Buffer   `name:"named" optional:"true"`
+		C []*bytes.Buffer `group:"buffers"`
 	}
 
-	type Composite struct {
-		fx.In      // should never be visited
-		Leaf       // embedded, which should be visited and possibly traversed
-		Composite1 int
-		Composite2 string
-		Composite3 Leaf // not embedded and never traversed
+	type Recurse struct {
+		A *bytes.Buffer
+		Embedded
 	}
 
-	testData := []interface{}{
-		Composite{
-			Leaf: Leaf{
-				Leaf1: 734,
-				Leaf2: "leafy test",
-			},
-			Composite1: 823,
-			Composite2: "compositey test",
-			Composite3: Leaf{
-				Leaf1: 111,
-			},
-		},
-		reflect.ValueOf(Composite{
-			Leaf: Leaf{
-				Leaf1: 734,
-				Leaf2: "leafy test",
-			},
-			Composite1: 823,
-			Composite2: "compositey test",
-			Composite3: Leaf{
-				Leaf1: 111,
-			},
-		}),
-		&Composite{
-			Leaf: Leaf{
-				Leaf1: 734,
-				Leaf2: "leafy test",
-			},
-			Composite1: 823,
-			Composite2: "compositey test",
-			Composite3: Leaf{
-				Leaf1: 111,
-			},
-		},
-		reflect.ValueOf(&Composite{
-			Leaf: Leaf{
-				Leaf1: 734,
-				Leaf2: "leafy test",
-			},
-			Composite1: 823,
-			Composite2: "compositey test",
-			Composite3: Leaf{
-				Leaf1: 111,
-			},
-		}),
+	type Skipped struct {
+		fx.In
+		B *bytes.Buffer
 	}
 
-	t.Run("All", func(t *testing.T) {
-		for i, v := range testData {
-			t.Run(strconv.Itoa(i), func(t *testing.T) {
-				var (
-					assert       = assert.New(t)
-					actualNames  []string
-					actualValues []interface{}
-				)
+	var (
+		assert  = assert.New(t)
+		require = require.New(t)
 
-				VisitDependencies(
-					v,
-					func(f reflect.StructField, fv reflect.Value) bool {
-						assert.NotEqual(InType(), f.Type)
-						actualNames = append(actualNames, f.Name)
-						actualValues = append(actualValues, fv.Interface())
-						assert.Empty(f.PkgPath)
-						assert.Equal(f.Type, fv.Type())
-						assert.True(fv.IsValid())
-						assert.True(fv.CanInterface())
-						return true
-					})
-
-				t.Log("actualNames", actualNames)
-
-				assert.ElementsMatch(
-					[]string{"Leaf", "Leaf1", "Leaf2", "Composite1", "Composite2", "Composite3"},
-					actualNames,
-				)
-
-				assert.ElementsMatch(
-					[]interface{}{Leaf{Leaf1: 734, Leaf2: "leafy test"}, 734, "leafy test", 823, "compositey test", Leaf{Leaf1: 111}},
-					actualValues,
-				)
-			})
+		recurse = Recurse{
+			A: bytes.NewBufferString("A"),
+			Embedded: Embedded{
+				C: []*bytes.Buffer{bytes.NewBufferString("C1"), bytes.NewBufferString("C2")},
+			},
 		}
-	})
+
+		expecteds = []DependencyVisitor{
+			// A
+			func(d Dependency) bool {
+				t.Log("visited", d)
+				assert.Empty(d.Name)
+				assert.Empty(d.Group)
+				assert.False(d.Optional)
+				assert.Empty(d.Tag)
+				assert.Equal(reflect.TypeOf(Recurse{}), d.Container)
+				require.True(d.Value.IsValid())
+				assert.Equal(bytes.NewBufferString("A"), d.Value.Interface())
+				assert.True(d.Injected())
+				assert.NotEmpty(d.String())
+				return true
+			},
+			// B
+			func(d Dependency) bool {
+				t.Log("visited", d)
+				assert.Equal("named", d.Name)
+				assert.Empty(d.Group)
+				assert.True(d.Optional)
+				assert.Equal(
+					reflect.StructTag(`name:"named" optional:"true"`),
+					d.Tag,
+				)
+
+				assert.Equal(reflect.TypeOf(Embedded{}), d.Container)
+				assert.True(d.Value.IsValid())
+				assert.False(d.Injected())
+				assert.NotEmpty(d.String())
+				return true
+			},
+			// C
+			func(d Dependency) bool {
+				t.Log("visited", d)
+				assert.Empty(d.Name)
+				assert.Equal("buffers", d.Group)
+				assert.False(d.Optional)
+				assert.Equal(
+					reflect.StructTag(`group:"buffers"`),
+					d.Tag,
+				)
+
+				assert.Equal(reflect.TypeOf(Embedded{}), d.Container)
+				require.True(d.Value.IsValid())
+				assert.Equal(
+					[]*bytes.Buffer{
+						bytes.NewBufferString("C1"), bytes.NewBufferString("C2"),
+					},
+					d.Value.Interface(),
+				)
+
+				assert.True(d.Injected())
+				assert.NotEmpty(d.String())
+				return false
+			},
+		}
+
+		counter int
+	)
+
+	VisitDependencies(
+		func(d Dependency) bool {
+			if counter >= len(expecteds) {
+				assert.Fail("Too many calls to the visitor")
+				return false
+			}
+
+			v := expecteds[counter](d)
+			counter++
+			return v
+		},
+		reflect.ValueOf(recurse), reflect.ValueOf(Skipped{}),
+	)
 }
 
 func TestVisitDependencies(t *testing.T) {
-	t.Run("NotAStruct", testVisitDependenciesNotAStruct)
 	t.Run("Simple", testVisitDependenciesSimple)
-	t.Run("Embedded", testVisitDependenciesEmbedded)
+	t.Run("In", testVisitDependenciesIn)
+	t.Run("Recursion", testVisitDependenciesRecursion)
 }
 
 func TestValueOf(t *testing.T) {

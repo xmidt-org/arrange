@@ -2,7 +2,9 @@ package arrange
 
 import (
 	"reflect"
+	"strconv"
 
+	"go.uber.org/dig"
 	"go.uber.org/fx"
 )
 
@@ -20,6 +22,14 @@ var inType reflect.Type = reflect.TypeOf(fx.In{})
 // InType returns the reflection type of fx.In
 func InType() reflect.Type {
 	return inType
+}
+
+// outType is the cached reflection lookup for fx.Out
+var outType reflect.Type = reflect.TypeOf(fx.Out{})
+
+// OutType returns the reflection type of fx.Out
+func OutType() reflect.Type {
+	return outType
 }
 
 // NewErrorValue is a convenience for safely producing a reflect.Value from an error.
@@ -151,110 +161,128 @@ func NewTarget(prototype interface{}) (t Target) {
 	return
 }
 
-// IsIn tests if the given value refers to a struct that embeds fx.In.
-// Embedded, exported fields are searched recursively.  If t does not
-// refer to a struct, this function returns false.  The struct must embed
-// fx.In, not simply have fx.In as a field.
+// Dependency represents a reflected value (possibly) injected by an enclosing fx.App
+type Dependency struct {
+	// Name is the optional name of this dependency.
+	//
+	// This field is only set if the injected value was part of an enclosing struct
+	// that was populated by an fx.App.
+	Name string
+
+	// Group is the optional group of this dependency.  If this is set, the
+	// Value may refer to a slice of values rather than a scalar.
+	//
+	// This field is only set if the injected value was part of an enclosing struct
+	// that was populated by an fx.App.
+	Group string
+
+	// Optional indicates whether this dependency was declared with the optional tag.
+	// Value may or may not have actually been injected in that case.
+	//
+	// This field is only set if the injected value was part of an enclosing struct
+	// that was populated by an fx.App.
+	Optional bool
+
+	// Tag is the struct tag associated with this field, if any.  This is provided
+	// to support custom logic around tags outside of what uber/fx supports.
+	//
+	// Note that the name, group, and optional tags will already have been parsed
+	// from this tag and set as field on this struct.
+	//
+	// This field is only set if the injected value was part of an enclosing struct
+	// that was populated by an fx.App.
+	Tag reflect.StructTag
+
+	// Container is the struct in which this dependency occurred.
+	//
+	// This field is only set if the injected value was part of an enclosing struct
+	// that was populated by an fx.App.
+	Container reflect.Type
+
+	// Value is the actual value that was injected.  For plain dependencies that
+	// were not part of an fx.In struct, this will be the only field set.
+	Value reflect.Value
+}
+
+// Injected returns true if this dependency was actually injected.  This
+// method returns false if both d.Optional is true and the value represents
+// the zero value.
 //
-// IsIn returns both the actual reflect.Type that it inspected together
-// with whether that type is a struct that embeds fx.In.
-func IsIn(v interface{}) (reflect.Type, bool) {
-	t := TypeOf(v)
-	if t.Kind() == reflect.Struct {
-		for i := 0; i < t.NumField(); i++ {
-			f := t.Field(i)
+// Note that this method can give false negatives for non-pointer dependencies.
+// If an optional component is present but is set to the zero value, this method
+// will still return false.  Callers should be aware of this case and implement
+// application-specific logic where necessary.
+func (d Dependency) Injected() bool {
+	return !d.Optional || !d.Value.IsZero()
+}
 
-			if !f.Anonymous {
-				// skip
-				continue
-			}
+// newFieldDependency is a convenience for building a Dependency from a
+// field within a containing struct
+func newFieldDependency(c reflect.Type, f reflect.StructField, fv reflect.Value) Dependency {
+	d := Dependency{
+		Name:      f.Tag.Get("name"),
+		Group:     f.Tag.Get("group"),
+		Value:     fv,
+		Tag:       f.Tag,
+		Container: c,
+	}
 
-			if f.Type == InType() {
-				return t, true
-			}
+	// ignore errors here: this handles the empty/missing case, plus
+	// fx will handle any errors related to mistagged fields
+	d.Optional, _ = strconv.ParseBool(f.Tag.Get("optional"))
+	return d
+}
 
-			if len(f.PkgPath) == 0 {
-				// only recurse for anonymous (embedded), exported fields
-				if _, ok := IsIn(f.Type); ok {
-					return t, true
+// DependencyVisitor is a visitor predicate used by VisitDependencies as a callback
+// for each dependency of a set.  If this method returns false, visitation will be
+// halted early.
+type DependencyVisitor func(Dependency) bool
+
+// VisitDependencies applies the given visitor to a sequence of dependencies.  The deps
+// slice can contain any values allowed by go.uber.org/fx in constructor functions, i.e.
+// they must all be dependencies that were either injected or skipped (as when optional:"true" is set).
+//
+// If any value in deps is a struct that embeds fx.In, then that struct's fields are walked
+// recursively.  Any exported fields are assumed to have been injected (or, skipped), and the visitor
+// is invoked for each of them.
+//
+// For non-struct values or for structs that do not embed fx.In, the visitor is simply invoked
+// with that value but with Name, Group, etc fields left unset.
+func VisitDependencies(visitor DependencyVisitor, deps ...reflect.Value) {
+	for _, dv := range deps {
+		// for any structs that embed fx.In, recursively visit their fields
+		if dig.IsIn(dv.Type()) {
+			for stack := []reflect.Value{dv}; len(stack) > 0; {
+				var (
+					end           = len(stack) - 1
+					container     = stack[end]
+					containerType = container.Type()
+				)
+
+				stack = stack[:end]
+				for i := 0; i < container.NumField(); i++ {
+					field := containerType.Field(i)
+					fieldValue := container.Field(i)
+
+					// NOTE: skip unexported fields or those whose value cannot be accessed
+					if len(field.PkgPath) > 0 ||
+						!fieldValue.IsValid() ||
+						!fieldValue.CanInterface() ||
+						field.Type == InType() ||
+						field.Type == OutType() {
+						continue
+					}
+
+					if dig.IsIn(field.Type) {
+						// this field is something that itself contains dependencies
+						stack = append(stack, fieldValue)
+					} else if !visitor(newFieldDependency(containerType, field, fieldValue)) {
+						return
+					}
 				}
 			}
-		}
-	}
-
-	return t, false
-}
-
-// FieldVisitor is a strategy for visiting each exported field of a struct
-type FieldVisitor func(reflect.StructField, reflect.Value) bool
-
-// IsInjected tests if a given struct field was (likely) injected by an fx.App.
-// This function returns false if and only if:
-//
-//   - The given field is marked as `optional:"true"`
-//   - The field's value is the zero value
-//
-// Otherwise, this function returns true.
-func IsInjected(f reflect.StructField, fv reflect.Value) bool {
-	if f.Tag.Get("optional") == "true" && fv.IsZero() {
-		return false
-	}
-
-	return true
-}
-
-// VisitDependencies walks the tree of struct fields looking for things that are acceptable
-// as injected dependencies, whether or not the given struct embeds fx.In.  This method ensures
-// that only exported struct fields for which IsValid() returns true are visited.  Anonymous
-// fields that are exported will be visited and, if they are structs, will be recursively visited.
-//
-// If root is actually a reflect.Value, that value will be used.  Otherwise, it's assumed that
-// root is a struct.  This function will dereference pointers to any depth.
-//
-// If root is not a struct, or cannot be dereferenced to a struct, this function does nothing.
-//
-// Visitation continues until there are no more fields or until v returns false.
-func VisitDependencies(root interface{}, v FieldVisitor) {
-	rv := ValueOf(root)
-
-	// dereference as much as necessary
-	for rv.Kind() == reflect.Ptr {
-		rv = rv.Elem()
-	}
-
-	if rv.Kind() != reflect.Struct {
-		return
-	}
-
-	stack := []reflect.Value{rv}
-	for len(stack) > 0 {
-		var (
-			end = len(stack) - 1
-			s   = stack[end]
-			st  = s.Type()
-		)
-
-		stack = stack[:end]
-
-		for i := 0; i < st.NumField(); i++ {
-			var (
-				f  = st.Field(i)
-				fv = s.Field(i)
-			)
-
-			if len(f.PkgPath) > 0 || !fv.IsValid() || !fv.CanInterface() || f.Type == InType() {
-				// NOTE: skip unexported fields or those whose value cannot be accessed
-				continue
-			}
-
-			if !v(f, fv) {
-				return
-			}
-
-			if f.Anonymous {
-				// NOTE: any anonymous, exported field will be recursively visited
-				stack = append(stack, fv)
-			}
+		} else if !visitor(Dependency{Value: dv}) { // a "naked" dependency
+			return
 		}
 	}
 }

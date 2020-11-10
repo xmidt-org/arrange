@@ -1,6 +1,7 @@
 package arrange
 
 import (
+	"fmt"
 	"reflect"
 	"strconv"
 
@@ -183,6 +184,12 @@ type Dependency struct {
 	// that was populated by an fx.App.
 	Optional bool
 
+	// Field is the name of the field containing this dependency, if any.
+	//
+	// This field is only set if the injected value was part of an enclosing struct
+	// that was populated by an fx.App.
+	Field string
+
 	// Tag is the struct tag associated with this field, if any.  This is provided
 	// to support custom logic around tags outside of what uber/fx supports.
 	//
@@ -216,6 +223,15 @@ func (d Dependency) Injected() bool {
 	return !d.Optional || !d.Value.IsZero()
 }
 
+// String returns a human readable representation of this dependency
+func (d Dependency) String() string {
+	if d.Container != nil {
+		return fmt.Sprintf("%s.%s %s", d.Container, d.Field, d.Tag)
+	} else {
+		return fmt.Sprintf("%s", d.Value.Type())
+	}
+}
+
 // newFieldDependency is a convenience for building a Dependency from a
 // field within a containing struct
 func newFieldDependency(c reflect.Type, f reflect.StructField, fv reflect.Value) Dependency {
@@ -224,6 +240,7 @@ func newFieldDependency(c reflect.Type, f reflect.StructField, fv reflect.Value)
 		Group:     f.Tag.Get("group"),
 		Value:     fv,
 		Tag:       f.Tag,
+		Field:     f.Name,
 		Container: c,
 	}
 

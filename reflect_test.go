@@ -130,6 +130,7 @@ func testVisitDependenciesSimple(t *testing.T) {
 				return false
 			}
 
+			t.Log("visited", d)
 			assert.Empty(d.Name)
 			assert.Empty(d.Group)
 			assert.False(d.Optional)
@@ -139,6 +140,7 @@ func testVisitDependenciesSimple(t *testing.T) {
 			require.True(d.Value.IsValid())
 			assert.Equal(d.Value.Interface(), expected)
 			assert.True(d.Injected())
+			assert.NotEmpty(d.String())
 
 			called = true
 			return false // skip everything else
@@ -172,6 +174,7 @@ func testVisitDependenciesIn(t *testing.T) {
 		expecteds = []DependencyVisitor{
 			// A
 			func(d Dependency) bool {
+				t.Log("visited", d)
 				assert.Empty(d.Name)
 				assert.Empty(d.Group)
 				assert.False(d.Optional)
@@ -180,10 +183,12 @@ func testVisitDependenciesIn(t *testing.T) {
 				require.True(d.Value.IsValid())
 				assert.Equal(bytes.NewBufferString("A"), d.Value.Interface())
 				assert.True(d.Injected())
+				assert.NotEmpty(d.String())
 				return true
 			},
 			// B
 			func(d Dependency) bool {
+				t.Log("visited", d)
 				assert.Equal("named", d.Name)
 				assert.Empty(d.Group)
 				assert.True(d.Optional)
@@ -195,10 +200,12 @@ func testVisitDependenciesIn(t *testing.T) {
 				assert.Equal(reflect.TypeOf(In{}), d.Container)
 				assert.True(d.Value.IsValid())
 				assert.False(d.Injected())
+				assert.NotEmpty(d.String())
 				return true
 			},
 			// C
 			func(d Dependency) bool {
+				t.Log("visited", d)
 				assert.Empty(d.Name)
 				assert.Equal("buffers", d.Group)
 				assert.False(d.Optional)
@@ -217,6 +224,7 @@ func testVisitDependenciesIn(t *testing.T) {
 				)
 
 				assert.True(d.Injected())
+				assert.NotEmpty(d.String())
 				return false
 			},
 		}
@@ -270,6 +278,7 @@ func testVisitDependenciesRecursion(t *testing.T) {
 		expecteds = []DependencyVisitor{
 			// A
 			func(d Dependency) bool {
+				t.Log("visited", d)
 				assert.Empty(d.Name)
 				assert.Empty(d.Group)
 				assert.False(d.Optional)
@@ -278,10 +287,12 @@ func testVisitDependenciesRecursion(t *testing.T) {
 				require.True(d.Value.IsValid())
 				assert.Equal(bytes.NewBufferString("A"), d.Value.Interface())
 				assert.True(d.Injected())
+				assert.NotEmpty(d.String())
 				return true
 			},
 			// B
 			func(d Dependency) bool {
+				t.Log("visited", d)
 				assert.Equal("named", d.Name)
 				assert.Empty(d.Group)
 				assert.True(d.Optional)
@@ -293,10 +304,12 @@ func testVisitDependenciesRecursion(t *testing.T) {
 				assert.Equal(reflect.TypeOf(Embedded{}), d.Container)
 				assert.True(d.Value.IsValid())
 				assert.False(d.Injected())
+				assert.NotEmpty(d.String())
 				return true
 			},
 			// C
 			func(d Dependency) bool {
+				t.Log("visited", d)
 				assert.Empty(d.Name)
 				assert.Equal("buffers", d.Group)
 				assert.False(d.Optional)
@@ -315,6 +328,7 @@ func testVisitDependenciesRecursion(t *testing.T) {
 				)
 
 				assert.True(d.Injected())
+				assert.NotEmpty(d.String())
 				return false
 			},
 		}

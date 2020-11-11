@@ -10,6 +10,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/stretchr/testify/suite"
 	"go.uber.org/fx"
 )
 
@@ -583,4 +584,55 @@ func TestTryConvert(t *testing.T) {
 	t.Run("Function", testTryConvertFunction)
 	t.Run("Interface", testTryConvertInterface)
 	t.Run("Value", testTryConvertValue)
+}
+
+type TestInjectSuite struct {
+	suite.Suite
+	InitialTypes [][]reflect.Type
+}
+
+func (suite *TestInjectSuite) SetupTest() {
+	suite.InitialTypes = [][]reflect.Type{
+		nil,
+		[]reflect.Type{},
+		[]reflect.Type{
+			reflect.TypeOf("a string"),
+		},
+	}
+}
+
+func (suite *TestInjectSuite) TestEmpty() {
+	for i, initialTypes := range suite.InitialTypes {
+		suite.Run(strconv.Itoa(i), func() {
+			actual := Inject{}.AppendTypesTo(initialTypes)
+			suite.Equal(initialTypes, actual)
+		})
+	}
+}
+
+func (suite *TestInjectSuite) TestNonEmpty() {
+	for i, initialTypes := range suite.InitialTypes {
+		suite.Run(strconv.Itoa(i), func() {
+			expected := append(
+				[]reflect.Type{},
+				initialTypes...,
+			)
+
+			expected = append(expected,
+				reflect.TypeOf(""), reflect.TypeOf(""), reflect.TypeOf(""),
+			)
+
+			actual := Inject{
+				reflect.ValueOf("dependency1"),
+				reflect.TypeOf("dependency2"),
+				"dependency3",
+			}.AppendTypesTo(initialTypes)
+
+			suite.Equal(expected, actual)
+		})
+	}
+}
+
+func TestInject(t *testing.T) {
+	suite.Run(t, new(TestInjectSuite))
 }

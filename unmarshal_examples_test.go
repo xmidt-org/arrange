@@ -103,7 +103,7 @@ func ExampleKeys() {
 
 	type ConfigIn struct {
 		fx.In
-		Http  Config `name:"servers.http"`
+		HTTP  Config `name:"servers.http"`
 		Pprof Config `name:"servers.pprof"`
 	}
 
@@ -113,7 +113,7 @@ func ExampleKeys() {
 		Keys("servers.http", "servers.pprof").Provide(Config{}),
 		fx.Invoke(
 			func(in ConfigIn) error {
-				fmt.Println("http", "address", in.Http.Address, "timeout", in.Http.Timeout)
+				fmt.Println("http", "address", in.HTTP.Address, "timeout", in.HTTP.Timeout)
 				fmt.Println("pprof", "address", in.Pprof.Address, "timeout", in.Pprof.Timeout)
 				return nil
 			},

@@ -227,9 +227,9 @@ func (d Dependency) Injected() bool {
 func (d Dependency) String() string {
 	if d.Container != nil {
 		return fmt.Sprintf("%s.%s %s", d.Container, d.Field, d.Tag)
-	} else {
-		return fmt.Sprintf("%s", d.Value.Type())
 	}
+
+	return fmt.Sprintf("%s", d.Value.Type())
 }
 
 // newFieldDependency is a convenience for building a Dependency from a
@@ -367,4 +367,44 @@ func TryConvert(src interface{}, cases ...interface{}) bool {
 	}
 
 	return false
+}
+
+// Inject is a slice type intended to hold a sequence of type information
+// about injected objects.  This type eases the declaration of constructor
+// parameters:
+//
+//   i := Inject{
+//     // inline literal value used for type information
+//     struct{
+//       fx.In
+//       Component1 MyComponent
+//       Component2 SomeOtherComponent `name:"something"`
+//     }{},
+//     // a plain dependency
+//     func(http.Handler) http.Handler {return nil},
+//   }
+//
+// This type is particular useful when declaratively indicating the dependencies
+// of a component.
+type Inject []interface{}
+
+// AppendTypesTo builds a slice of reflect.Type using the type information
+// in this inject sequence.  For each element:
+//
+//   - If it is a reflect.Value, then that value's type is appended
+//   - If it is a reflect.Type, it is appended as is
+//   - For anything else, reflect.TypeOf is used to determine the type
+func (i Inject) AppendTypesTo(t []reflect.Type) []reflect.Type {
+	for _, e := range i {
+		switch et := e.(type) {
+		case reflect.Type:
+			t = append(t, et)
+		case reflect.Value:
+			t = append(t, et.Type())
+		default:
+			t = append(t, reflect.TypeOf(e))
+		}
+	}
+
+	return t
 }

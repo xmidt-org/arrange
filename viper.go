@@ -42,7 +42,7 @@ func (vu ViperUnmarshaler) UnmarshalKey(key string, value interface{}) error {
 	return vu.Viper.UnmarshalKey(key, value, vu.Options...)
 }
 
-// ViperUnmarshalIn is the set of dependencies required to build a ViperUnmarshaler
+// ViperUnmarshalerIn is the set of dependencies required to build a ViperUnmarshaler
 // Note that the actual viper instance must be supplied externally.
 type ViperUnmarshalerIn struct {
 	fx.In

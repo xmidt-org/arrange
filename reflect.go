@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"reflect"
 	"strconv"
+	"strings"
 
 	"go.uber.org/dig"
 	"go.uber.org/fx"
@@ -325,7 +326,7 @@ func VisitDependencies(visitor DependencyVisitor, deps ...reflect.Value) {
 // having to import those packages just for the types.
 func TryConvert(src interface{}, cases ...interface{}) bool {
 	var (
-		from         = reflect.ValueOf(src)
+		from         = ValueOf(src)
 		fromSequence = (from.Kind() == reflect.Array || from.Kind() == reflect.Slice)
 	)
 
@@ -369,42 +370,196 @@ func TryConvert(src interface{}, cases ...interface{}) bool {
 	return false
 }
 
+// Field describes a single injected dependency as part of an
+// enclosing struct.
+type Field struct {
+	// Name is the name of the component.  If set, Group is ignored.
+	Name string
+
+	// Group is the value group for this component.  Not used if Name is set.
+	//
+	// If this field is set, the actual type of the struct field will be a slice
+	// with elements defined by the Type field.
+	Group string
+
+	// Optional indicates an optional component
+	Optional bool
+
+	// Type is the type for this component.  This may be anything TypeOf supports.
+	//
+	// If Group is set, the actual type of the generated struct field will be a slice
+	// of this type.  Otherwise, the struct field will be of this type.
+	Type interface{}
+}
+
+// Struct is a slice of reflect.StructFields with additional functionality
+// that simplifies dynamically creating structs that participate in dependency
+// injection.
+type Struct []reflect.StructField
+
+// In appends an anonymous (embedded) fx.In field.  No attempt is made
+// to prevent this method being called multiple times.  Clients must ensure
+// that multiple fx.In fields are not appended.
+//
+// This method returns the (possibly) extended Struct instance.
+func (s Struct) In() Struct {
+	return append(s, reflect.StructField{
+		Name:      "In",
+		Anonymous: true,
+		Type:      InType(),
+	})
+}
+
+// Append adds more dependencies to this sequence of fields.  Clients must
+// ensure that duplicate fields are not appended.
+//
+// This method returns the (possibly) extended Struct instance.
+func (s Struct) Append(more ...Field) Struct {
+	var (
+		b strings.Builder
+		n []byte
+	)
+
+	for _, nf := range more {
+		var sf reflect.StructField
+		b.Reset()
+
+		switch {
+		case len(nf.Group) > 0:
+			b.WriteString(`group:"`)
+			b.WriteString(nf.Group)
+			b.WriteString(`"`)
+			sf.Type = reflect.SliceOf(TypeOf(nf.Type))
+
+		case len(nf.Name) > 0:
+			b.WriteString(`name:"`)
+			b.WriteString(nf.Name)
+			b.WriteString(`"`)
+			fallthrough
+
+		default:
+			sf.Type = TypeOf(nf.Type)
+		}
+
+		if nf.Optional {
+			if b.Len() > 0 {
+				b.WriteRune(' ')
+			}
+
+			b.WriteString(`optional:"true"`)
+		}
+
+		sf.Tag = reflect.StructTag(b.String())
+		b.Reset()
+		b.WriteRune('F')
+		n = strconv.AppendInt(n[:0], int64(len(s)), 10)
+		b.Write(n)
+
+		sf.Name = b.String()
+		s = append(s, sf)
+	}
+
+	return s
+}
+
+// Extend appends the contents of several Struct instances and returns
+// the (possibly) extended Struct instance.
+func (s Struct) Extend(more ...Struct) Struct {
+	for _, e := range more {
+		s = append(s, e...)
+	}
+
+	return s
+}
+
+// Clone returns a distinct copy of this Struct instance.  Useful
+// when a number of structs need to be generated that all have some
+// common definitions.
+func (s Struct) Clone() Struct {
+	clone := make(Struct, len(s))
+	copy(clone, s)
+	return clone
+}
+
+// Of returns the struct type with the current set of fields
+func (s Struct) Of() reflect.Type {
+	return reflect.StructOf(s)
+}
+
 // Inject is a slice type intended to hold a sequence of type information
-// about injected objects.  This type eases the declaration of constructor
-// parameters:
+// about injected objects.  Essentially, an Inject is the set of input parameters
+// to an fx.Provide function.
 //
-//   i := Inject{
-//     // inline literal value used for type information
-//     struct{
-//       fx.In
-//       Component1 MyComponent
-//       Component2 SomeOtherComponent `name:"something"`
-//     }{},
-//     // a plain dependency
-//     func(http.Handler) http.Handler {return nil},
-//   }
-//
-// This type is particular useful when declaratively indicating the dependencies
-// of a component.
+// This type is particular useful when dynamically building sets of dependencies.
 type Inject []interface{}
 
-// AppendTypesTo builds a slice of reflect.Type using the type information
-// in this inject sequence.  For each element:
-//
-//   - If it is a reflect.Value, then that value's type is appended
-//   - If it is a reflect.Type, it is appended as is
-//   - For anything else, reflect.TypeOf is used to determine the type
-func (i Inject) AppendTypesTo(t []reflect.Type) []reflect.Type {
-	for _, e := range i {
-		switch et := e.(type) {
-		case reflect.Type:
-			t = append(t, et)
-		case reflect.Value:
-			t = append(t, et.Type())
-		default:
-			t = append(t, reflect.TypeOf(e))
-		}
+// Append appends additional injectable types to this instance.  This method
+// returns the (possibly) extended Inject instance.
+func (ij Inject) Append(more ...interface{}) Inject {
+	return append(ij, more...)
+}
+
+// Extend appends the contents of several Inject instances and returns the
+// (possibly) extended Inject instance.
+func (ij Inject) Extend(more ...Inject) Inject {
+	for _, e := range more {
+		ij = append(ij, e...)
+	}
+
+	return ij
+}
+
+// Types returns a distinct slice of types suitable for use in building
+// dynamic functions such as reflect.FuncOf.  Each element of this slice
+// is passed to TypeOf in this package to determine its type.
+func (ij Inject) Types() []reflect.Type {
+	t := make([]reflect.Type, 0, len(ij))
+	for _, v := range ij {
+		t = append(t, TypeOf(v))
 	}
 
 	return t
+}
+
+// FuncOf returns the function signature which takes the types
+// defined in this slice as inputs together with the given outputs.
+// The returned function type is never variadic.
+func (ij Inject) FuncOf(out ...reflect.Type) reflect.Type {
+	return reflect.FuncOf(
+		ij.Types(),
+		out,
+		false,
+	)
+}
+
+// MakeFunc wraps a given function that accepts a []reflect.Value as its sole input.
+// The set of inputs are the same as this Inject sequence.  The wrapped function
+// may return any number of output values, which are returned as is by the created function.
+//
+// The main use case for this method is dynamic creation of fx.Provide constructor
+// functions.  Given an application function of the form func([]reflect.Value) (T0, T1, T2...),
+// this function produces a wrapper that an enclosing fx.App can inspect to
+// determine the correct set of dependencies to inject and the correct set of components
+// to emit, if any.
+func (ij Inject) MakeFunc(fn interface{}) reflect.Value {
+	fv := ValueOf(fn)
+	ft := fv.Type()
+
+	outTypes := make([]reflect.Type, ft.NumOut())
+	for i := 0; i < len(outTypes); i++ {
+		outTypes[i] = ft.Out(i)
+	}
+
+	return reflect.MakeFunc(
+		ij.FuncOf(outTypes...),
+		func(inputs []reflect.Value) []reflect.Value {
+			// we set up the output parameters using the function itself,
+			// so the []reflect.Value results should match
+			return fv.Call(
+				[]reflect.Value{
+					reflect.ValueOf(inputs), // a single input parameter of type []reflect.Value
+				},
+			)
+		},
+	)
 }

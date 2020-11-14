@@ -165,51 +165,49 @@ func NewTarget(prototype interface{}) (t Target) {
 
 // Dependency represents a reflected value (possibly) injected by an enclosing fx.App
 type Dependency struct {
-	// Name is the optional name of this dependency.
-	//
-	// This field is only set if the injected value was part of an enclosing struct
-	// that was populated by an fx.App.
-	Name string
-
-	// Group is the optional group of this dependency.  If this is set, the
-	// Value may refer to a slice of values rather than a scalar.
-	//
-	// This field is only set if the injected value was part of an enclosing struct
-	// that was populated by an fx.App.
-	Group string
-
-	// Optional indicates whether this dependency was declared with the optional tag.
-	// Value may or may not have actually been injected in that case.
-	//
-	// This field is only set if the injected value was part of an enclosing struct
-	// that was populated by an fx.App.
-	Optional bool
-
-	// Field is the name of the field containing this dependency, if any.
-	//
-	// This field is only set if the injected value was part of an enclosing struct
-	// that was populated by an fx.App.
-	Field string
-
-	// Tag is the struct tag associated with this field, if any.  This is provided
-	// to support custom logic around tags outside of what uber/fx supports.
-	//
-	// Note that the name, group, and optional tags will already have been parsed
-	// from this tag and set as field on this struct.
-	//
-	// This field is only set if the injected value was part of an enclosing struct
-	// that was populated by an fx.App.
-	Tag reflect.StructTag
-
 	// Container is the struct in which this dependency occurred.
 	//
 	// This field is only set if the injected value was part of an enclosing struct
 	// that was populated by an fx.App.
 	Container reflect.Type
 
+	// Field is the struct field from which this dependency was taken.  This will
+	// be nil for global, unnamed components.
+	Field *reflect.StructField
+
 	// Value is the actual value that was injected.  For plain dependencies that
 	// were not part of an fx.In struct, this will be the only field set.
 	Value reflect.Value
+}
+
+// TagValue returns the given metatag value for this dependency.  This method will
+// return the empty string for all keys if this dependency didn't come from a struct.
+func (d Dependency) TagValue(key string) (v string) {
+	if d.Field != nil {
+		v = d.Field.Tag.Get(key)
+	}
+
+	return
+}
+
+// Name returns the component name for this dependency.  This will always
+// return the empty string if this dependency didn't come from a struct.
+func (d Dependency) Name() string {
+	return d.TagValue("name")
+}
+
+// Group returns the value group name for this dependency.  This will always
+// return the empty string if this dependency didn't come from a struct.
+func (d Dependency) Group() string {
+	return d.TagValue("group")
+}
+
+// Optional returns whether this component can be missing in the enclosing fx.App.
+// This will always return false (i.e. required) if this dependency didn't come
+// from a struct.
+func (d Dependency) Optional() (v bool) {
+	v, _ = strconv.ParseBool(d.TagValue("optional"))
+	return
 }
 
 // Injected returns true if this dependency was actually injected.  This
@@ -221,34 +219,16 @@ type Dependency struct {
 // will still return false.  Callers should be aware of this case and implement
 // application-specific logic where necessary.
 func (d Dependency) Injected() bool {
-	return !d.Optional || !d.Value.IsZero()
+	return !d.Optional() || !d.Value.IsZero()
 }
 
 // String returns a human readable representation of this dependency
 func (d Dependency) String() string {
-	if d.Container != nil {
-		return fmt.Sprintf("%s.%s %s", d.Container, d.Field, d.Tag)
+	if d.Container != nil && d.Field != nil {
+		return fmt.Sprintf("%s.%s %s", d.Container, d.Field.Name, d.Field.Tag)
 	}
 
 	return fmt.Sprintf("%s", d.Value.Type())
-}
-
-// newFieldDependency is a convenience for building a Dependency from a
-// field within a containing struct
-func newFieldDependency(c reflect.Type, f reflect.StructField, fv reflect.Value) Dependency {
-	d := Dependency{
-		Name:      f.Tag.Get("name"),
-		Group:     f.Tag.Get("group"),
-		Value:     fv,
-		Tag:       f.Tag,
-		Field:     f.Name,
-		Container: c,
-	}
-
-	// ignore errors here: this handles the empty/missing case, plus
-	// fx will handle any errors related to mistagged fields
-	d.Optional, _ = strconv.ParseBool(f.Tag.Get("optional"))
-	return d
 }
 
 // DependencyVisitor is a visitor predicate used by VisitDependencies as a callback
@@ -294,7 +274,7 @@ func VisitDependencies(visitor DependencyVisitor, deps ...reflect.Value) {
 					if dig.IsIn(field.Type) {
 						// this field is something that itself contains dependencies
 						stack = append(stack, fieldValue)
-					} else if !visitor(newFieldDependency(containerType, field, fieldValue)) {
+					} else if !visitor(Dependency{Container: containerType, Field: &field, Value: fieldValue}) {
 						return
 					}
 				}

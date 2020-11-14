@@ -132,10 +132,10 @@ func testVisitDependenciesSimple(t *testing.T) {
 			}
 
 			t.Log("visited", d)
-			assert.Empty(d.Name)
-			assert.Empty(d.Group)
-			assert.False(d.Optional)
-			assert.Empty(d.Tag)
+			assert.Empty(d.Name())
+			assert.Empty(d.Group())
+			assert.False(d.Optional())
+			assert.Nil(d.Field)
 			assert.Nil(d.Container)
 
 			require.True(d.Value.IsValid())
@@ -176,10 +176,10 @@ func testVisitDependenciesIn(t *testing.T) {
 			// A
 			func(d Dependency) bool {
 				t.Log("visited", d)
-				assert.Empty(d.Name)
-				assert.Empty(d.Group)
-				assert.False(d.Optional)
-				assert.Empty(d.Tag)
+				assert.Empty(d.Name())
+				assert.Empty(d.Group())
+				assert.False(d.Optional())
+				assert.NotNil(d.Field)
 				assert.Equal(reflect.TypeOf(In{}), d.Container)
 				require.True(d.Value.IsValid())
 				assert.Equal(bytes.NewBufferString("A"), d.Value.Interface())
@@ -190,14 +190,10 @@ func testVisitDependenciesIn(t *testing.T) {
 			// B
 			func(d Dependency) bool {
 				t.Log("visited", d)
-				assert.Equal("named", d.Name)
-				assert.Empty(d.Group)
-				assert.True(d.Optional)
-				assert.Equal(
-					reflect.StructTag(`name:"named" optional:"true"`),
-					d.Tag,
-				)
-
+				assert.Equal("named", d.Name())
+				assert.Empty(d.Group())
+				assert.True(d.Optional())
+				assert.NotNil(d.Field)
 				assert.Equal(reflect.TypeOf(In{}), d.Container)
 				assert.True(d.Value.IsValid())
 				assert.False(d.Injected())
@@ -207,14 +203,10 @@ func testVisitDependenciesIn(t *testing.T) {
 			// C
 			func(d Dependency) bool {
 				t.Log("visited", d)
-				assert.Empty(d.Name)
-				assert.Equal("buffers", d.Group)
-				assert.False(d.Optional)
-				assert.Equal(
-					reflect.StructTag(`group:"buffers"`),
-					d.Tag,
-				)
-
+				assert.Empty(d.Name())
+				assert.Equal("buffers", d.Group())
+				assert.False(d.Optional())
+				assert.NotNil(d.Field)
 				assert.Equal(reflect.TypeOf(In{}), d.Container)
 				require.True(d.Value.IsValid())
 				assert.Equal(
@@ -280,10 +272,10 @@ func testVisitDependenciesRecursion(t *testing.T) {
 			// A
 			func(d Dependency) bool {
 				t.Log("visited", d)
-				assert.Empty(d.Name)
-				assert.Empty(d.Group)
-				assert.False(d.Optional)
-				assert.Empty(d.Tag)
+				assert.Empty(d.Name())
+				assert.Empty(d.Group())
+				assert.False(d.Optional())
+				assert.NotNil(d.Field)
 				assert.Equal(reflect.TypeOf(Recurse{}), d.Container)
 				require.True(d.Value.IsValid())
 				assert.Equal(bytes.NewBufferString("A"), d.Value.Interface())
@@ -294,14 +286,10 @@ func testVisitDependenciesRecursion(t *testing.T) {
 			// B
 			func(d Dependency) bool {
 				t.Log("visited", d)
-				assert.Equal("named", d.Name)
-				assert.Empty(d.Group)
-				assert.True(d.Optional)
-				assert.Equal(
-					reflect.StructTag(`name:"named" optional:"true"`),
-					d.Tag,
-				)
-
+				assert.Equal("named", d.Name())
+				assert.Empty(d.Group())
+				assert.True(d.Optional())
+				assert.NotNil(d.Field)
 				assert.Equal(reflect.TypeOf(Embedded{}), d.Container)
 				assert.True(d.Value.IsValid())
 				assert.False(d.Injected())
@@ -311,14 +299,10 @@ func testVisitDependenciesRecursion(t *testing.T) {
 			// C
 			func(d Dependency) bool {
 				t.Log("visited", d)
-				assert.Empty(d.Name)
-				assert.Equal("buffers", d.Group)
-				assert.False(d.Optional)
-				assert.Equal(
-					reflect.StructTag(`group:"buffers"`),
-					d.Tag,
-				)
-
+				assert.Empty(d.Name())
+				assert.Equal("buffers", d.Group())
+				assert.False(d.Optional())
+				assert.NotNil(d.Field)
 				assert.Equal(reflect.TypeOf(Embedded{}), d.Container)
 				require.True(d.Value.IsValid())
 				assert.Equal(

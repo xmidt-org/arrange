@@ -2,7 +2,6 @@ package arrangehttp
 
 import (
 	"context"
-	"fmt"
 	"net"
 	"net/http"
 	"reflect"
@@ -123,74 +122,6 @@ type ServerIn struct {
 	Shutdowner fx.Shutdowner
 }
 
-// ServerOptions is a set of closures that can modify an *http.Server prior
-// to binding it to the fx.App lifecycle.
-//
-// Each element of this slice can have one of two signatures:
-//
-//   func(*http.Server)
-//   func(*http.Server) error
-//
-// Any other type will raise an error that will short circuit the fx.App startup.
-type ServerOptions []interface{}
-
-func (so ServerOptions) Apply(s *http.Server) (err error) {
-	for _, f := range so {
-		converted := arrange.TryConvert(
-			f,
-			func(o func(*http.Server)) {
-				o(s)
-			},
-			func(o func(*http.Server) error) {
-				err = multierr.Append(err, o(s))
-			},
-		)
-
-		if !converted {
-			err = multierr.Append(
-				err,
-				fmt.Errorf("Invalid server option: %T", f),
-			)
-		}
-	}
-
-	return
-}
-
-// ServerInvoke represents a slice of closures that will be executed
-// within fx.Invoke for a particular server.  Each element of this slice
-// may have one of the following signatures:
-//
-//   func(*mux.Router)
-//   func(*mux.Router) error
-//
-// Any other signature or any non-function type will raise an error that
-// will short circuit the fx.App startup.
-type ServerInvoke []interface{}
-
-func (si ServerInvoke) Apply(r *mux.Router) (err error) {
-	for _, f := range si {
-		converted := arrange.TryConvert(
-			f,
-			func(o func(*mux.Router)) {
-				o(r)
-			},
-			func(o func(*mux.Router) error) {
-				err = multierr.Append(err, o(r))
-			},
-		)
-
-		if !converted {
-			err = multierr.Append(
-				err,
-				fmt.Errorf("Invalid server invoke: %T", f),
-			)
-		}
-	}
-
-	return
-}
-
 // Server describes how to unmarshal and configure a server, listener,
 // and router in the context of an enclosing fx.App.
 type Server struct {
@@ -220,8 +151,12 @@ type Server struct {
 	Inject arrange.Inject
 
 	// Options is the set of server options outside the enclosing fx.App that are run
-	// before the server is bound to the fx.App lifecycle.
-	Options ServerOptions
+	// before the server is bound to the fx.App lifecycle.  Each element of this sequence
+	// must be a function with one of two signatures:
+	//
+	//   func(*http.Server)
+	//   func(*http.Server) error
+	Options arrange.Invoke
 
 	// Middleware is the set of decorators for the *mux.Router that come from outside
 	// the enclosing fx.App.
@@ -231,8 +166,13 @@ type Server struct {
 	// outside the enclosing fx.App.
 	ListenerChain ListenerChain
 
-	// Invoke is the optional set of functions executed as an fx.Invoke option.
-	Invoke ServerInvoke
+	// Invoke is the optional set of functions executed as an fx.Invoke option.  These functions
+	// are executed after server and listener construction.  Each element of this sequence
+	// must be a function with one of two signatures:
+	//
+	//   func(*mux.Router)
+	//   func(*mux.Router) error
+	Invoke arrange.Invoke
 }
 
 func (s *Server) name() string {
@@ -266,7 +206,7 @@ func (s *Server) unmarshal(u arrange.Unmarshaler) (sf ServerFactory, err error) 
 func (s *Server) configure(in ServerIn, server *http.Server, deps []reflect.Value) (lc ListenerChain, err error) {
 	var (
 		middleware alice.Chain
-		options    ServerOptions
+		options    arrange.Invoke
 	)
 
 	arrange.VisitDependencies(
@@ -418,8 +358,7 @@ func (s *Server) Provide() fx.Option {
 				(*mux.Router)(nil),
 			}.MakeFunc(
 				func(inputs []reflect.Value) error {
-					router := inputs[0].Interface().(*mux.Router)
-					return s.Invoke.Apply(router)
+					return s.Invoke.Apply(inputs[0])
 				},
 			)
 		}

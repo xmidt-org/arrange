@@ -9,10 +9,10 @@ import (
 	"time"
 
 	"github.com/gorilla/mux"
+	"github.com/justinas/alice"
 	"github.com/xmidt-org/arrange"
 	"github.com/xmidt-org/arrange/arrangetls"
 	"github.com/xmidt-org/httpaux"
-	"go.uber.org/dig"
 	"go.uber.org/fx"
 	"go.uber.org/multierr"
 )
@@ -123,317 +123,311 @@ type ServerIn struct {
 	Shutdowner fx.Shutdowner
 }
 
-// S is a Fluent Builder for unmarshaling an http.Server.  This type must be
-// created with the Server function.
-type S struct {
-	errs         []error
-	options      []sOption
-	dependencies []reflect.Type
-	prototype    ServerFactory
-}
-
-// Server starts a Fluent Builder method chain for creating an http.Server,
-// binding its lifecycle to the fx.App lifecycle, and producing a *mux.Router
-// as a component for use in dependency injection.
-func Server() *S {
-	return new(S).
-		ServerFactory(ServerConfig{})
-}
-
-// ServerFactory sets a custom prototype object that will be unmarshaled
-// and used to construct the http.Server and associated Listen strategy.
-// By default, ServerConfig{} is used as the factory.  This prototype is
-// cloned and unmarshaled using arrange.NewTarget.
+// ServerOptions is a set of closures that can modify an *http.Server prior
+// to binding it to the fx.App lifecycle.
 //
-// The prototype may optionally implement ListenerFactory, which will allow
-// custom listen behavior.  If the prototype doesn't implement ListenerFactory,
-// then DefaultListenerFactory is used to create the server's net.Listener.
-func (s *S) ServerFactory(prototype ServerFactory) *S {
-	s.prototype = prototype
-	return s
-}
-
-// With adds functional options that tailor the *http.Server supplied by
-// this builder chain.
+// Each element of this slice can have one of two signatures:
 //
-// This method is intended for options created outside the enclosing fx.App.
-// For options created as components, use Inject.
-func (s *S) With(o ...ServerOption) *S {
-	s.options = append(
-		s.options,
-		ServerOptions(o...).sOption,
-	)
-
-	return s
-}
-
-// WithRouter adds functional options that tailor the *mux.Router supplied
-// by this builder chain.
+//   func(*http.Server)
+//   func(*http.Server) error
 //
-// This method is intended for options created outside the enclosing fx.App.
-// For options created as components, use Inject.
-func (s *S) WithRouter(o ...RouterOption) *S {
-	s.options = append(
-		s.options,
-		RouterOptions(o...).sOption,
-	)
+// Any other type will raise an error that will short circuit the fx.App startup.
+type ServerOptions []interface{}
 
-	return s
-}
+func (so ServerOptions) Apply(s *http.Server) (err error) {
+	for _, f := range so {
+		converted := arrange.TryConvert(
+			f,
+			func(o func(*http.Server)) {
+				o(s)
+			},
+			func(o func(*http.Server) error) {
+				err = multierr.Append(err, o(s))
+			},
+		)
 
-// Middleware is a shorthand for a RouterOption that adds several middlewares
-// to the *mux.Router being built.
-//
-// This method is intended for middleware created outside the enclosing fx.App.
-// For middleware created as components, use Inject.
-func (s *S) Middleware(m ...func(http.Handler) http.Handler) *S {
-	return s.WithRouter(func(router *mux.Router) error {
-		for _, f := range m {
-			router.Use(f)
-		}
-
-		return nil
-	})
-}
-
-// MiddlewareChain is a shorthand for a RouterOption that adds a chain
-// of server middlewares.  Various packages can be used here, such as justinas/alice.
-//
-// This method is intended for middleware created outside the enclosing fx.App.
-// For middleware created as components, use Inject.
-func (s *S) MiddlewareChain(smc ServerMiddlewareChain) *S {
-	return s.WithRouter(func(router *mux.Router) error {
-		router.Use(smc.Then)
-		return nil
-	})
-}
-
-// ListenerChain adds a ListenerChain that decorates the listener used to accept
-// traffic for this server.
-//
-// This method is intended for chains created outside the enclosing fx.App.
-// For chains created as components, use Inject.
-func (s *S) ListenerChain(lc ListenerChain) *S {
-	s.options = append(
-		s.options,
-		func(si *serverInfo) error {
-			si.listenerChain = si.listenerChain.Extend(lc)
-			return nil
-		},
-	)
-
-	return s
-}
-
-// ListenerConstructors adds several decorators for the listener used to accept
-// traffic for this server.
-//
-// This method is intended for constructors created outside the enclosing fx.App.
-// For constructors created as components, use Inject.
-func (s *S) ListenerConstructors(l ...ListenerConstructor) *S {
-	s.options = append(
-		s.options,
-		func(si *serverInfo) error {
-			si.listenerChain = si.listenerChain.Append(l...)
-			return nil
-		},
-	)
-
-	return s
-}
-
-// CaptureListenAddress decorates the server's listener so that the actual address the
-// server listens on is sent to a channel when the fx.App is started.
-//
-// This method is primarily useful during testing or examples when the bind address
-// of the server is such that it will bind to an available port, e.g. "", ":0", "[::1]:0", etc.
-func (s *S) CaptureListenAddress(ch chan<- net.Addr) *S {
-	return s.ListenerConstructors(
-		CaptureListenAddress(ch),
-	)
-}
-
-// Inject allows additional components that tailor an http.Server, mux.Router, or net.Listener.
-// These components will be supplied by the enclosing fx.App.
-//
-// Each value supplied to this method must be a struct value that embeds fx.In.
-//
-// When the constructor for this server is called, each field of each struct is examined to
-// see if it is a type that can apply to tailoring a server, router, or listener.  Any fields
-// that cannot be used are silently ignored.
-//
-// Injected objects are applied before any external options are supplied.  For example,
-// middleware that has been injected will execute before anything added with
-// the Middleware method.
-func (s *S) Inject(deps ...interface{}) *S {
-	for _, d := range deps {
-		dt := arrange.ValueOf(d).Type()
-		if dig.IsIn(dt) {
-			s.dependencies = append(s.dependencies, dt)
-		} else {
-			s.errs = append(s.errs,
-				fmt.Errorf("%s is not an fx.In struct", dt),
+		if !converted {
+			err = multierr.Append(
+				err,
+				fmt.Errorf("Invalid server option: %T", f),
 			)
 		}
 	}
 
-	return s
+	return
 }
 
-// unmarshalFuncOf determines the function signature for Unmarshal or UnmarshalKey.
-// The first input parameter is always a ServerIn struct.  Following that will be any
-// fx.In structs, and following that will be any simple dependencies.
-func (s *S) unmarshalFuncOf() reflect.Type {
-	return reflect.FuncOf(
-		// inputs
-		append(
-			[]reflect.Type{reflect.TypeOf(ServerIn{})},
-			s.dependencies...,
-		),
-
-		// outputs
-		[]reflect.Type{
-			reflect.TypeOf((*mux.Router)(nil)),
-			arrange.ErrorType(),
-		},
-
-		false, // not variadic
-	)
-}
-
-// unmarshal does all the heavy lifting of unmarshaling a ServerFactory and creating a server, router,
-// and binding a listener to the fx.App lifecycle.
+// ServerInvoke represents a slice of closures that will be executed
+// within fx.Invoke for a particular server.  Each element of this slice
+// may have one of the following signatures:
 //
-// If this method does not return an error, it will have bound the listener to the fx.App's Lifecycle.
-func (s *S) unmarshal(u func(arrange.Unmarshaler, interface{}) error, inputs []reflect.Value) (*mux.Router, error) {
-	if len(s.errs) > 0 {
-		return nil, multierr.Combine(s.errs...)
+//   func(*mux.Router)
+//   func(*mux.Router) error
+//
+// Any other signature or any non-function type will raise an error that
+// will short circuit the fx.App startup.
+type ServerInvoke []interface{}
+
+func (si ServerInvoke) Apply(r *mux.Router) (err error) {
+	for _, f := range si {
+		converted := arrange.TryConvert(
+			f,
+			func(o func(*mux.Router)) {
+				o(r)
+			},
+			func(o func(*mux.Router) error) {
+				err = multierr.Append(err, o(r))
+			},
+		)
+
+		if !converted {
+			err = multierr.Append(
+				err,
+				fmt.Errorf("Invalid server invoke: %T", f),
+			)
+		}
 	}
 
+	return
+}
+
+// Server describes how to unmarshal and configure a server, listener,
+// and router in the context of an enclosing fx.App.
+type Server struct {
+	// Name is the optional name of the *mux.Router component
+	Name string
+
+	// Key is the configuration key from which this server's factory
+	// is unmarshaled.  If Name is not set and this field is set, then
+	// this field is used by default as the component name.
+	Key string
+
+	// Unnamed disables the defaulting of a component name when the Key
+	// field is set.  Useful when an fx.App only has one server that gets
+	// unmarshaled from a key.
+	Unnamed bool
+
+	// ServerFactory is the prototype instance used to instantiate an *http.Server.
+	// If unset, ServerConfig is used.
+	//
+	// If set, this instance is cloned before unmarshaling.  That means any values
+	// set on it will act as defaults.
+	ServerFactory ServerFactory
+
+	// Inject is the set of dependencies used to build the server, listener, and router.
+	// This is a set of types that are injected when the function created by Provide is
+	// run.
+	Inject arrange.Inject
+
+	// Options is the set of server options outside the enclosing fx.App that are run
+	// before the server is bound to the fx.App lifecycle.
+	Options ServerOptions
+
+	// Middleware is the set of decorators for the *mux.Router that come from outside
+	// the enclosing fx.App.
+	Middleware alice.Chain
+
+	// ListenerChain is the set of decorators for the net.Listener that come from
+	// outside the enclosing fx.App.
+	ListenerChain ListenerChain
+
+	// Invoke is the optional set of functions executed as an fx.Invoke option.
+	Invoke ServerInvoke
+}
+
+func (s *Server) name() string {
+	switch {
+	case s.Unnamed:
+		return ""
+	case len(s.Name) > 0:
+		return s.Name
+	default:
+		return s.Key
+	}
+}
+
+func (s *Server) unmarshal(u arrange.Unmarshaler) (sf ServerFactory, err error) {
+	prototype := s.ServerFactory
+	if prototype == nil {
+		prototype = ServerConfig{}
+	}
+
+	target := arrange.NewTarget(prototype)
+	sf = target.Component.Interface().(ServerFactory)
+	if len(s.Key) > 0 {
+		err = u.UnmarshalKey(s.Key, target.UnmarshalTo.Interface())
+	} else {
+		err = u.Unmarshal(target.UnmarshalTo.Interface())
+	}
+
+	return
+}
+
+func (s *Server) configure(in ServerIn, server *http.Server, deps []reflect.Value) (lc ListenerChain, err error) {
 	var (
-		target   = arrange.NewTarget(s.prototype)
-		serverIn = inputs[0].Interface().(ServerIn)
-		p        = arrange.NewModulePrinter(Module, serverIn.Printer)
+		middleware alice.Chain
+		options    ServerOptions
 	)
 
-	// apply the unmarshaling strategy against the ServerFactory target
-	if err := u(serverIn.Unmarshaler, target.UnmarshalTo.Interface()); err != nil {
-		return nil, err
-	}
-
-	// create a serverInfo that will provide context to all the option code
-	si := serverInfo{
-		router: mux.NewRouter(),
-	}
-
-	// use the unmarshaled ServerFactory to create the *http.Server
-	factory := target.Component.Interface().(ServerFactory)
-	var err error
-	if si.server, err = factory.NewServer(si.router); err != nil {
-		return nil, err
-	}
-
-	// first apply all the injected dependencies
-	var optionErrs []error
 	arrange.VisitDependencies(
 		func(d arrange.Dependency) bool {
 			if d.Injected() {
-				// ignore dependencies that can't be converted
-				if so := newSOption(d.Value.Interface()); so != nil {
-					p.Printf("SERVER INJECT => %s", d)
-					if err = so(&si); err != nil {
-						optionErrs = append(optionErrs, err)
-					}
-				}
+				arrange.TryConvert(
+					d.Value.Interface(),
+					func(v alice.Chain) {
+						middleware = middleware.Extend(v)
+					},
+					func(v alice.Constructor) {
+						middleware = middleware.Append(v)
+					},
+					func(v []alice.Constructor) {
+						middleware = middleware.Append(v...)
+					},
+					func(v ListenerChain) {
+						lc = lc.Extend(v)
+					},
+					func(v ListenerConstructor) {
+						lc = lc.Append(v)
+					},
+					func(v []ListenerConstructor) {
+						lc = lc.Append(v...)
+					},
+					func(v func(*http.Server)) {
+						options = append(options, v)
+					},
+					func(v []func(*http.Server)) {
+						for _, o := range v {
+							options = append(options, o)
+						}
+					},
+					func(v func(*http.Server) error) {
+						options = append(options, v)
+					},
+					func(v []func(*http.Server) error) {
+						for _, o := range v {
+							options = append(options, o)
+						}
+					},
+				)
 			}
 
 			return true
 		},
-		inputs[1:]...,
+		deps...,
 	)
 
-	// now apply all the options directly specified on this builder
-	for _, o := range s.options {
-		if err := o(&si); err != nil {
-			optionErrs = append(optionErrs, err)
-		}
+	middleware = middleware.Extend(s.Middleware)
+	lc = lc.Extend(s.ListenerChain)
+	err = multierr.Append(
+		err,
+		options.Apply(server),
+	)
+
+	if err == nil {
+		server.Handler = middleware.Then(server.Handler)
 	}
 
-	if len(optionErrs) > 0 {
-		return nil, multierr.Combine(optionErrs...)
+	return
+}
+
+// provide implements the main workflow.  It's a Template Method that unmarshals
+// and creates an *http.Server, configures it, and binds a net.Listener to the fx.App lifecycle.
+func (s *Server) provide(deps []reflect.Value) (router *mux.Router, err error) {
+	// the first dependency is always a ServerIn
+	in := deps[0].Interface().(ServerIn)
+
+	var sf ServerFactory
+	sf, err = s.unmarshal(in.Unmarshaler)
+	if err != nil {
+		return
+	}
+
+	router = mux.NewRouter()
+	var server *http.Server
+	server, err = sf.NewServer(router)
+	if err != nil {
+		return
+	}
+
+	var lc ListenerChain
+	lc, err = s.configure(in, server, deps[1:])
+	if err != nil {
+		return
+	}
+
+	var lf ListenerFactory
+	if v, ok := sf.(ListenerFactory); ok {
+		lf = v
 	} else {
-		si.applyMiddleware()
-		var lf ListenerFactory
-		ok := false
-		if lf, ok = factory.(ListenerFactory); !ok {
-			lf = DefaultListenerFactory{}
+		lf = DefaultListenerFactory{}
+	}
+
+	in.Lifecycle.Append(fx.Hook{
+		OnStart: ServerOnStart(
+			server,
+			lc.Factory(lf),
+			ShutdownOnExit(in.Shutdowner),
+		),
+		OnStop: server.Shutdown,
+	})
+
+	return
+}
+
+func (s *Server) Provide() fx.Option {
+	provideFunc := arrange.Inject{reflect.TypeOf(ServerIn{})}.
+		Extend(s.Inject).
+		MakeFunc(s.provide)
+
+	name := s.name()
+	var options []fx.Option
+	if len(name) > 0 {
+		options = append(options, fx.Provide(
+			fx.Annotated{
+				Name:   name,
+				Target: provideFunc.Interface(),
+			},
+		))
+	} else {
+		options = append(options, fx.Provide(
+			provideFunc.Interface(),
+		))
+	}
+
+	if len(s.Invoke) > 0 {
+		var invokeFunc reflect.Value
+		if len(name) > 0 {
+			// build an fx.In struct
+			invokeFunc = arrange.Inject{
+				arrange.Struct{}.In().Append(
+					arrange.Field{
+						Name: name,
+						Type: (*mux.Router)(nil),
+					},
+				),
+			}.MakeFunc(
+				func(inputs []reflect.Value) error {
+					// the router will always be the 2nd field of the only struct parameter
+					router := inputs[0].Field(1).Interface().(*mux.Router)
+					return s.Invoke.Apply(router)
+				},
+			)
+		} else {
+			// just a simple global, unnamed dependency
+			invokeFunc = arrange.Inject{
+				(*mux.Router)(nil),
+			}.MakeFunc(
+				func(inputs []reflect.Value) error {
+					router := inputs[0].Interface().(*mux.Router)
+					return s.Invoke.Apply(router)
+				},
+			)
 		}
 
-		serverIn.Lifecycle.Append(fx.Hook{
-			OnStart: ServerOnStart(
-				si.server,
-				si.listenerChain.Factory(lf),
-				func() {
-					// ensure that if this server exits for any reason,
-					// the enclosing fx.App is shutdown
-					serverIn.Shutdowner.Shutdown()
-				}),
-			OnStop: si.server.Shutdown,
-		})
-
-		return si.router, nil
+		options = append(options, fx.Invoke(
+			invokeFunc.Interface(),
+		))
 	}
-}
 
-// makeUnmarshalFunc dynamically creates the function to be passed as a constructor to the fx.App.
-func (s *S) makeUnmarshalFunc(u func(arrange.Unmarshaler, interface{}) error) reflect.Value {
-	return reflect.MakeFunc(
-		s.unmarshalFuncOf(),
-		func(inputs []reflect.Value) []reflect.Value {
-			router, err := s.unmarshal(u, inputs)
-			return []reflect.Value{
-				reflect.ValueOf(router),
-				arrange.NewErrorValue(err),
-			}
-		},
-	)
-}
-
-// Unmarshal terminates the builder chain and returns a function that produces a mux.Router.
-// The *http.Server and net.Listener objects built by this function are not exposed.  However,
-// both the server and listener will be bound to the lifecycle of the enclosing fx.App.
-func (s *S) Unmarshal() interface{} {
-	return s.makeUnmarshalFunc(
-		func(u arrange.Unmarshaler, v interface{}) error {
-			return u.Unmarshal(v)
-		},
-	).Interface()
-}
-
-// UnmarshalKey is like Unmarshal, except that it unmarshals from a particular configuration key.
-func (s *S) UnmarshalKey(key string) interface{} {
-	return s.makeUnmarshalFunc(
-		func(u arrange.Unmarshaler, v interface{}) error {
-			return u.UnmarshalKey(key, v)
-		},
-	).Interface()
-}
-
-// Provide produces an fx.Provide that does the same thing as Unmarshal.
-// is the typical way to leverage this package to create an http.Server.
-func (s *S) Provide() fx.Option {
-	return fx.Provide(
-		s.Unmarshal(),
-	)
-}
-
-// ProvideKey handles the simple case where a router is built from a given configuration key
-// and is exposed as a component of the same name as the key.
-func (s *S) ProvideKey(key string) fx.Option {
-	return fx.Provide(
-		fx.Annotated{
-			Name:   key,
-			Target: s.UnmarshalKey(key),
-		},
-	)
+	return fx.Options(options...)
 }

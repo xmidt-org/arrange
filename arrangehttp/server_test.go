@@ -3,19 +3,25 @@ package arrangehttp
 import (
 	"bufio"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"io/ioutil"
 	"net"
 	"net/http"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/gorilla/mux"
+	"github.com/spf13/viper"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
+	"github.com/xmidt-org/arrange"
 	"github.com/xmidt-org/arrange/arrangetls"
+	"go.uber.org/fx"
+	"go.uber.org/fx/fxtest"
 )
 
 type simpleServerFactory struct {
@@ -204,4 +210,123 @@ func TestServerConfig(t *testing.T) {
 
 type ServerTestSuite struct {
 	suite.Suite
+	testLogger fx.Option
+
+	viper       *viper.Viper
+	serverAddr  chan net.Addr
+	captureAddr ListenerConstructor
+}
+
+func (suite *ServerTestSuite) SetupTest() {
+	suite.testLogger = arrange.TestLogger(suite.T())
+	suite.viper = viper.New()
+
+	suite.serverAddr = make(chan net.Addr, 1)
+	suite.captureAddr = CaptureListenAddress(suite.serverAddr)
+}
+
+func (suite *ServerTestSuite) handler(response http.ResponseWriter, _ *http.Request) {
+	// write an odd response code to easily verify that this handler executed
+	response.WriteHeader(299)
+}
+
+func (suite *ServerTestSuite) configureRoutes(r *mux.Router) {
+	r.HandleFunc("/test", suite.handler)
+}
+
+func (suite *ServerTestSuite) yaml(v string) {
+	suite.viper.SetConfigType("yaml")
+
+	suite.Require().NoError(
+		suite.viper.ReadConfig(strings.NewReader(v)),
+	)
+}
+
+func (suite *ServerTestSuite) requireServerAddr() net.Addr {
+	a, _ := AwaitListenAddress(
+		suite.Require().FailNow,
+		suite.serverAddr,
+		5*time.Second,
+	)
+
+	return a
+}
+
+func (suite *ServerTestSuite) serverURL() string {
+	return "http://" + suite.requireServerAddr().String() + "/test"
+}
+
+func (suite *ServerTestSuite) serverGet() *http.Response {
+	response, err := http.Get(suite.serverURL())
+	suite.Require().NoError(err)
+	suite.Require().NotNil(response)
+	io.Copy(ioutil.Discard, response.Body)
+	response.Body.Close()
+
+	suite.Equal(299, response.StatusCode)
+	return response
+}
+
+func (suite *ServerTestSuite) TestUnmarshalError() {
+	suite.yaml(`
+readTimeout: "this is not a valid duration"
+`)
+
+	app := fx.New(
+		suite.testLogger,
+		arrange.ForViper(suite.viper),
+		Server{
+			Invoke: arrange.Invoke{
+				suite.configureRoutes,
+			},
+		}.Provide(),
+	)
+
+	defer app.Stop(context.Background())
+	suite.Error(app.Err())
+}
+
+func (suite *ServerTestSuite) TestServerFactoryError() {
+	app := fx.New(
+		suite.testLogger,
+		arrange.ForViper(suite.viper),
+		Server{
+			ServerFactory: simpleServerFactory{
+				returnErr: errors.New("expected"),
+			},
+			Invoke: arrange.Invoke{
+				suite.configureRoutes,
+			},
+		}.Provide(),
+	)
+
+	defer app.Stop(context.Background())
+	suite.Error(app.Err())
+}
+
+func (suite *ServerTestSuite) TestDefaults() {
+	app := fxtest.New(
+		suite.T(),
+		suite.testLogger,
+		arrange.ForViper(suite.viper),
+		Server{
+			ListenerChain: NewListenerChain(
+				suite.captureAddr,
+			),
+			Invoke: arrange.Invoke{
+				suite.configureRoutes,
+			},
+		}.Provide(),
+	)
+
+	suite.Require().NoError(app.Err())
+	app.RequireStart()
+	defer app.Stop(context.Background())
+
+	suite.serverGet()
+	app.RequireStop()
+}
+
+func TestServer(t *testing.T) {
+	suite.Run(t, new(ServerTestSuite))
 }

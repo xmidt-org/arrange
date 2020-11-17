@@ -371,7 +371,7 @@ func (s *Server) provide(deps []reflect.Value) (router *mux.Router, err error) {
 //   - any function type that takes a sole parameter of *http.Server and returns either nothing
 //     or an error will be executed as a server option along with everything in the Options field.
 //     This also includes slices of the same function types.
-func (s *Server) Provide() fx.Option {
+func (s Server) Provide() fx.Option {
 	provideFunc := arrange.Inject{reflect.TypeOf(ServerIn{})}.
 		Extend(s.Inject).
 		MakeFunc(s.provide)

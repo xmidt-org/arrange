@@ -14,6 +14,7 @@ import (
 	"github.com/gorilla/mux"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/stretchr/testify/suite"
 	"github.com/xmidt-org/arrange/arrangetls"
 )
 
@@ -199,4 +200,8 @@ func TestServerConfig(t *testing.T) {
 	t.Run("Basic", testServerConfigBasic)
 	t.Run("TLS", testServerConfigTLS)
 	t.Run("Header", testServerConfigHeader)
+}
+
+type ServerTestSuite struct {
+	suite.Suite
 }

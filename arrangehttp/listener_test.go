@@ -11,6 +11,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/stretchr/testify/suite"
 	"github.com/xmidt-org/arrange/arrangetls"
 	"go.uber.org/fx"
 )
@@ -245,126 +246,93 @@ func TestCaptureListenAddress(t *testing.T) {
 	}
 }
 
-func testWaitForListenAddressSuccess(t *testing.T) {
-	var (
-		assert = assert.New(t)
+type AwaitListenAddressTestSuite struct {
+	suite.Suite
+	ch         chan net.Addr
+	addr       net.Addr
+	failCalled bool
 
-		expected = &net.IPAddr{
-			IP:   []byte{127, 0, 0, 1},
-			Zone: "test",
-		}
+	ready chan struct{}
+	done  chan struct{}
+}
 
-		address = make(chan net.Addr, 1)
-		timer   = make(chan time.Time, 1)
-		done    = make(chan struct{})
-	)
+func (suite *AwaitListenAddressTestSuite) fail(string, ...interface{}) {
+	suite.failCalled = true
+}
 
+func (suite *AwaitListenAddressTestSuite) SetupTest() {
+	suite.ch = make(chan net.Addr, 1)
+	suite.addr = &net.IPAddr{
+		IP: net.ParseIP("127.0.0.1"),
+	}
+
+	suite.failCalled = false
+	suite.ready = make(chan struct{}, 1)
+	suite.done = make(chan struct{}, 1)
+}
+
+func (suite *AwaitListenAddressTestSuite) TestSuccess() {
 	go func() {
-		defer close(done)
-		a, ok := WaitForListenAddress(address, timer)
-		assert.Equal(expected, a)
-		assert.True(ok)
+		defer close(suite.done)
+		close(suite.ready)
+		a, ok := AwaitListenAddress(
+			suite.fail,
+			suite.ch,
+			10*time.Second,
+		)
+
+		suite.Equal(suite.addr, a)
+		suite.True(ok)
+		suite.False(suite.failCalled)
 	}()
 
-	address <- expected
 	select {
-	case <-done:
+	case <-suite.ready:
+		suite.ch <- suite.addr
+	case <-time.After(time.Second):
+		suite.Fail("AwaitListenAddress did not start")
+	}
+
+	select {
+	case <-suite.done:
 		// passing
 	case <-time.After(time.Second):
-		assert.Fail("did not receive test result")
+		suite.Fail("AwaitListenAddress did not return")
 	}
 }
 
-func testWaitForListenAddressTimeout(t *testing.T) {
-	var (
-		assert = assert.New(t)
-
-		address = make(chan net.Addr, 1)
-		timer   = make(chan time.Time, 1)
-		done    = make(chan struct{})
-	)
-
+func (suite *AwaitListenAddressTestSuite) TestTimeout() {
 	go func() {
-		defer close(done)
-		a, ok := WaitForListenAddress(address, timer)
-		assert.Nil(a)
-		assert.False(ok)
+		defer close(suite.done)
+		close(suite.ready)
+		a, ok := AwaitListenAddress(
+			suite.fail,
+			suite.ch,
+			10*time.Millisecond,
+		)
+
+		suite.Nil(a)
+		suite.False(ok)
+		suite.True(suite.failCalled)
 	}()
 
-	timer <- time.Time{}
 	select {
-	case <-done:
-		// passing
+	case <-suite.ready:
+		// passing, but don't send an address in order to make it fail
 	case <-time.After(time.Second):
-		assert.Fail("did not receive test result")
+		suite.Fail("AwaitListenAddress did not start")
+	}
+
+	select {
+	case <-suite.done:
+		// passing ... assertions are done in the goroutine
+	case <-time.After(time.Second):
+		suite.Fail("AwaitListenAddress did not return")
 	}
 }
 
-func TestWaitForListenAddress(t *testing.T) {
-	t.Run("Success", testWaitForListenAddressSuccess)
-	t.Run("Timeout", testWaitForListenAddressTimeout)
-}
-
-func testMustGetListenAddressSuccess(t *testing.T) {
-	var (
-		assert = assert.New(t)
-
-		expected = &net.IPAddr{
-			IP:   []byte{127, 0, 0, 1},
-			Zone: "test",
-		}
-
-		address = make(chan net.Addr, 1)
-		timer   = make(chan time.Time, 1)
-		done    = make(chan struct{})
-	)
-
-	go func() {
-		defer close(done)
-
-		assert.NotPanics(func() {
-			a := MustGetListenAddress(address, timer)
-			assert.Equal(expected, a)
-		})
-	}()
-
-	address <- expected
-	select {
-	case <-done:
-		// passing
-	case <-time.After(time.Second):
-		assert.Fail("did not receive test result")
-	}
-}
-
-func testMustGetListenAddressTimeout(t *testing.T) {
-	var (
-		assert = assert.New(t)
-
-		address = make(chan net.Addr, 1)
-		timer   = make(chan time.Time, 1)
-		done    = make(chan struct{})
-	)
-
-	go func() {
-		defer close(done)
-		assert.Panics(func() {
-			MustGetListenAddress(address, timer)
-		})
-	}()
-
-	timer <- time.Time{}
-	select {
-	case <-done:
-		// passing
-	case <-time.After(time.Second):
-		assert.Fail("did not receive test result")
-	}
-}
-
-func TestMustGetListenAddress(t *testing.T) {
-	t.Run("Success", testMustGetListenAddressSuccess)
-	t.Run("Timeout", testMustGetListenAddressTimeout)
+func TestAwaitListenAddress(t *testing.T) {
+	suite.Run(t, new(AwaitListenAddressTestSuite))
 }
 
 type testShutdowner struct {

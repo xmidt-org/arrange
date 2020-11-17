@@ -131,11 +131,17 @@ type Server struct {
 	// Key is the configuration key from which this server's factory
 	// is unmarshaled.  If Name is not set and this field is set, then
 	// this field is used by default as the component name.
+	//
+	// If this field is unset, unmarshaling takes place at the root
+	// of the configuration.
 	Key string
 
 	// Unnamed disables the defaulting of a component name when the Key
 	// field is set.  Useful when an fx.App only has one server that gets
 	// unmarshaled from a key.
+	//
+	// When this field is true, then the *mux.Router is never named regardless
+	// of the other fields.
 	Unnamed bool
 
 	// ServerFactory is the prototype instance used to instantiate an *http.Server.
@@ -146,8 +152,10 @@ type Server struct {
 	ServerFactory ServerFactory
 
 	// Inject is the set of dependencies used to build the server, listener, and router.
-	// This is a set of types that are injected when the function created by Provide is
+	// This is a set of types that are injected when the constructor created by Provide is
 	// run.
+	//
+	// Injected dependencies are always applied before anything in this struct.
 	Inject arrange.Inject
 
 	// Options is the set of server options outside the enclosing fx.App that are run
@@ -160,10 +168,16 @@ type Server struct {
 
 	// Middleware is the set of decorators for the *mux.Router that come from outside
 	// the enclosing fx.App.
+	//
+	// Any injected middleware, via the Inject field, are applied before anything
+	// in this field.
 	Middleware alice.Chain
 
 	// ListenerChain is the set of decorators for the net.Listener that come from
 	// outside the enclosing fx.App.
+	//
+	// Any injected listener chains or constructors, via the Inject field, are applied
+	// before anything in this field.
 	ListenerChain ListenerChain
 
 	// Invoke is the optional set of functions executed as an fx.Invoke option.  These functions
@@ -172,6 +186,9 @@ type Server struct {
 	//
 	//   func(*mux.Router)
 	//   func(*mux.Router) error
+	//
+	// If this slice is empty, client code must add at least one fx.Invoke that accepts the
+	// *mux.Router or else the server created by this struct will not get started.
 	Invoke arrange.Invoke
 }
 
@@ -314,6 +331,46 @@ func (s *Server) provide(deps []reflect.Value) (router *mux.Router, err error) {
 	return
 }
 
+// Provide creates an fx.Option that bootstraps an HTTP server.  An *mux.Router
+// component is returned to the enclosing fx.App, but the server and listener are
+// not exposed as components.
+//
+// The constructor supplied to the enclosing fx.App always has a ServerIn as an
+// input parameter followed by each type contained in the Inject field (if any).
+// This dynamically created constructor implements a basic workflow:
+//
+//   - A clone of the ServerFactory object is unmarshaled.  An instance of ServerConfig
+//     is used if no ServerFactory is supplied.
+//
+//   - The ServerFactory is passed a new *mux.Router (as an http.Handler) to instantiate
+//     the *http.Server object.
+//
+//   - Each injected value, dictated by the types in Inject, are examined to see if they
+//     contain dependencies that apply to building a server (see below).  Those dependencies
+//     are applied to the server or to a ListenerChain which will eventually decorate the net.Listener.
+//
+//   - Each functional option in the Inject dependencies or Options is executed with the server instance
+//
+//   - Any middleware found in the Inject dependencies or Middleware are applied to the *mux.Router
+//
+//   - Assuming no errors thus far, an fx.Lifecycle hook is created that binds the *http.Server
+//     object to the fx.App lifecycle.  The OnStart function in this hook creates a net.Listener
+//     and decorates that listener with any application dependencies.
+//
+//   - If Invoke is not empty, then an fx.Invoke option is also created that is injected with
+//     the *mux.Router instance created above and executes each Invoke closure.
+//
+// The set of dependencies in Inject that can apply to an *http.Server are very flexible:
+//
+//   - anything convertible to an alice.Constructor or alice.Chain will decorate the *mux.Router.
+//     This also includes slices of alice.Constructor, which is just a func(http.Handler) http.Handler.
+//
+//   - anything convertible to a ListenerConstructor or ListenerChain will decorate the net.Listener
+//     Included in this are slices of ListenerConstructor.
+//
+//   - any function type that takes a sole parameter of *http.Server and returns either nothing
+//     or an error will be executed as a server option along with everything in the Options field.
+//     This also includes slices of the same function types.
 func (s *Server) Provide() fx.Option {
 	provideFunc := arrange.Inject{reflect.TypeOf(ServerIn{})}.
 		Extend(s.Inject).

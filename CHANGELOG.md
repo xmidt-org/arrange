@@ -7,6 +7,7 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 ## [Unreleased]
 - Refactored dependency reflection to make it easier to use
 - Added a convenience for declaring injected dependencies
+- Simplified declarative builders in arrangehttp
 
 ## [v0.2.1]
 - Support more slice types for server and client options

@@ -415,8 +415,7 @@ func (s Server) Provide() fx.Option {
 			}.MakeFunc(
 				func(inputs []reflect.Value) error {
 					// the router will always be the 2nd field of the only struct parameter
-					router := inputs[0].Field(1).Interface().(*mux.Router)
-					return s.Invoke.Apply(router)
+					return s.Invoke.Apply(inputs[0].Field(1))
 				},
 			)
 		} else {

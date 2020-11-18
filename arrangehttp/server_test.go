@@ -14,9 +14,11 @@ import (
 	"time"
 
 	"github.com/gorilla/mux"
+	"github.com/justinas/alice"
 	"github.com/spf13/viper"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/stretchr/testify/suite"
 	"github.com/xmidt-org/arrange"
 	"github.com/xmidt-org/arrange/arrangetls"
 	"go.uber.org/fx"
@@ -28,14 +30,14 @@ type simpleServerFactory struct {
 	returnErr error
 }
 
-func (ssf simpleServerFactory) NewServer(http.Handler) (*http.Server, error) {
+func (ssf simpleServerFactory) NewServer(h http.Handler) (*http.Server, error) {
 	if ssf.returnErr != nil {
 		return nil, ssf.returnErr
 	}
 
 	return &http.Server{
-		Addr: ssf.Address,
-		// this factory does not set a handler, forcing the infrastructure to set it
+		Addr:    ssf.Address,
+		Handler: h,
 	}, nil
 }
 
@@ -207,477 +209,576 @@ func TestServerConfig(t *testing.T) {
 	t.Run("Header", testServerConfigHeader)
 }
 
-func testServerInjectError(t *testing.T) {
-	var (
-		assert = assert.New(t)
-		v      = viper.New()
-	)
+type ServerTestSuite struct {
+	suite.Suite
+	testLogger fx.Option
 
-	app := fx.New(
-		arrange.TestLogger(t),
-		arrange.ForViper(v),
-		Server().
-			Inject(struct {
-				DoesNotEmbedFxIn string
-			}{}).
-			Provide(),
-		fx.Invoke(
-			func(*mux.Router) {
-				// doesn't matter
-			},
-		),
-	)
-
-	assert.Error(app.Err())
+	viper       *viper.Viper
+	serverAddr  chan net.Addr
+	captureAddr ListenerConstructor
 }
 
-func testServerUnmarshalError(t *testing.T) {
-	const yaml = `
-maxHeaderBytes: "this is not a valid int"
-`
+func (suite *ServerTestSuite) SetupTest() {
+	suite.testLogger = arrange.TestLogger(suite.T())
+	suite.viper = viper.New()
 
-	var (
-		assert  = assert.New(t)
-		require = require.New(t)
-		v       = viper.New()
-	)
-
-	v.SetConfigType("yaml")
-	require.NoError(v.ReadConfig(strings.NewReader(yaml)))
-
-	app := fx.New(
-		arrange.TestLogger(t),
-		arrange.ForViper(v),
-		Server().
-			Provide(),
-		fx.Invoke(
-			func(*mux.Router) {
-				// doesn't matter
-			},
-		),
-	)
-
-	assert.Error(app.Err())
+	suite.serverAddr = make(chan net.Addr, 1)
+	suite.captureAddr = CaptureListenAddress(suite.serverAddr)
 }
 
-func testServerFactoryError(t *testing.T) {
-	var (
-		assert = assert.New(t)
-		v      = viper.New()
-	)
-
-	app := fx.New(
-		arrange.TestLogger(t),
-		arrange.ForViper(v),
-		Server().
-			ServerFactory(simpleServerFactory{
-				returnErr: errors.New("expected NewServer error"),
-			}).
-			Provide(),
-		fx.Invoke(
-			func(*mux.Router) {
-				// doesn't matter
-			},
-		),
-	)
-
-	assert.Error(app.Err())
+func (suite *ServerTestSuite) handler(response http.ResponseWriter, _ *http.Request) {
+	// write an odd response code to easily verify that this handler executed
+	response.WriteHeader(299)
 }
 
-func testServerOptionError(t *testing.T) {
-	var (
-		assert = assert.New(t)
-		v      = viper.New()
-
-		injectedServerOptionCalled bool
-		injectedRouterOptionCalled bool
-		externalServerOptionCalled bool
-		externalRouterOptionCalled bool
-	)
-
-	app := fx.New(
-		arrange.TestLogger(t),
-		arrange.ForViper(v),
-		fx.Provide(
-			func() ServerOption {
-				return func(s *http.Server) error {
-					assert.NotNil(s)
-					injectedServerOptionCalled = true
-					return errors.New("expected ServerOption error")
-				}
-			},
-			func() RouterOption {
-				return func(r *mux.Router) error {
-					assert.NotNil(r)
-					injectedRouterOptionCalled = true
-					return errors.New("expected RouterOption error")
-				}
-			},
-		),
-		Server().
-			With(func(s *http.Server) error {
-				assert.NotNil(s)
-				externalServerOptionCalled = true
-				return errors.New("expected ServerOption error")
-			}).
-			WithRouter(func(r *mux.Router) error {
-				assert.NotNil(r)
-				externalRouterOptionCalled = true
-				return errors.New("expected RouterOption error")
-			}).
-			Inject(struct {
-				fx.In
-				O1 ServerOption
-				O2 RouterOption
-			}{}).
-			Provide(),
-		fx.Invoke(
-			func(*mux.Router) {
-				// doesn't matter
-			},
-		),
-	)
-
-	assert.Error(app.Err())
-	assert.True(injectedServerOptionCalled)
-	assert.True(injectedRouterOptionCalled)
-	assert.True(externalServerOptionCalled)
-	assert.True(externalRouterOptionCalled)
+func (suite *ServerTestSuite) configureRoutes(r *mux.Router) {
+	r.HandleFunc("/test", suite.handler)
 }
 
-func testServerDefaultListenerFactory(t *testing.T) {
-	var (
-		v       = viper.New()
-		address = make(chan net.Addr, 1)
+func (suite *ServerTestSuite) yaml(v string) {
+	suite.viper.SetConfigType("yaml")
+
+	suite.Require().NoError(
+		suite.viper.ReadConfig(strings.NewReader(v)),
+	)
+}
+
+func (suite *ServerTestSuite) requireServerAddr() net.Addr {
+	a, _ := AwaitListenAddress(
+		suite.Require().FailNow,
+		suite.serverAddr,
+		5*time.Second,
 	)
 
+	return a
+}
+
+func (suite *ServerTestSuite) serverURL() string {
+	return "http://" + suite.requireServerAddr().String() + "/test"
+}
+
+func (suite *ServerTestSuite) checkServer() *http.Response {
+	response, err := http.Get(suite.serverURL())
+	suite.Require().NoError(err)
+	suite.Require().NotNil(response)
+	io.Copy(ioutil.Discard, response.Body)
+	response.Body.Close()
+
+	suite.Equal(299, response.StatusCode)
+	return response
+}
+
+func (suite *ServerTestSuite) TestUnmarshalError() {
+	suite.yaml(`
+readTimeout: "EXPECTED ERROR: this is not a valid duration"
+`)
+
+	app := fx.New(
+		suite.testLogger,
+		arrange.ForViper(suite.viper),
+		Server{
+			Invoke: arrange.Invoke{
+				suite.configureRoutes,
+			},
+		}.Provide(),
+	)
+
+	suite.Error(app.Err())
+}
+
+func (suite *ServerTestSuite) TestServerFactoryError() {
+	app := fx.New(
+		suite.testLogger,
+		arrange.ForViper(suite.viper),
+		Server{
+			ServerFactory: simpleServerFactory{
+				returnErr: errors.New("expected"),
+			},
+			Invoke: arrange.Invoke{
+				suite.configureRoutes,
+			},
+		}.Provide(),
+	)
+
+	suite.Error(app.Err())
+}
+
+func (suite *ServerTestSuite) TestConfigureError() {
+	app := fx.New(
+		suite.testLogger,
+		arrange.ForViper(suite.viper),
+		Server{
+			Options: arrange.Invoke{
+				func(s *http.Server) error {
+					suite.NotNil(s)
+					return errors.New("expected")
+				},
+			},
+			Invoke: arrange.Invoke{
+				suite.configureRoutes,
+			},
+		}.Provide(),
+	)
+
+	suite.Error(app.Err())
+}
+
+func (suite *ServerTestSuite) TestDefaults() {
 	app := fxtest.New(
-		t,
-		arrange.TestLogger(t),
-		arrange.ForViper(v),
-		Server().
-			// this ServerFactory does not implement ListenerFactory, thus
-			// forcing the builder to use the default
-			ServerFactory(simpleServerFactory{}).
-			CaptureListenAddress(address).
-			Provide(),
-		fx.Invoke(
-			func(*mux.Router) {},
-		),
+		suite.T(),
+		suite.testLogger,
+		arrange.ForViper(suite.viper),
+		Server{
+			ListenerChain: NewListenerChain(
+				suite.captureAddr,
+			),
+			Invoke: arrange.Invoke{
+				suite.configureRoutes,
+			},
+		}.Provide(),
 	)
 
+	suite.Require().NoError(app.Err())
 	app.RequireStart()
 	defer app.Stop(context.Background())
 
-	MustGetListenAddress(address, time.After(time.Second))
+	suite.checkServer()
 	app.RequireStop()
 }
 
-func testServerMiddleware(t *testing.T) {
-	var (
-		assert  = assert.New(t)
-		require = require.New(t)
-
-		v       = viper.New()
-		address = make(chan net.Addr, 1)
-	)
+func (suite *ServerTestSuite) TestUnnamed() {
+	suite.yaml(`
+servers:
+  main:
+    address: ":0"
+`)
 
 	app := fxtest.New(
-		t,
-		arrange.TestLogger(t),
-		arrange.ForViper(v),
+		suite.T(),
+		suite.testLogger,
+		arrange.ForViper(suite.viper),
+		Server{
+			Key:     "servers.main",
+			Unnamed: true,
+			ListenerChain: NewListenerChain(
+				suite.captureAddr,
+			),
+			Invoke: arrange.Invoke{
+				suite.configureRoutes,
+			},
+		}.Provide(),
+	)
+
+	suite.Require().NoError(app.Err())
+	app.RequireStart()
+	defer app.Stop(context.Background())
+
+	suite.checkServer()
+	app.RequireStop()
+}
+
+func (suite *ServerTestSuite) TestNamed() {
+	suite.yaml(`
+servers:
+  main:
+    address: ":0"
+`)
+
+	app := fxtest.New(
+		suite.T(),
+		suite.testLogger,
+		arrange.ForViper(suite.viper),
+		Server{
+			Name: "foobar",
+			Key:  "servers.main",
+			ListenerChain: NewListenerChain(
+				suite.captureAddr,
+			),
+			Invoke: arrange.Invoke{
+				suite.configureRoutes,
+			},
+		}.Provide(),
+	)
+
+	suite.Require().NoError(app.Err())
+	app.RequireStart()
+	defer app.Stop(context.Background())
+
+	suite.checkServer()
+	app.RequireStop()
+}
+
+func (suite *ServerTestSuite) TestDefaultListenerFactory() {
+	app := fxtest.New(
+		suite.T(),
+		suite.testLogger,
+		arrange.ForViper(suite.viper),
+		Server{
+			ServerFactory: simpleServerFactory{}, // this doesn't implement ListenerFactory
+			ListenerChain: NewListenerChain(
+				suite.captureAddr,
+			),
+			Invoke: arrange.Invoke{
+				suite.configureRoutes,
+			},
+		}.Provide(),
+	)
+
+	suite.Require().NoError(app.Err())
+	app.RequireStart()
+	defer app.Stop(context.Background())
+
+	suite.checkServer()
+	app.RequireStop()
+}
+
+func (suite *ServerTestSuite) TestMiddleware() {
+	suite.yaml(`
+servers:
+  main:
+    address: ":0"
+`)
+
+	app := fxtest.New(
+		suite.T(),
+		suite.testLogger,
+		arrange.ForViper(suite.viper),
 		fx.Provide(
-			func() mux.MiddlewareFunc {
+			func() func(http.Handler) http.Handler {
 				return func(next http.Handler) http.Handler {
 					return http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
-						response.Header().Set("Injected-Middleware", "true")
+						response.Header().Set("Injected-Unnamed-Constructor", "true")
 						next.ServeHTTP(response, request)
 					})
 				}
 			},
-			func() TestServerMiddlewareChain {
-				return TestServerMiddlewareChain{
-					handlers: []func(http.Handler) http.Handler{
-						func(next http.Handler) http.Handler {
-							return http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
-								response.Header().Set("Injected-Chain-Middleware", "true")
-								next.ServeHTTP(response, request)
-							})
-						},
+			func() alice.Chain {
+				return alice.New(
+					func(next http.Handler) http.Handler {
+						return http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+							response.Header().Set("Injected-Unnamed-Chain", "true")
+							next.ServeHTTP(response, request)
+						})
 					},
-				}
+				)
+			},
+			fx.Annotated{
+				Name: "constructor",
+				Target: func() alice.Constructor {
+					return func(next http.Handler) http.Handler {
+						return http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+							response.Header().Set("Injected-Named-Constructor", "true")
+							next.ServeHTTP(response, request)
+						})
+					}
+				},
+			},
+			fx.Annotated{
+				Group: "constructors",
+				Target: func() func(http.Handler) http.Handler {
+					return func(next http.Handler) http.Handler {
+						return http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+							response.Header().Add("Injected-Constructor-Group", "1")
+							next.ServeHTTP(response, request)
+						})
+					}
+				},
+			},
+			fx.Annotated{
+				Group: "constructors",
+				Target: func() func(http.Handler) http.Handler {
+					return func(next http.Handler) http.Handler {
+						return http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+							response.Header().Add("Injected-Constructor-Group", "2")
+							next.ServeHTTP(response, request)
+						})
+					}
+				},
 			},
 		),
-		Server().
-			Middleware(
+		Server{
+			Key: "servers.main",
+			Inject: arrange.Inject{
+				func(http.Handler) http.Handler { return nil },
+				alice.Chain{},
+				arrange.Struct{}.In().Append(
+					arrange.Field{
+						Name: "constructor",
+						Type: alice.Constructor(func(http.Handler) http.Handler { return nil }),
+					},
+					arrange.Field{
+						Group: "constructors",
+						Type:  func(http.Handler) http.Handler { return nil },
+					},
+				).Of(),
+			},
+			ListenerChain: NewListenerChain(
+				suite.captureAddr,
+			),
+			Middleware: alice.New(
 				func(next http.Handler) http.Handler {
 					return http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
-						response.Header().Set("Local-Middleware", "true")
+						response.Header().Set("External-Constructor", "true")
 						next.ServeHTTP(response, request)
 					})
 				},
-			).
-			MiddlewareChain(
-				TestServerMiddlewareChain{
-					handlers: []func(http.Handler) http.Handler{
-						func(next http.Handler) http.Handler {
-							return http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
-								response.Header().Set("Chain-Middleware", "true")
-								next.ServeHTTP(response, request)
-							})
-						},
-					},
-				},
-			).
-			Inject(struct {
-				fx.In
-				M  mux.MiddlewareFunc
-				MC TestServerMiddlewareChain
-			}{}).
-			CaptureListenAddress(address).
-			Provide(),
-		fx.Invoke(
-			func(r *mux.Router) {
-				require.NotNil(r)
-				r.HandleFunc("/test", func(response http.ResponseWriter, request *http.Request) {
-					response.WriteHeader(267)
-				})
+			),
+			Invoke: arrange.Invoke{
+				suite.configureRoutes,
 			},
-		),
+		}.Provide(),
 	)
 
-	require.NoError(app.Err())
+	suite.Require().NoError(app.Err())
 	app.RequireStart()
 	defer app.Stop(context.Background())
 
-	serverURL := "http://" + MustGetListenAddress(address, time.After(time.Second)).String()
-	response, err := http.Get(serverURL + "/test")
-	require.NoError(err)
-	require.NotNil(response)
-	assert.Equal(267, response.StatusCode)
-	assert.Equal("true", response.Header.Get("Local-Middleware"))
-	assert.Equal("true", response.Header.Get("Chain-Middleware"))
-	assert.Equal("true", response.Header.Get("Injected-Middleware"))
-	assert.Equal("true", response.Header.Get("Injected-Chain-Middleware"))
+	response := suite.checkServer()
+	suite.Equal(
+		"true",
+		response.Header.Get("External-Constructor"),
+	)
+
+	suite.Equal(
+		"true",
+		response.Header.Get("Injected-Unnamed-Constructor"),
+	)
+
+	suite.Equal(
+		"true",
+		response.Header.Get("Injected-Unnamed-Chain"),
+	)
+
+	suite.Equal(
+		"true",
+		response.Header.Get("Injected-Named-Constructor"),
+	)
+
+	suite.ElementsMatch(
+		[]string{"1", "2"},
+		response.Header.Values("Injected-Constructor-Group"),
+	)
 
 	app.RequireStop()
 }
 
-func testServerOptions(t *testing.T) {
-	var (
-		assert  = assert.New(t)
-		require = require.New(t)
+func (suite *ServerTestSuite) TestListener() {
+	suite.yaml(`
+servers:
+  main:
+    address: ":0"
+`)
 
-		v       = viper.New()
-		address = make(chan net.Addr, 1)
-
-		injectedServerOptionCalled  bool
-		injectedServerOptionsCalled bool
-		injectedRouterOptionCalled  bool
-		injectedRouterOptionsCalled bool
-
-		externalServerOptionCalled bool
-		externalRouterOptionCalled bool
-	)
+	var called []string
 
 	app := fxtest.New(
-		t,
-		arrange.TestLogger(t),
-		arrange.ForViper(v),
-		fx.Provide(
-			fx.Annotated{
-				Name: "serverOption",
-				Target: func() ServerOption {
-					return func(s *http.Server) error {
-						assert.NotNil(s)
-						injectedServerOptionCalled = true
-						return nil
-					}
-				},
-			},
-			fx.Annotated{
-				Name: "serverOptions",
-				Target: func() ServerOption {
-					return ServerOptions(
-						func(s *http.Server) error {
-							assert.NotNil(s)
-							injectedServerOptionsCalled = true
-							return nil
-						},
-					)
-				},
-			},
-			fx.Annotated{
-				Name: "routerOption",
-				Target: func() RouterOption {
-					return func(r *mux.Router) error {
-						assert.NotNil(r)
-						injectedRouterOptionCalled = true
-						return nil
-					}
-				},
-			},
-			fx.Annotated{
-				Name: "routerOptions",
-				Target: func() RouterOption {
-					return RouterOptions(
-						func(r *mux.Router) error {
-							assert.NotNil(r)
-							injectedRouterOptionsCalled = true
-							return nil
-						},
-					)
-				},
-			},
-		),
-		Server().
-			Inject(struct {
-				fx.In
-				O1 ServerOption `name:"serverOption"`
-				O2 ServerOption `name:"serverOptions"`
-				O3 RouterOption `name:"routerOption"`
-				O4 RouterOption `name:"routerOptions"`
-			}{}).
-			With(
-				func(s *http.Server) error {
-					assert.NotNil(s)
-					externalServerOptionCalled = true
-					return nil
-				},
-			).
-			WithRouter(
-				func(r *mux.Router) error {
-					assert.NotNil(r)
-					externalRouterOptionCalled = true
-					return nil
-				},
-			).
-			CaptureListenAddress(address).
-			Provide(),
-		fx.Invoke(
-			func(r *mux.Router) {
-				require.NotNil(r)
-				r.HandleFunc("/test", func(response http.ResponseWriter, request *http.Request) {
-					response.WriteHeader(287)
-				})
-			},
-		),
-	)
-
-	require.NoError(app.Err())
-	app.RequireStart()
-	defer app.Stop(context.Background())
-
-	assert.True(injectedServerOptionCalled)
-	assert.True(injectedServerOptionsCalled)
-	assert.True(injectedRouterOptionCalled)
-	assert.True(injectedRouterOptionsCalled)
-	assert.True(externalServerOptionCalled)
-	assert.True(externalRouterOptionCalled)
-
-	serverURL := "http://" + MustGetListenAddress(address, time.After(time.Second)).String()
-	response, err := http.Get(serverURL + "/test")
-	require.NoError(err)
-	require.NotNil(response)
-	assert.Equal(287, response.StatusCode)
-
-	app.RequireStop()
-}
-
-func testServerListener(t *testing.T) {
-	var (
-		assert  = assert.New(t)
-		require = require.New(t)
-
-		v       = viper.New()
-		address = make(chan net.Addr, 1)
-
-		injectedListenerConstructorCalled bool
-		injectedListenerChainCalled       bool
-
-		externalListenerConstructorCalled bool
-		externalListenerChainCalled       bool
-	)
-
-	app := fxtest.New(
-		t,
-		arrange.TestLogger(t),
-		arrange.ForViper(v),
+		suite.T(),
+		suite.testLogger,
+		arrange.ForViper(suite.viper),
 		fx.Provide(
 			func() ListenerConstructor {
 				return func(next net.Listener) net.Listener {
-					assert.NotNil(next)
-					injectedListenerConstructorCalled = true
+					called = append(called, "injected-unnamed-constructor")
 					return next
 				}
+			},
+			fx.Annotated{
+				Name: "constructor",
+				Target: func() ListenerConstructor {
+					return func(next net.Listener) net.Listener {
+						called = append(called, "injected-named-constructor")
+						return next
+					}
+				},
 			},
 			func() ListenerChain {
 				return NewListenerChain(
 					func(next net.Listener) net.Listener {
-						assert.NotNil(next)
-						injectedListenerChainCalled = true
+						called = append(called, "injected-unnamed-chain")
 						return next
 					},
 				)
 			},
-		),
-		Server().
-			Inject(struct {
-				fx.In
-				LC1 ListenerConstructor
-				LC2 ListenerChain
-			}{}).
-			CaptureListenAddress(address).
-			ListenerConstructors(func(next net.Listener) net.Listener {
-				assert.NotNil(next)
-				externalListenerConstructorCalled = true
-				return next
-			}).
-			ListenerChain(
-				NewListenerChain(
-					func(next net.Listener) net.Listener {
-						assert.NotNil(next)
-						externalListenerChainCalled = true
+			fx.Annotated{
+				Group: "constructors",
+				Target: func() ListenerConstructor {
+					return func(next net.Listener) net.Listener {
+						called = append(called, "injected-constructor-group-1")
 						return next
-					},
-				),
-			).
-			Provide(),
-		fx.Invoke(
-			func(r *mux.Router) {
-				require.NotNil(r)
-				r.HandleFunc("/test", func(response http.ResponseWriter, request *http.Request) {
-					response.WriteHeader(216)
-				})
+					}
+				},
+			},
+			fx.Annotated{
+				Group: "constructors",
+				Target: func() ListenerConstructor {
+					return func(next net.Listener) net.Listener {
+						called = append(called, "injected-constructor-group-2")
+						return next
+					}
+				},
 			},
 		),
+		Server{
+			Inject: arrange.Inject{
+				struct {
+					fx.In
+					F1 ListenerConstructor
+					F2 ListenerConstructor `name:"constructor"`
+					F3 ListenerChain
+					F4 []ListenerConstructor `group:"constructors"`
+				}{},
+			},
+			ListenerChain: NewListenerChain(
+				suite.captureAddr,
+				func(next net.Listener) net.Listener {
+					called = append(called, "external")
+					return next
+				},
+			),
+			Invoke: arrange.Invoke{
+				suite.configureRoutes,
+			},
+		}.Provide(),
 	)
 
-	require.NoError(app.Err())
+	suite.Require().NoError(app.Err())
 	app.RequireStart()
 	defer app.Stop(context.Background())
 
-	assert.True(injectedListenerConstructorCalled)
-	assert.True(injectedListenerChainCalled)
-	assert.True(externalListenerConstructorCalled)
-	assert.True(externalListenerChainCalled)
+	suite.checkServer()
+	suite.ElementsMatch(
+		[]string{
+			"injected-unnamed-constructor",
+			"injected-named-constructor",
+			"injected-unnamed-chain",
+			"injected-constructor-group-1",
+			"injected-constructor-group-2",
+			"external",
+		},
+		called,
+	)
 
-	serverURL := "http://" + MustGetListenAddress(address, time.After(time.Second)).String()
-	response, err := http.Get(serverURL + "/test")
-	require.NoError(err)
-	require.NotNil(response)
-	assert.Equal(216, response.StatusCode)
+	app.RequireStop()
+}
+
+func (suite *ServerTestSuite) TestOptions() {
+	suite.yaml(`
+servers:
+  main:
+    address: ":0"
+`)
+
+	var called []string
+
+	app := fxtest.New(
+		suite.T(),
+		suite.testLogger,
+		arrange.ForViper(suite.viper),
+		fx.Provide(
+			func() func(*http.Server) {
+				return func(s *http.Server) {
+					suite.NotNil(s)
+					called = append(called, "injected")
+				}
+			},
+			func() func(*http.Server) error {
+				return func(s *http.Server) error {
+					suite.NotNil(s)
+					called = append(called, "injected-with-error")
+					return nil
+				}
+			},
+			fx.Annotated{
+				Group: "options",
+				Target: func() func(*http.Server) {
+					return func(s *http.Server) {
+						suite.NotNil(s)
+						called = append(called, "group-1")
+					}
+				},
+			},
+			fx.Annotated{
+				Group: "options",
+				Target: func() func(*http.Server) {
+					return func(s *http.Server) {
+						suite.NotNil(s)
+						called = append(called, "group-2")
+					}
+				},
+			},
+			fx.Annotated{
+				Group: "options-with-error",
+				Target: func() func(*http.Server) error {
+					return func(s *http.Server) error {
+						suite.NotNil(s)
+						called = append(called, "group-with-error-1")
+						return nil
+					}
+				},
+			},
+			fx.Annotated{
+				Group: "options-with-error",
+				Target: func() func(*http.Server) error {
+					return func(s *http.Server) error {
+						suite.NotNil(s)
+						called = append(called, "group-with-error-2")
+						return nil
+					}
+				},
+			},
+		),
+		Server{
+			Inject: arrange.Inject{
+				struct {
+					fx.In
+					F1 func(*http.Server)
+					F2 func(*http.Server) error
+					F3 []func(*http.Server)       `group:"options"`
+					F4 []func(*http.Server) error `group:"options-with-error"`
+				}{},
+			},
+			ListenerChain: NewListenerChain(
+				suite.captureAddr,
+			),
+			Options: arrange.Invoke{
+				func(s *http.Server) {
+					suite.NotNil(s)
+					called = append(called, "external")
+				},
+				func(s *http.Server) error {
+					suite.NotNil(s)
+					called = append(called, "external-with-error")
+					return nil
+				},
+			},
+			Invoke: arrange.Invoke{
+				suite.configureRoutes,
+			},
+		}.Provide(),
+	)
+
+	suite.Require().NoError(app.Err())
+	app.RequireStart()
+	defer app.Stop(context.Background())
+
+	suite.checkServer()
+	suite.ElementsMatch(
+		[]string{
+			"injected",
+			"injected-with-error",
+			"group-1",
+			"group-2",
+			"group-with-error-1",
+			"group-with-error-2",
+			"external",
+			"external-with-error",
+		},
+		called,
+	)
 
 	app.RequireStop()
 }
 
 func TestServer(t *testing.T) {
-	t.Run("InjectError", testServerInjectError)
-	t.Run("UnmarshalError", testServerUnmarshalError)
-	t.Run("FactoryError", testServerFactoryError)
-	t.Run("OptionError", testServerOptionError)
-	t.Run("DefaultListenerFactory", testServerDefaultListenerFactory)
-	t.Run("Middleware", testServerMiddleware)
-	t.Run("Options", testServerOptions)
-	t.Run("Listener", testServerListener)
+	suite.Run(t, new(ServerTestSuite))
 }

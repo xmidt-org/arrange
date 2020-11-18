@@ -116,30 +116,25 @@ func CaptureListenAddress(ch chan<- net.Addr) ListenerConstructor {
 	}
 }
 
-// WaitForListenAddress waits until either a net.Addr is received or the given time channel
-// receives a timer.  The second return indicates whether a net.Addr was actually received
-// before the timer channel was signaled.
-func WaitForListenAddress(ch <-chan net.Addr, t <-chan time.Time) (a net.Addr, ok bool) {
+// AwaitListenAddress waits for a net.Addr on a channel for a specified duration.
+// If no net address appears on the channel within the timeout, the given fail function
+// is called with a failure message and this function returns a nil net.Addr and false.
+//
+// This function is intended for tests that use CaptureListenAddress to obtain the
+// address of a server started on addresses like ":0".  Callers may pass t.Fatalf to fail
+// the test immediately or pass t.Errorf or t.Logf to continue with the test.
+// The second bool return can be used to indicate if an address was actually found on the channel.
+func AwaitListenAddress(fail func(string, ...interface{}), ch <-chan net.Addr, d time.Duration) (a net.Addr, ok bool) {
+	timer := time.NewTimer(d)
+	defer timer.Stop()
 	select {
 	case a = <-ch:
 		ok = true
-	case <-t:
+	case <-timer.C:
+		fail("No listen address returned within %s", d)
 	}
 
 	return
-}
-
-// MustGetListenAddress is similar to WaitForListenAddress, save that it will panic
-// if address was received within the timeout.
-//
-// This function is mostly useful for testing.
-func MustGetListenAddress(ch <-chan net.Addr, t <-chan time.Time) net.Addr {
-	a, ok := WaitForListenAddress(ch, t)
-	if !ok {
-		panic("No listen address captured")
-	}
-
-	return a
 }
 
 // DefaultListenerFactory is the default implementation of ListenerFactory.  The

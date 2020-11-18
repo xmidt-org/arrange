@@ -1,11 +1,8 @@
 package arrange
 
 import (
-	"fmt"
 	"reflect"
-	"strconv"
 
-	"go.uber.org/dig"
 	"go.uber.org/fx"
 )
 
@@ -162,148 +159,6 @@ func NewTarget(prototype interface{}) (t Target) {
 	return
 }
 
-// Dependency represents a reflected value (possibly) injected by an enclosing fx.App
-type Dependency struct {
-	// Name is the optional name of this dependency.
-	//
-	// This field is only set if the injected value was part of an enclosing struct
-	// that was populated by an fx.App.
-	Name string
-
-	// Group is the optional group of this dependency.  If this is set, the
-	// Value may refer to a slice of values rather than a scalar.
-	//
-	// This field is only set if the injected value was part of an enclosing struct
-	// that was populated by an fx.App.
-	Group string
-
-	// Optional indicates whether this dependency was declared with the optional tag.
-	// Value may or may not have actually been injected in that case.
-	//
-	// This field is only set if the injected value was part of an enclosing struct
-	// that was populated by an fx.App.
-	Optional bool
-
-	// Field is the name of the field containing this dependency, if any.
-	//
-	// This field is only set if the injected value was part of an enclosing struct
-	// that was populated by an fx.App.
-	Field string
-
-	// Tag is the struct tag associated with this field, if any.  This is provided
-	// to support custom logic around tags outside of what uber/fx supports.
-	//
-	// Note that the name, group, and optional tags will already have been parsed
-	// from this tag and set as field on this struct.
-	//
-	// This field is only set if the injected value was part of an enclosing struct
-	// that was populated by an fx.App.
-	Tag reflect.StructTag
-
-	// Container is the struct in which this dependency occurred.
-	//
-	// This field is only set if the injected value was part of an enclosing struct
-	// that was populated by an fx.App.
-	Container reflect.Type
-
-	// Value is the actual value that was injected.  For plain dependencies that
-	// were not part of an fx.In struct, this will be the only field set.
-	Value reflect.Value
-}
-
-// Injected returns true if this dependency was actually injected.  This
-// method returns false if both d.Optional is true and the value represents
-// the zero value.
-//
-// Note that this method can give false negatives for non-pointer dependencies.
-// If an optional component is present but is set to the zero value, this method
-// will still return false.  Callers should be aware of this case and implement
-// application-specific logic where necessary.
-func (d Dependency) Injected() bool {
-	return !d.Optional || !d.Value.IsZero()
-}
-
-// String returns a human readable representation of this dependency
-func (d Dependency) String() string {
-	if d.Container != nil {
-		return fmt.Sprintf("%s.%s %s", d.Container, d.Field, d.Tag)
-	}
-
-	return fmt.Sprintf("%s", d.Value.Type())
-}
-
-// newFieldDependency is a convenience for building a Dependency from a
-// field within a containing struct
-func newFieldDependency(c reflect.Type, f reflect.StructField, fv reflect.Value) Dependency {
-	d := Dependency{
-		Name:      f.Tag.Get("name"),
-		Group:     f.Tag.Get("group"),
-		Value:     fv,
-		Tag:       f.Tag,
-		Field:     f.Name,
-		Container: c,
-	}
-
-	// ignore errors here: this handles the empty/missing case, plus
-	// fx will handle any errors related to mistagged fields
-	d.Optional, _ = strconv.ParseBool(f.Tag.Get("optional"))
-	return d
-}
-
-// DependencyVisitor is a visitor predicate used by VisitDependencies as a callback
-// for each dependency of a set.  If this method returns false, visitation will be
-// halted early.
-type DependencyVisitor func(Dependency) bool
-
-// VisitDependencies applies the given visitor to a sequence of dependencies.  The deps
-// slice can contain any values allowed by go.uber.org/fx in constructor functions, i.e.
-// they must all be dependencies that were either injected or skipped (as when optional:"true" is set).
-//
-// If any value in deps is a struct that embeds fx.In, then that struct's fields are walked
-// recursively.  Any exported fields are assumed to have been injected (or, skipped), and the visitor
-// is invoked for each of them.
-//
-// For non-struct values or for structs that do not embed fx.In, the visitor is simply invoked
-// with that value but with Name, Group, etc fields left unset.
-func VisitDependencies(visitor DependencyVisitor, deps ...reflect.Value) {
-	for _, dv := range deps {
-		// for any structs that embed fx.In, recursively visit their fields
-		if dig.IsIn(dv.Type()) {
-			for stack := []reflect.Value{dv}; len(stack) > 0; {
-				var (
-					end           = len(stack) - 1
-					container     = stack[end]
-					containerType = container.Type()
-				)
-
-				stack = stack[:end]
-				for i := 0; i < container.NumField(); i++ {
-					field := containerType.Field(i)
-					fieldValue := container.Field(i)
-
-					// NOTE: skip unexported fields or those whose value cannot be accessed
-					if len(field.PkgPath) > 0 ||
-						!fieldValue.IsValid() ||
-						!fieldValue.CanInterface() ||
-						field.Type == InType() ||
-						field.Type == OutType() {
-						continue
-					}
-
-					if dig.IsIn(field.Type) {
-						// this field is something that itself contains dependencies
-						stack = append(stack, fieldValue)
-					} else if !visitor(newFieldDependency(containerType, field, fieldValue)) {
-						return
-					}
-				}
-			}
-		} else if !visitor(Dependency{Value: dv}) { // a "naked" dependency
-			return
-		}
-	}
-}
-
 // TryConvert provides a more flexible alternative to a switch/type block.  It reflects
 // the src parameter using ValueOf in this package, then determines which of a set of case
 // functions to invoke based on the sole input parameter of each callback.  Exactly zero or one
@@ -325,7 +180,7 @@ func VisitDependencies(visitor DependencyVisitor, deps ...reflect.Value) {
 // having to import those packages just for the types.
 func TryConvert(src interface{}, cases ...interface{}) bool {
 	var (
-		from         = reflect.ValueOf(src)
+		from         = ValueOf(src)
 		fromSequence = (from.Kind() == reflect.Array || from.Kind() == reflect.Slice)
 	)
 
@@ -367,44 +222,4 @@ func TryConvert(src interface{}, cases ...interface{}) bool {
 	}
 
 	return false
-}
-
-// Inject is a slice type intended to hold a sequence of type information
-// about injected objects.  This type eases the declaration of constructor
-// parameters:
-//
-//   i := Inject{
-//     // inline literal value used for type information
-//     struct{
-//       fx.In
-//       Component1 MyComponent
-//       Component2 SomeOtherComponent `name:"something"`
-//     }{},
-//     // a plain dependency
-//     func(http.Handler) http.Handler {return nil},
-//   }
-//
-// This type is particular useful when declaratively indicating the dependencies
-// of a component.
-type Inject []interface{}
-
-// AppendTypesTo builds a slice of reflect.Type using the type information
-// in this inject sequence.  For each element:
-//
-//   - If it is a reflect.Value, then that value's type is appended
-//   - If it is a reflect.Type, it is appended as is
-//   - For anything else, reflect.TypeOf is used to determine the type
-func (i Inject) AppendTypesTo(t []reflect.Type) []reflect.Type {
-	for _, e := range i {
-		switch et := e.(type) {
-		case reflect.Type:
-			t = append(t, et)
-		case reflect.Value:
-			t = append(t, et.Type())
-		default:
-			t = append(t, reflect.TypeOf(e))
-		}
-	}
-
-	return t
 }

@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/gorilla/mux"
+	"github.com/justinas/alice"
 	"github.com/spf13/viper"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -29,14 +30,14 @@ type simpleServerFactory struct {
 	returnErr error
 }
 
-func (ssf simpleServerFactory) NewServer(http.Handler) (*http.Server, error) {
+func (ssf simpleServerFactory) NewServer(h http.Handler) (*http.Server, error) {
 	if ssf.returnErr != nil {
 		return nil, ssf.returnErr
 	}
 
 	return &http.Server{
-		Addr: ssf.Address,
-		// this factory does not set a handler, forcing the infrastructure to set it
+		Addr:    ssf.Address,
+		Handler: h,
 	}, nil
 }
 
@@ -256,7 +257,7 @@ func (suite *ServerTestSuite) serverURL() string {
 	return "http://" + suite.requireServerAddr().String() + "/test"
 }
 
-func (suite *ServerTestSuite) serverGet() *http.Response {
+func (suite *ServerTestSuite) checkServer() *http.Response {
 	response, err := http.Get(suite.serverURL())
 	suite.Require().NoError(err)
 	suite.Require().NotNil(response)
@@ -269,7 +270,7 @@ func (suite *ServerTestSuite) serverGet() *http.Response {
 
 func (suite *ServerTestSuite) TestUnmarshalError() {
 	suite.yaml(`
-readTimeout: "this is not a valid duration"
+readTimeout: "EXPECTED ERROR: this is not a valid duration"
 `)
 
 	app := fx.New(
@@ -282,7 +283,6 @@ readTimeout: "this is not a valid duration"
 		}.Provide(),
 	)
 
-	defer app.Stop(context.Background())
 	suite.Error(app.Err())
 }
 
@@ -300,7 +300,26 @@ func (suite *ServerTestSuite) TestServerFactoryError() {
 		}.Provide(),
 	)
 
-	defer app.Stop(context.Background())
+	suite.Error(app.Err())
+}
+
+func (suite *ServerTestSuite) TestConfigureError() {
+	app := fx.New(
+		suite.testLogger,
+		arrange.ForViper(suite.viper),
+		Server{
+			Options: arrange.Invoke{
+				func(s *http.Server) error {
+					suite.NotNil(s)
+					return errors.New("expected")
+				},
+			},
+			Invoke: arrange.Invoke{
+				suite.configureRoutes,
+			},
+		}.Provide(),
+	)
+
 	suite.Error(app.Err())
 }
 
@@ -323,7 +342,440 @@ func (suite *ServerTestSuite) TestDefaults() {
 	app.RequireStart()
 	defer app.Stop(context.Background())
 
-	suite.serverGet()
+	suite.checkServer()
+	app.RequireStop()
+}
+
+func (suite *ServerTestSuite) TestUnnamed() {
+	suite.yaml(`
+servers:
+  main:
+    address: ":0"
+`)
+
+	app := fxtest.New(
+		suite.T(),
+		suite.testLogger,
+		arrange.ForViper(suite.viper),
+		Server{
+			Key:     "servers.main",
+			Unnamed: true,
+			ListenerChain: NewListenerChain(
+				suite.captureAddr,
+			),
+			Invoke: arrange.Invoke{
+				suite.configureRoutes,
+			},
+		}.Provide(),
+	)
+
+	suite.Require().NoError(app.Err())
+	app.RequireStart()
+	defer app.Stop(context.Background())
+
+	suite.checkServer()
+	app.RequireStop()
+}
+
+func (suite *ServerTestSuite) TestNamed() {
+	suite.yaml(`
+servers:
+  main:
+    address: ":0"
+`)
+
+	app := fxtest.New(
+		suite.T(),
+		suite.testLogger,
+		arrange.ForViper(suite.viper),
+		Server{
+			Name: "foobar",
+			Key:  "servers.main",
+			ListenerChain: NewListenerChain(
+				suite.captureAddr,
+			),
+			Invoke: arrange.Invoke{
+				suite.configureRoutes,
+			},
+		}.Provide(),
+	)
+
+	suite.Require().NoError(app.Err())
+	app.RequireStart()
+	defer app.Stop(context.Background())
+
+	suite.checkServer()
+	app.RequireStop()
+}
+
+func (suite *ServerTestSuite) TestDefaultListenerFactory() {
+	app := fxtest.New(
+		suite.T(),
+		suite.testLogger,
+		arrange.ForViper(suite.viper),
+		Server{
+			ServerFactory: simpleServerFactory{}, // this doesn't implement ListenerFactory
+			ListenerChain: NewListenerChain(
+				suite.captureAddr,
+			),
+			Invoke: arrange.Invoke{
+				suite.configureRoutes,
+			},
+		}.Provide(),
+	)
+
+	suite.Require().NoError(app.Err())
+	app.RequireStart()
+	defer app.Stop(context.Background())
+
+	suite.checkServer()
+	app.RequireStop()
+}
+
+func (suite *ServerTestSuite) TestMiddleware() {
+	suite.yaml(`
+servers:
+  main:
+    address: ":0"
+`)
+
+	app := fxtest.New(
+		suite.T(),
+		suite.testLogger,
+		arrange.ForViper(suite.viper),
+		fx.Provide(
+			func() func(http.Handler) http.Handler {
+				return func(next http.Handler) http.Handler {
+					return http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+						response.Header().Set("Injected-Unnamed-Constructor", "true")
+						next.ServeHTTP(response, request)
+					})
+				}
+			},
+			func() alice.Chain {
+				return alice.New(
+					func(next http.Handler) http.Handler {
+						return http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+							response.Header().Set("Injected-Unnamed-Chain", "true")
+							next.ServeHTTP(response, request)
+						})
+					},
+				)
+			},
+			fx.Annotated{
+				Name: "constructor",
+				Target: func() alice.Constructor {
+					return func(next http.Handler) http.Handler {
+						return http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+							response.Header().Set("Injected-Named-Constructor", "true")
+							next.ServeHTTP(response, request)
+						})
+					}
+				},
+			},
+			fx.Annotated{
+				Group: "constructors",
+				Target: func() func(http.Handler) http.Handler {
+					return func(next http.Handler) http.Handler {
+						return http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+							response.Header().Add("Injected-Constructor-Group", "1")
+							next.ServeHTTP(response, request)
+						})
+					}
+				},
+			},
+			fx.Annotated{
+				Group: "constructors",
+				Target: func() func(http.Handler) http.Handler {
+					return func(next http.Handler) http.Handler {
+						return http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+							response.Header().Add("Injected-Constructor-Group", "2")
+							next.ServeHTTP(response, request)
+						})
+					}
+				},
+			},
+		),
+		Server{
+			Key: "servers.main",
+			Inject: arrange.Inject{
+				func(http.Handler) http.Handler { return nil },
+				alice.Chain{},
+				arrange.Struct{}.In().Append(
+					arrange.Field{
+						Name: "constructor",
+						Type: alice.Constructor(func(http.Handler) http.Handler { return nil }),
+					},
+					arrange.Field{
+						Group: "constructors",
+						Type:  func(http.Handler) http.Handler { return nil },
+					},
+				).Of(),
+			},
+			ListenerChain: NewListenerChain(
+				suite.captureAddr,
+			),
+			Middleware: alice.New(
+				func(next http.Handler) http.Handler {
+					return http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+						response.Header().Set("External-Constructor", "true")
+						next.ServeHTTP(response, request)
+					})
+				},
+			),
+			Invoke: arrange.Invoke{
+				suite.configureRoutes,
+			},
+		}.Provide(),
+	)
+
+	suite.Require().NoError(app.Err())
+	app.RequireStart()
+	defer app.Stop(context.Background())
+
+	response := suite.checkServer()
+	suite.Equal(
+		"true",
+		response.Header.Get("External-Constructor"),
+	)
+
+	suite.Equal(
+		"true",
+		response.Header.Get("Injected-Unnamed-Constructor"),
+	)
+
+	suite.Equal(
+		"true",
+		response.Header.Get("Injected-Unnamed-Chain"),
+	)
+
+	suite.Equal(
+		"true",
+		response.Header.Get("Injected-Named-Constructor"),
+	)
+
+	suite.ElementsMatch(
+		[]string{"1", "2"},
+		response.Header.Values("Injected-Constructor-Group"),
+	)
+
+	app.RequireStop()
+}
+
+func (suite *ServerTestSuite) TestListener() {
+	suite.yaml(`
+servers:
+  main:
+    address: ":0"
+`)
+
+	var called []string
+
+	app := fxtest.New(
+		suite.T(),
+		suite.testLogger,
+		arrange.ForViper(suite.viper),
+		fx.Provide(
+			func() ListenerConstructor {
+				return func(next net.Listener) net.Listener {
+					called = append(called, "injected-unnamed-constructor")
+					return next
+				}
+			},
+			fx.Annotated{
+				Name: "constructor",
+				Target: func() ListenerConstructor {
+					return func(next net.Listener) net.Listener {
+						called = append(called, "injected-named-constructor")
+						return next
+					}
+				},
+			},
+			func() ListenerChain {
+				return NewListenerChain(
+					func(next net.Listener) net.Listener {
+						called = append(called, "injected-unnamed-chain")
+						return next
+					},
+				)
+			},
+			fx.Annotated{
+				Group: "constructors",
+				Target: func() ListenerConstructor {
+					return func(next net.Listener) net.Listener {
+						called = append(called, "injected-constructor-group-1")
+						return next
+					}
+				},
+			},
+			fx.Annotated{
+				Group: "constructors",
+				Target: func() ListenerConstructor {
+					return func(next net.Listener) net.Listener {
+						called = append(called, "injected-constructor-group-2")
+						return next
+					}
+				},
+			},
+		),
+		Server{
+			Inject: arrange.Inject{
+				struct {
+					fx.In
+					F1 ListenerConstructor
+					F2 ListenerConstructor `name:"constructor"`
+					F3 ListenerChain
+					F4 []ListenerConstructor `group:"constructors"`
+				}{},
+			},
+			ListenerChain: NewListenerChain(
+				suite.captureAddr,
+				func(next net.Listener) net.Listener {
+					called = append(called, "external")
+					return next
+				},
+			),
+			Invoke: arrange.Invoke{
+				suite.configureRoutes,
+			},
+		}.Provide(),
+	)
+
+	suite.Require().NoError(app.Err())
+	app.RequireStart()
+	defer app.Stop(context.Background())
+
+	suite.checkServer()
+	suite.ElementsMatch(
+		[]string{
+			"injected-unnamed-constructor",
+			"injected-named-constructor",
+			"injected-unnamed-chain",
+			"injected-constructor-group-1",
+			"injected-constructor-group-2",
+			"external",
+		},
+		called,
+	)
+
+	app.RequireStop()
+}
+
+func (suite *ServerTestSuite) TestOptions() {
+	suite.yaml(`
+servers:
+  main:
+    address: ":0"
+`)
+
+	var called []string
+
+	app := fxtest.New(
+		suite.T(),
+		suite.testLogger,
+		arrange.ForViper(suite.viper),
+		fx.Provide(
+			func() func(*http.Server) {
+				return func(s *http.Server) {
+					suite.NotNil(s)
+					called = append(called, "injected")
+				}
+			},
+			func() func(*http.Server) error {
+				return func(s *http.Server) error {
+					suite.NotNil(s)
+					called = append(called, "injected-with-error")
+					return nil
+				}
+			},
+			fx.Annotated{
+				Group: "options",
+				Target: func() func(*http.Server) {
+					return func(s *http.Server) {
+						suite.NotNil(s)
+						called = append(called, "group-1")
+					}
+				},
+			},
+			fx.Annotated{
+				Group: "options",
+				Target: func() func(*http.Server) {
+					return func(s *http.Server) {
+						suite.NotNil(s)
+						called = append(called, "group-2")
+					}
+				},
+			},
+			fx.Annotated{
+				Group: "options-with-error",
+				Target: func() func(*http.Server) error {
+					return func(s *http.Server) error {
+						suite.NotNil(s)
+						called = append(called, "group-with-error-1")
+						return nil
+					}
+				},
+			},
+			fx.Annotated{
+				Group: "options-with-error",
+				Target: func() func(*http.Server) error {
+					return func(s *http.Server) error {
+						suite.NotNil(s)
+						called = append(called, "group-with-error-2")
+						return nil
+					}
+				},
+			},
+		),
+		Server{
+			Inject: arrange.Inject{
+				struct {
+					fx.In
+					F1 func(*http.Server)
+					F2 func(*http.Server) error
+					F3 []func(*http.Server)       `group:"options"`
+					F4 []func(*http.Server) error `group:"options-with-error"`
+				}{},
+			},
+			ListenerChain: NewListenerChain(
+				suite.captureAddr,
+			),
+			Options: arrange.Invoke{
+				func(s *http.Server) {
+					suite.NotNil(s)
+					called = append(called, "external")
+				},
+				func(s *http.Server) error {
+					suite.NotNil(s)
+					called = append(called, "external-with-error")
+					return nil
+				},
+			},
+			Invoke: arrange.Invoke{
+				suite.configureRoutes,
+			},
+		}.Provide(),
+	)
+
+	suite.Require().NoError(app.Err())
+	app.RequireStart()
+	defer app.Stop(context.Background())
+
+	suite.checkServer()
+	suite.ElementsMatch(
+		[]string{
+			"injected",
+			"injected-with-error",
+			"group-1",
+			"group-2",
+			"group-with-error-1",
+			"group-with-error-2",
+			"external",
+			"external-with-error",
+		},
+		called,
+	)
+
 	app.RequireStop()
 }
 

@@ -192,6 +192,8 @@ type Server struct {
 	Invoke arrange.Invoke
 }
 
+// name returns the component name of the *mux.Router.  This method returns the
+// empty string if the *mux.Router should be an unnamed, global component.
 func (s *Server) name() string {
 	switch {
 	case s.Unnamed:
@@ -199,10 +201,15 @@ func (s *Server) name() string {
 	case len(s.Name) > 0:
 		return s.Name
 	default:
+		// covers the case where both Key and Name are unset
 		return s.Key
 	}
 }
 
+// unmarshal handles reading in a ServerFactory's state from the arrange.Unmarshaler.
+// If Key is set, this method uses UnmarshalKey.  Otherwise, Unmarshal is used.
+//
+// If the ServerFactory field is unset, ServerConfig{} is used.
 func (s *Server) unmarshal(u arrange.Unmarshaler) (sf ServerFactory, err error) {
 	prototype := s.ServerFactory
 	if prototype == nil {
@@ -220,6 +227,8 @@ func (s *Server) unmarshal(u arrange.Unmarshaler) (sf ServerFactory, err error) 
 	return
 }
 
+// configure applies the dependencies (if any) and the options and middleware supplied
+// on this instance to the give *http.Server and supporting objects.
 func (s *Server) configure(in ServerIn, server *http.Server, deps []reflect.Value) (lc ListenerChain, err error) {
 	var (
 		middleware alice.Chain
@@ -275,6 +284,7 @@ func (s *Server) configure(in ServerIn, server *http.Server, deps []reflect.Valu
 
 	middleware = middleware.Extend(s.Middleware)
 	lc = lc.Extend(s.ListenerChain)
+	options = append(options, s.Options...)
 	err = multierr.Append(
 		err,
 		options.Apply(server),
@@ -401,7 +411,7 @@ func (s Server) Provide() fx.Option {
 						Name: name,
 						Type: (*mux.Router)(nil),
 					},
-				),
+				).Of(),
 			}.MakeFunc(
 				func(inputs []reflect.Value) error {
 					// the router will always be the 2nd field of the only struct parameter

@@ -5,8 +5,7 @@ import (
 )
 
 // Inject is a slice type intended to hold a sequence of type information
-// about injected objects.  Essentially, an Inject is the set of input parameters
-// to an fx.Provide function.
+// about injected objects.
 //
 // This type is particular useful when dynamically building sets of dependencies.
 type Inject []interface{}

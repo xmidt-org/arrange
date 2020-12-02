@@ -287,7 +287,7 @@ func (s *Server) configure(in ServerIn, server *http.Server, deps []reflect.Valu
 	options = append(options, s.Options...)
 	err = multierr.Append(
 		err,
-		options.Apply(server),
+		options.Call(server),
 	)
 
 	if err == nil {
@@ -415,7 +415,7 @@ func (s Server) Provide() fx.Option {
 			}.MakeFunc(
 				func(inputs []reflect.Value) error {
 					// the router will always be the 2nd field of the only struct parameter
-					return s.Invoke.Apply(inputs[0].Field(1))
+					return s.Invoke.Call(inputs[0].Field(1))
 				},
 			)
 		} else {
@@ -424,7 +424,7 @@ func (s Server) Provide() fx.Option {
 				(*mux.Router)(nil),
 			}.MakeFunc(
 				func(inputs []reflect.Value) error {
-					return s.Invoke.Apply(inputs[0])
+					return s.Invoke.Call(inputs[0])
 				},
 			)
 		}

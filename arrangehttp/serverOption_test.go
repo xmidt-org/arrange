@@ -26,7 +26,7 @@ func TestBaseContext(t *testing.T) {
 			BaseContext(func(net.Listener) context.Context {
 				return expectedCtx
 			}),
-		}.Apply(server),
+		}.Call(server),
 	)
 
 	require.NotNil(server.BaseContext)
@@ -51,7 +51,7 @@ func TestConnContext(t *testing.T) {
 				assert.Equal(baseCtx, ctx)
 				return connCtx
 			}),
-		}.Apply(server),
+		}.Call(server),
 	)
 
 	require.NotNil(server.ConnContext)
@@ -74,7 +74,7 @@ func TestErrorLog(t *testing.T) {
 	require.NoError(
 		arrange.Invoke{
 			ErrorLog(errorLog),
-		}.Apply(server),
+		}.Call(server),
 	)
 
 	require.NotNil(server.ErrorLog)

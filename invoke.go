@@ -21,7 +21,7 @@ func (ie *InvokeError) Error() string {
 // Each closure can return exactly 0 or 1 values, where the only value allowed is an error.
 //
 // The inputs to each closure must all be the same and must match the vector
-// of inputs supplied to Apply.
+// of inputs supplied to Call.
 //
 // The typical use case for an Invoke slice is to wrap it in an fx.Invoke call
 // that was generated dynamically.
@@ -34,9 +34,8 @@ type Invoke []interface{}
 //
 // Each closure can either return a single value of type error or return nothing.  All closures
 // are invoked, and an aggregate error is returned by this method.
-func (ivk Invoke) Apply(args ...interface{}) (err error) {
+func (ivk Invoke) Call(args ...interface{}) (err error) {
 	if len(ivk) == 0 {
-		// easy optimization: an empty slice results in a nop
 		return
 	}
 

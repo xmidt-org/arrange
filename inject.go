@@ -1,6 +1,8 @@
 package arrange
 
-import "reflect"
+import (
+	"reflect"
+)
 
 // Inject is a slice type intended to hold a sequence of type information
 // about injected objects.  Essentially, an Inject is the set of input parameters
@@ -40,6 +42,13 @@ func (ij Inject) Types() []reflect.Type {
 // FuncOf returns the function signature which takes the types
 // defined in this slice as inputs together with the given outputs.
 // The returned function type is never variadic.
+//
+// The returned function type will have this basic signature:
+//
+//   func(ij[0], ij[1], ... ij[n]) (out[0], out[1], ... out[m])
+//
+// where n is the length of this Inject instance and m is the length
+// of the out variadic slice.
 func (ij Inject) FuncOf(out ...reflect.Type) reflect.Type {
 	return reflect.FuncOf(
 		ij.Types(),
@@ -48,15 +57,26 @@ func (ij Inject) FuncOf(out ...reflect.Type) reflect.Type {
 	)
 }
 
-// MakeFunc wraps a given function that accepts a []reflect.Value as its sole input.
-// The set of inputs are the same as this Inject sequence.  The wrapped function
-// may return any number of output values, which are returned as is by the created function.
+// MakeFunc wraps a given function that accepts a []reflect.Value as its sole input
+// and can return 0 or more outputs.  The fn parameter thus must have this basic
+// signature:
 //
-// The main use case for this method is dynamic creation of fx.Provide constructor
-// functions.  Given an application function of the form func([]reflect.Value) (T0, T1, T2...),
-// this function produces a wrapper that an enclosing fx.App can inspect to
-// determine the correct set of dependencies to inject and the correct set of components
-// to emit, if any.
+//   func([]reflect.Value) (out[0], out[1], ... out[m])
+//
+// The returned function value will have the same set of inputs as returned by FuncOf,
+// but will have the set of outputs described by the fn parameter:
+//
+//   func(ij[0], ij[1], ... ij[n]) (out[0], out[1], ... out[m])
+//
+// where n is the length of this Inject instance and m is the number of output
+// parameters in the fn parameter (which can be zero).
+//
+// If fn is not a function with the expected sole input parameter of []reflect.Value,
+// this method will panic.
+//
+// This function is useful when dynamically building functions that need to be
+// inspected by dependency injection infrastructure.  The wrapper function holds the
+// correct signature, and delegates to the fn parameter as its implementation.
 func (ij Inject) MakeFunc(fn interface{}) reflect.Value {
 	fv := ValueOf(fn)
 	ft := fv.Type()

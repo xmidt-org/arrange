@@ -27,8 +27,8 @@ func (ie *InvokeError) Error() string {
 // that was generated dynamically.
 type Invoke []interface{}
 
-// Apply passes the given arguments to each closure in this sequence.  All closures
-// must take the same number and type of arguments.  The reflect package is used to
+// Call passes the given arguments to each closure in this sequence.  All closures
+// must take the same number of arguments.  The reflect package is used to
 // convert arguments appropriately, so the types do not need to match exactly as long
 // as they're convertible, e.g. an uint32 can be passed to a closure expecting an os.FileMode.
 //

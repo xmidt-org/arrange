@@ -1,6 +1,6 @@
 module github.com/xmidt-org/arrange
 
-go 1.13
+go 1.15
 
 require (
 	github.com/gorilla/mux v1.7.4

@@ -1,7 +1,7 @@
 package arrangetest
 
 import (
-	"context"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/suite"
@@ -14,32 +14,115 @@ type SuiteTestSuite struct {
 	Suite
 }
 
+func (suite *SuiteTestSuite) TestResetViper() {
+	original := suite.Viper()
+	suite.Require().NotNil(original, "the test setup did not run")
+
+	reset := suite.ResetViper()
+	suite.True(original != reset)
+	suite.True(suite.Viper() == reset)
+}
+
 func (suite *SuiteTestSuite) TestYAML() {
-	suite.Require().NotNil(suite.Viper())
-	suite.YAML(`
+	suite.Run("string", func() {
+		suite.ResetViper()
+		suite.YAML(`
 keys:
   - value1
   - value2
   - value3
 `,
-	)
+		)
 
-	suite.Equal(
-		[]string{"value1", "value2", "value3"},
-		suite.Viper().GetStringSlice("keys"),
-	)
+		suite.Equal(
+			[]string{"value1", "value2", "value3"},
+			suite.Viper().GetStringSlice("keys"),
+		)
+	})
+
+	suite.Run("[]byte", func() {
+		suite.ResetViper()
+		suite.YAML([]byte(`
+keys:
+  - value1
+  - value2
+  - value3
+`),
+		)
+
+		suite.Equal(
+			[]string{"value1", "value2", "value3"},
+			suite.Viper().GetStringSlice("keys"),
+		)
+	})
+
+	suite.Run("io.Reader", func() {
+		suite.ResetViper()
+		suite.YAML(strings.NewReader(`
+keys:
+  - value1
+  - value2
+  - value3
+`),
+		)
+
+		suite.Equal(
+			[]string{"value1", "value2", "value3"},
+			suite.Viper().GetStringSlice("keys"),
+		)
+	})
+
+	suite.Run("InvalidType", func() {
+		suite.ResetViper()
+		suite.Panics(func() {
+			suite.YAML(123)
+		})
+	})
 }
 
 func (suite *SuiteTestSuite) TestJSON() {
-	suite.Require().NotNil(suite.Viper())
-	suite.JSON(`{
+	suite.Run("string", func() {
+		suite.ResetViper()
+		suite.JSON(`{
 "keys": ["value1", "value2", "value3"]
 	}`)
 
-	suite.Equal(
-		[]string{"value1", "value2", "value3"},
-		suite.Viper().GetStringSlice("keys"),
-	)
+		suite.Equal(
+			[]string{"value1", "value2", "value3"},
+			suite.Viper().GetStringSlice("keys"),
+		)
+	})
+
+	suite.Run("[]byte", func() {
+		suite.ResetViper()
+		suite.JSON([]byte(`{
+"keys": ["value1", "value2", "value3"]
+	}`))
+
+		suite.Equal(
+			[]string{"value1", "value2", "value3"},
+			suite.Viper().GetStringSlice("keys"),
+		)
+	})
+
+	suite.Run("io.Reader", func() {
+		suite.ResetViper()
+		suite.JSON(strings.NewReader(`{
+"keys": ["value1", "value2", "value3"]
+	}`))
+
+		suite.Equal(
+			[]string{"value1", "value2", "value3"},
+			suite.Viper().GetStringSlice("keys"),
+		)
+	})
+
+	suite.Run("InvalidType", func() {
+		suite.ResetViper()
+		suite.Panics(func() {
+			suite.JSON(123)
+		})
+	})
 }
 
 func (suite *SuiteTestSuite) TestFxtest() {
@@ -55,8 +138,8 @@ func (suite *SuiteTestSuite) TestFxtest() {
 	)
 
 	suite.Equal(123, component)
-	app.RequireStart()
-	app.RequireStop()
+	suite.RequireStart(app)
+	suite.RequireStop(app)
 }
 
 func (suite *SuiteTestSuite) TestFx() {
@@ -72,8 +155,20 @@ func (suite *SuiteTestSuite) TestFx() {
 	)
 
 	suite.Equal(123, component)
-	suite.NoError(app.Start(context.Background()))
-	suite.NoError(app.Stop(context.Background()))
+	suite.RequireStart(app)
+	suite.RequireStop(app)
+}
+
+func (suite *SuiteTestSuite) TestRequireStartInvalidType() {
+	suite.Panics(func() {
+		suite.RequireStart(123)
+	})
+}
+
+func (suite *SuiteTestSuite) TestRequireStopInvalidType() {
+	suite.Panics(func() {
+		suite.RequireStop(123)
+	})
 }
 
 func TestSuite(t *testing.T) {

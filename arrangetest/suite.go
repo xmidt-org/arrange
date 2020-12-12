@@ -109,9 +109,10 @@ func (suite *Suite) RequireStart(v interface{}) {
 }
 
 // RequireStop provides the same functionality as fxtest.App.RequireStop, but for
-// either an *fx.App or an *fxtest.App.  In order to do negative testing, the app may
-// not start cleanly.  Using this method in a defer ensures that things get cleaned
-// up even when doing negative testing.
+// either an *fx.App or an *fxtest.App.  This method ensures that a test failure
+// is recorded if an app doesn't stop properly.  When used in a defer, this method
+// not only ensures the app is stopped but also marks the current test as failed
+// if the app does not stop cleanly.
 //
 // If v is not an *fxtest.App or an *fx.App, this method panics.
 func (suite *Suite) RequireStop(v interface{}) {
@@ -126,6 +127,42 @@ func (suite *Suite) RequireStop(v interface{}) {
 
 	default:
 		panic(fmt.Errorf("%T is not an *fxtest.App or an *fx.App", v))
+	}
+}
+
+// EnsureStop is like RequireStop, except that it does not mark the test as failed
+// if the app does not stop cleanly.  Instead, this method logs any error from Stop.
+//
+// In general, RequireStop is preferred over this method.  However, there are cases
+// when testing failure conditions where errors are expected during the test but the
+// app needs to be stopped so that it doesn't continue consuming resources after
+// the test.  Placing this method in a defer call accomplishes that.
+//
+// As with RequireStop, this method panics if v is not an *fx.App or *fxtest.App.
+func (suite *Suite) EnsureStop(v interface{}) {
+	var (
+		stop    func(context.Context) error
+		stopCtx context.Context
+		cancel  func()
+	)
+
+	switch app := v.(type) {
+	case *fxtest.App:
+		stopCtx, cancel = context.WithTimeout(context.Background(), app.StopTimeout())
+		stop = app.Stop
+
+	case *fx.App:
+		stopCtx, cancel = context.WithTimeout(context.Background(), app.StopTimeout())
+		stop = app.Stop
+
+	default:
+		panic(fmt.Errorf("%T is not an *fxtest.App or an *fx.App", v))
+	}
+
+	defer cancel()
+	err := stop(stopCtx)
+	if err != nil {
+		suite.T().Logf("%T failed to stop: %s", v, err)
 	}
 }
 

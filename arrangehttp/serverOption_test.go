@@ -14,11 +14,13 @@ import (
 )
 
 func TestBaseContext(t *testing.T) {
+	type contextKey struct{}
+
 	var (
 		assert      = assert.New(t)
 		require     = require.New(t)
 		server      = new(http.Server)
-		expectedCtx = context.WithValue(context.Background(), "test", "yes")
+		expectedCtx = context.WithValue(context.Background(), contextKey{}, "yes")
 	)
 
 	require.NoError(
@@ -37,12 +39,15 @@ func TestBaseContext(t *testing.T) {
 }
 
 func TestConnContext(t *testing.T) {
+	type baseKey struct{}
+	type connKey struct{}
+
 	var (
 		assert  = assert.New(t)
 		require = require.New(t)
 		server  = new(http.Server)
-		baseCtx = context.WithValue(context.Background(), "base", "yes")
-		connCtx = context.WithValue(baseCtx, "conn", "yes")
+		baseCtx = context.WithValue(context.Background(), baseKey{}, "yes")
+		connCtx = context.WithValue(baseCtx, connKey{}, "yes")
 	)
 
 	require.NoError(

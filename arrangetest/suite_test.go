@@ -171,6 +171,9 @@ func (suite *SuiteTestSuite) TestRequireStopInvalidType() {
 	})
 }
 
+func (suite *SuiteTestSuite) TestEnsureStop() {
+}
+
 func TestSuite(t *testing.T) {
 	suite.Run(t, new(SuiteTestSuite))
 }

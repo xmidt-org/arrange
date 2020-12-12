@@ -9,20 +9,18 @@ import (
 	"io/ioutil"
 	"net"
 	"net/http"
-	"strings"
 	"testing"
 	"time"
 
 	"github.com/gorilla/mux"
 	"github.com/justinas/alice"
-	"github.com/spf13/viper"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
 	"github.com/xmidt-org/arrange"
+	"github.com/xmidt-org/arrange/arrangetest"
 	"github.com/xmidt-org/arrange/arrangetls"
 	"go.uber.org/fx"
-	"go.uber.org/fx/fxtest"
 )
 
 type simpleServerFactory struct {
@@ -210,18 +208,13 @@ func TestServerConfig(t *testing.T) {
 }
 
 type ServerTestSuite struct {
-	suite.Suite
-	testLogger fx.Option
-
-	viper       *viper.Viper
+	arrangetest.Suite
 	serverAddr  chan net.Addr
 	captureAddr ListenerConstructor
 }
 
 func (suite *ServerTestSuite) SetupTest() {
-	suite.testLogger = arrange.TestLogger(suite.T())
-	suite.viper = viper.New()
-
+	suite.Suite.SetupTest()
 	suite.serverAddr = make(chan net.Addr, 1)
 	suite.captureAddr = CaptureListenAddress(suite.serverAddr)
 }
@@ -233,14 +226,6 @@ func (suite *ServerTestSuite) handler(response http.ResponseWriter, _ *http.Requ
 
 func (suite *ServerTestSuite) configureRoutes(r *mux.Router) {
 	r.HandleFunc("/test", suite.handler)
-}
-
-func (suite *ServerTestSuite) yaml(v string) {
-	suite.viper.SetConfigType("yaml")
-
-	suite.Require().NoError(
-		suite.viper.ReadConfig(strings.NewReader(v)),
-	)
 }
 
 func (suite *ServerTestSuite) requireServerAddr() net.Addr {
@@ -269,13 +254,11 @@ func (suite *ServerTestSuite) checkServer() *http.Response {
 }
 
 func (suite *ServerTestSuite) TestUnmarshalError() {
-	suite.yaml(`
+	suite.YAML(`
 readTimeout: "EXPECTED ERROR: this is not a valid duration"
 `)
 
-	app := fx.New(
-		suite.testLogger,
-		arrange.ForViper(suite.viper),
+	app := suite.Fx(
 		Server{
 			Invoke: arrange.Invoke{
 				suite.configureRoutes,
@@ -287,9 +270,7 @@ readTimeout: "EXPECTED ERROR: this is not a valid duration"
 }
 
 func (suite *ServerTestSuite) TestServerFactoryError() {
-	app := fx.New(
-		suite.testLogger,
-		arrange.ForViper(suite.viper),
+	app := suite.Fx(
 		Server{
 			ServerFactory: simpleServerFactory{
 				returnErr: errors.New("expected"),
@@ -304,9 +285,7 @@ func (suite *ServerTestSuite) TestServerFactoryError() {
 }
 
 func (suite *ServerTestSuite) TestConfigureError() {
-	app := fx.New(
-		suite.testLogger,
-		arrange.ForViper(suite.viper),
+	app := suite.Fx(
 		Server{
 			Options: arrange.Invoke{
 				func(s *http.Server) error {
@@ -324,10 +303,7 @@ func (suite *ServerTestSuite) TestConfigureError() {
 }
 
 func (suite *ServerTestSuite) TestDefaults() {
-	app := fxtest.New(
-		suite.T(),
-		suite.testLogger,
-		arrange.ForViper(suite.viper),
+	app := suite.Fxtest(
 		Server{
 			ListenerChain: NewListenerChain(
 				suite.captureAddr,
@@ -347,16 +323,13 @@ func (suite *ServerTestSuite) TestDefaults() {
 }
 
 func (suite *ServerTestSuite) TestUnnamed() {
-	suite.yaml(`
+	suite.YAML(`
 servers:
   main:
     address: ":0"
 `)
 
-	app := fxtest.New(
-		suite.T(),
-		suite.testLogger,
-		arrange.ForViper(suite.viper),
+	app := suite.Fxtest(
 		Server{
 			Key:     "servers.main",
 			Unnamed: true,
@@ -378,16 +351,13 @@ servers:
 }
 
 func (suite *ServerTestSuite) TestNamed() {
-	suite.yaml(`
+	suite.YAML(`
 servers:
   main:
     address: ":0"
 `)
 
-	app := fxtest.New(
-		suite.T(),
-		suite.testLogger,
-		arrange.ForViper(suite.viper),
+	app := suite.Fxtest(
 		Server{
 			Name: "foobar",
 			Key:  "servers.main",
@@ -409,10 +379,7 @@ servers:
 }
 
 func (suite *ServerTestSuite) TestDefaultListenerFactory() {
-	app := fxtest.New(
-		suite.T(),
-		suite.testLogger,
-		arrange.ForViper(suite.viper),
+	app := suite.Fxtest(
 		Server{
 			ServerFactory: simpleServerFactory{}, // this doesn't implement ListenerFactory
 			ListenerChain: NewListenerChain(
@@ -433,16 +400,13 @@ func (suite *ServerTestSuite) TestDefaultListenerFactory() {
 }
 
 func (suite *ServerTestSuite) TestMiddleware() {
-	suite.yaml(`
+	suite.YAML(`
 servers:
   main:
     address: ":0"
 `)
 
-	app := fxtest.New(
-		suite.T(),
-		suite.testLogger,
-		arrange.ForViper(suite.viper),
+	app := suite.Fxtest(
 		fx.Provide(
 			func() func(http.Handler) http.Handler {
 				return func(next http.Handler) http.Handler {
@@ -563,7 +527,7 @@ servers:
 }
 
 func (suite *ServerTestSuite) TestListener() {
-	suite.yaml(`
+	suite.YAML(`
 servers:
   main:
     address: ":0"
@@ -571,10 +535,7 @@ servers:
 
 	var called []string
 
-	app := fxtest.New(
-		suite.T(),
-		suite.testLogger,
-		arrange.ForViper(suite.viper),
+	app := suite.Fxtest(
 		fx.Provide(
 			func() ListenerConstructor {
 				return func(next net.Listener) net.Listener {
@@ -662,7 +623,7 @@ servers:
 }
 
 func (suite *ServerTestSuite) TestOptions() {
-	suite.yaml(`
+	suite.YAML(`
 servers:
   main:
     address: ":0"
@@ -670,10 +631,7 @@ servers:
 
 	var called []string
 
-	app := fxtest.New(
-		suite.T(),
-		suite.testLogger,
-		arrange.ForViper(suite.viper),
+	app := suite.Fxtest(
 		fx.Provide(
 			func() func(*http.Server) {
 				return func(s *http.Server) {

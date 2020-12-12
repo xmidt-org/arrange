@@ -138,8 +138,8 @@ func (suite *SuiteTestSuite) TestFxtest() {
 	)
 
 	suite.Equal(123, component)
-	suite.RequireStart(app)
-	suite.RequireStop(app)
+	app.RequireStart()
+	app.RequireStop()
 }
 
 func (suite *SuiteTestSuite) TestFx() {
@@ -156,22 +156,6 @@ func (suite *SuiteTestSuite) TestFx() {
 
 	suite.Equal(123, component)
 	suite.RequireStart(app)
-	suite.RequireStop(app)
-}
-
-func (suite *SuiteTestSuite) TestRequireStartInvalidType() {
-	suite.Panics(func() {
-		suite.RequireStart(123)
-	})
-}
-
-func (suite *SuiteTestSuite) TestRequireStopInvalidType() {
-	suite.Panics(func() {
-		suite.RequireStop(123)
-	})
-}
-
-func (suite *SuiteTestSuite) TestEnsureStop() {
 }
 
 func TestSuite(t *testing.T) {

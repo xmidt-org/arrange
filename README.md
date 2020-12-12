@@ -2,10 +2,8 @@
 
 Arrange is a companion to go.uber.org/fx that adds unmarshaled components, conditional options, and some other goodies.  Refer to the godoc for more information and examples.
 
-[![Build Status](https://travis-ci.com/xmidt-org/arrange.svg?branch=main)](https://travis-ci.com/xmidt-org/arrange)
+[![Build Status](https://github.com/xmidt-org/arrange/workflows/CI/badge.svg)](https://github.com/xmidt-org/arrange/actions)
 [![codecov.io](http://codecov.io/github/xmidt-org/arrange/coverage.svg?branch=main)](http://codecov.io/github/xmidt-org/arrange?branch=main)
-[![Code Climate](https://codeclimate.com/github/xmidt-org/arrange/badges/gpa.svg)](https://codeclimate.com/github/xmidt-org/arrange)
-[![Issue Count](https://codeclimate.com/github/xmidt-org/arrange/badges/issue_count.svg)](https://codeclimate.com/github/xmidt-org/arrange)
 [![Go Report Card](https://goreportcard.com/badge/github.com/xmidt-org/arrange)](https://goreportcard.com/report/github.com/xmidt-org/arrange)
 [![Apache V2 License](http://img.shields.io/badge/license-Apache%20V2-blue.svg)](https://github.com/xmidt-org/arrange/blob/main/LICENSE)
 [![GitHub release](https://img.shields.io/github/release/xmidt-org/arrange.svg)](CHANGELOG.md)

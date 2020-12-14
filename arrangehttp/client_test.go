@@ -15,6 +15,7 @@ import (
 	"github.com/xmidt-org/arrange"
 	"github.com/xmidt-org/arrange/arrangetest"
 	"github.com/xmidt-org/arrange/arrangetls"
+	"github.com/xmidt-org/httpaux/roundtrip"
 	"go.uber.org/fx"
 )
 
@@ -134,14 +135,15 @@ func (suite *ClientTestSuite) SetupSuite() {
 
 func (suite *ClientTestSuite) TearDownSuite() {
 	suite.server.Close()
+	suite.expected = nil
 }
 
 func (suite *ClientTestSuite) testHandleFunc(response http.ResponseWriter, request *http.Request) {
-	for k, v := range suite.expected {
-		suite.Equal(
-			v,
-			request.Header[k],
-			fmt.Sprintf("Header %s did not match", k),
+	for name, values := range suite.expected {
+		suite.ElementsMatch(
+			values,
+			request.Header.Values(name),
+			fmt.Sprintf("Header %s did not match", name),
 		)
 	}
 
@@ -154,9 +156,9 @@ func (suite *ClientTestSuite) newRequest(h http.Header) *http.Request {
 	suite.Require().NoError(err)
 	suite.Require().NotNil(request)
 
-	for k, values := range h {
-		for _, v := range values {
-			request.Header.Add(k, v)
+	for name, values := range h {
+		for _, value := range values {
+			request.Header.Add(name, value)
 		}
 	}
 
@@ -164,14 +166,10 @@ func (suite *ClientTestSuite) newRequest(h http.Header) *http.Request {
 }
 
 // checkClient makes a test request to our internal server
-func (suite *ClientTestSuite) checkClient(client *http.Client, expected http.Header) {
-	request := suite.newRequest(expected)
-
+func (suite *ClientTestSuite) checkClient(client *http.Client, request *http.Request, expected http.Header) {
 	suite.expected = expected
-	suite.T().Log("suite.expected", suite.expected)
 	response, err := client.Do(request)
 	suite.Require().NoError(err)
-	suite.expected = nil
 
 	suite.Require().NotNil(response)
 	defer suite.NoError(response.Body.Close())
@@ -226,11 +224,102 @@ func (suite *ClientTestSuite) TestDefaults() {
 	app.RequireStart()
 
 	suite.Require().NotNil(client)
-	suite.checkClient(client, http.Header{
-		"X-Test": {"true"},
-	})
+
+	request := suite.newRequest(http.Header{"X-Test": {"true"}})
+	suite.checkClient(
+		client,
+		request,
+		http.Header{
+			"X-Test": {"true"},
+		},
+	)
 
 	app.RequireStop()
+}
+
+func (suite *ClientTestSuite) TestMiddleware() {
+	var client *http.Client
+
+	app := suite.Fxtest(
+		fx.Provide(
+			func() roundtrip.Constructor {
+				return func(next http.RoundTripper) http.RoundTripper {
+					return roundtrip.Func(func(request *http.Request) (*http.Response, error) {
+						request.Header.Set("X-Middleware-Unnamed", "true")
+						return next.RoundTrip(request)
+					})
+				}
+			},
+			fx.Annotated{
+				Group: "constructors",
+				Target: func() roundtrip.Constructor {
+					return func(next http.RoundTripper) http.RoundTripper {
+						return roundtrip.Func(func(request *http.Request) (*http.Response, error) {
+							request.Header.Set("X-Middleware-Group1", "true")
+							return next.RoundTrip(request)
+						})
+					}
+				},
+			},
+			fx.Annotated{
+				Group: "constructors",
+				Target: func() roundtrip.Constructor {
+					return func(next http.RoundTripper) http.RoundTripper {
+						return roundtrip.Func(func(request *http.Request) (*http.Response, error) {
+							request.Header.Set("X-Middleware-Group2", "true")
+							return next.RoundTrip(request)
+						})
+					}
+				},
+			},
+			func() roundtrip.Chain {
+				return roundtrip.NewChain(
+					func(next http.RoundTripper) http.RoundTripper {
+						return roundtrip.Func(func(request *http.Request) (*http.Response, error) {
+							request.Header.Set("X-Middleware-Unnamed-Chain", "true")
+							return next.RoundTrip(request)
+						})
+					},
+				)
+			},
+		),
+		Client{
+			Inject: arrange.Inject{
+				struct {
+					fx.In
+					F1 roundtrip.Constructor
+					F2 []roundtrip.Constructor `group:"constructors"`
+					F3 roundtrip.Chain
+				}{},
+			},
+			Middleware: roundtrip.NewChain(
+				func(next http.RoundTripper) http.RoundTripper {
+					return roundtrip.Func(func(request *http.Request) (*http.Response, error) {
+						request.Header.Set("X-Middleware-Option", "true")
+						return next.RoundTrip(request)
+					})
+				},
+			),
+		}.Provide(),
+		fx.Populate(&client),
+	)
+
+	suite.Require().NoError(app.Err())
+	app.RequireStart()
+
+	request := suite.newRequest(http.Header{"X-Test": {"true"}})
+	suite.checkClient(
+		client,
+		request,
+		http.Header{
+			"X-Test":                     {"true"},
+			"X-Middleware-Unnamed":       {"true"},
+			"X-Middleware-Group1":        {"true"},
+			"X-Middleware-Group2":        {"true"},
+			"X-Middleware-Unnamed-Chain": {"true"},
+			"X-Middleware-Option":        {"true"},
+		},
+	)
 }
 
 func TestClient(t *testing.T) {

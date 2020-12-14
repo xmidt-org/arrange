@@ -319,7 +319,6 @@ func (suite *ServerTestSuite) TestDefaults() {
 	defer app.Stop(context.Background())
 
 	suite.checkServer()
-	app.RequireStop()
 }
 
 func (suite *ServerTestSuite) TestUnnamed() {
@@ -347,7 +346,6 @@ servers:
 	defer app.Stop(context.Background())
 
 	suite.checkServer()
-	app.RequireStop()
 }
 
 func (suite *ServerTestSuite) TestNamed() {
@@ -375,7 +373,6 @@ servers:
 	defer app.Stop(context.Background())
 
 	suite.checkServer()
-	app.RequireStop()
 }
 
 func (suite *ServerTestSuite) TestDefaultListenerFactory() {
@@ -396,7 +393,6 @@ func (suite *ServerTestSuite) TestDefaultListenerFactory() {
 	defer app.Stop(context.Background())
 
 	suite.checkServer()
-	app.RequireStop()
 }
 
 func (suite *ServerTestSuite) TestMiddleware() {
@@ -463,18 +459,13 @@ servers:
 		Server{
 			Key: "servers.main",
 			Inject: arrange.Inject{
-				func(http.Handler) http.Handler { return nil },
-				alice.Chain{},
-				arrange.Struct{}.In().Append(
-					arrange.Field{
-						Name: "constructor",
-						Type: alice.Constructor(func(http.Handler) http.Handler { return nil }),
-					},
-					arrange.Field{
-						Group: "constructors",
-						Type:  func(http.Handler) http.Handler { return nil },
-					},
-				).Of(),
+				struct {
+					fx.In
+					F1 func(http.Handler) http.Handler
+					F2 alice.Chain
+					F3 alice.Constructor                 `name:"constructor"`
+					F4 []func(http.Handler) http.Handler `group:"constructors"`
+				}{},
 			},
 			ListenerChain: NewListenerChain(
 				suite.captureAddr,
@@ -522,8 +513,6 @@ servers:
 		[]string{"1", "2"},
 		response.Header.Values("Injected-Constructor-Group"),
 	)
-
-	app.RequireStop()
 }
 
 func (suite *ServerTestSuite) TestListener() {
@@ -618,8 +607,6 @@ servers:
 		},
 		called,
 	)
-
-	app.RequireStop()
 }
 
 func (suite *ServerTestSuite) TestOptions() {
@@ -717,7 +704,6 @@ servers:
 
 	suite.Require().NoError(app.Err())
 	app.RequireStart()
-	defer app.Stop(context.Background())
 
 	suite.checkServer()
 	suite.ElementsMatch(
@@ -733,8 +719,6 @@ servers:
 		},
 		called,
 	)
-
-	app.RequireStop()
 }
 
 func TestServer(t *testing.T) {

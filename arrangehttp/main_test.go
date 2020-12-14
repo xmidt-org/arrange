@@ -16,6 +16,13 @@ var (
 	KeyFile         string
 )
 
+func removeFile(name string) {
+	err := os.Remove(name)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to remove file: %s", name)
+	}
+}
+
 func TestMain(m *testing.M) {
 	certificate, err := arrangetls.CreateTestCertificate(&x509.Certificate{
 		SerialNumber: big.NewInt(837492837),
@@ -42,8 +49,8 @@ func TestMain(m *testing.M) {
 	}
 
 	os.Exit(func() int {
-		defer os.Remove(CertificateFile)
-		defer os.Remove(KeyFile)
+		defer removeFile(CertificateFile)
+		defer removeFile(KeyFile)
 		return m.Run()
 	}())
 }

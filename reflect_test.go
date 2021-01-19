@@ -6,9 +6,12 @@ import (
 	"net/http"
 	"reflect"
 	"strconv"
+	"strings"
 	"testing"
 
+	"github.com/spf13/viper"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 type NewTargetTester struct {
@@ -48,6 +51,34 @@ func testNewTargetValue(t *testing.T) {
 			)
 		})
 	}
+}
+
+func testNewTargetValueUnmarshal(t *testing.T) {
+	var (
+		assert  = assert.New(t)
+		require = require.New(t)
+
+		v = viper.New()
+	)
+
+	v.SetConfigType("yaml")
+	require.NoError(v.ReadConfig(strings.NewReader(`
+name: joe
+age: 15
+`)))
+
+	target := NewTarget(NewTargetTester{})
+	require.NoError(
+		v.Unmarshal(target.UnmarshalTo.Interface()),
+	)
+
+	assert.Equal(
+		NewTargetTester{
+			Name: "joe",
+			Age:  15,
+		},
+		target.Component.Interface(),
+	)
 }
 
 func testNewTargetPointer(t *testing.T) {
@@ -108,6 +139,7 @@ func testNewTargetNil(t *testing.T) {
 
 func TestNewTarget(t *testing.T) {
 	t.Run("Value", testNewTargetValue)
+	t.Run("ValueUnmarshal", testNewTargetValueUnmarshal)
 	t.Run("Pointer", testNewTargetPointer)
 	t.Run("Nil", testNewTargetNil)
 }

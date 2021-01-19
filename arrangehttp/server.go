@@ -217,13 +217,13 @@ func (s *Server) unmarshal(u arrange.Unmarshaler) (sf ServerFactory, err error) 
 	}
 
 	target := arrange.NewTarget(prototype)
-	sf = target.Component.Interface().(ServerFactory)
 	if len(s.Key) > 0 {
 		err = u.UnmarshalKey(s.Key, target.UnmarshalTo.Interface())
 	} else {
 		err = u.Unmarshal(target.UnmarshalTo.Interface())
 	}
 
+	sf = target.Component.Interface().(ServerFactory)
 	return
 }
 
@@ -287,7 +287,7 @@ func (s *Server) configure(in ServerIn, server *http.Server, deps []reflect.Valu
 	options = append(options, s.Options...)
 	err = multierr.Append(
 		err,
-		options.Apply(server),
+		options.Call(server),
 	)
 
 	if err == nil {
@@ -415,8 +415,7 @@ func (s Server) Provide() fx.Option {
 			}.MakeFunc(
 				func(inputs []reflect.Value) error {
 					// the router will always be the 2nd field of the only struct parameter
-					router := inputs[0].Field(1).Interface().(*mux.Router)
-					return s.Invoke.Apply(router)
+					return s.Invoke.Call(inputs[0].Field(1))
 				},
 			)
 		} else {
@@ -425,7 +424,7 @@ func (s Server) Provide() fx.Option {
 				(*mux.Router)(nil),
 			}.MakeFunc(
 				func(inputs []reflect.Value) error {
-					return s.Invoke.Apply(inputs[0])
+					return s.Invoke.Call(inputs[0])
 				},
 			)
 		}

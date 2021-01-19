@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 - Refactored dependency reflection to make it easier to use
 - Added a convenience for declaring injected dependencies
 - Simplified declarative builders in arrangehttp
+- arrangetest package now encapsulates more uber/fx testing
 
 ## [v0.2.1]
 - Support more slice types for server and client options

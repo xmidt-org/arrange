@@ -89,6 +89,8 @@ func (lc ListenerChain) Then(next net.Listener) net.Listener {
 	return next
 }
 
+// Factory decorates a ListenerFactory so that the factory's product, net.Listener,
+// is decorated with the constructors in this chain.
 func (lc ListenerChain) Factory(next ListenerFactory) ListenerFactory {
 	if len(lc.c) > 0 {
 		return ListenerFactoryFunc(func(ctx context.Context, s *http.Server) (net.Listener, error) {

@@ -15,7 +15,7 @@ type InvokeTestSuite struct {
 
 func (suite *InvokeTestSuite) TestEmpty() {
 	suite.NoError(
-		Invoke{}.Apply(),
+		Invoke{}.Call(),
 	)
 }
 
@@ -40,7 +40,7 @@ func (suite *InvokeTestSuite) TestTypicalUsage() {
 		},
 	}
 
-	suite.NoError(invoke.Apply(router))
+	suite.NoError(invoke.Call(router))
 	suite.Equal([]int{1, 2, 3}, called)
 }
 
@@ -60,7 +60,7 @@ func (suite *InvokeTestSuite) TestErrors() {
 		},
 	}
 
-	err := invoke.Apply(router)
+	err := invoke.Call(router)
 	suite.Equal([]int{1, 2}, called)
 
 	suite.Require().Error(err)
@@ -79,7 +79,7 @@ func (suite *InvokeTestSuite) TestNotAFunction() {
 		},
 	}
 
-	err := invoke.Apply(router)
+	err := invoke.Call(router)
 	suite.Equal([]int{1}, called)
 
 	suite.Require().Error(err)
@@ -107,7 +107,7 @@ func (suite *InvokeTestSuite) TestWrongNumberOfInputs() {
 		},
 	}
 
-	err := invoke.Apply(router)
+	err := invoke.Call(router)
 	suite.Equal([]int{1}, called)
 
 	suite.Require().Error(err)
@@ -134,7 +134,7 @@ func (suite *InvokeTestSuite) TestTooManyReturnValues() {
 		},
 	}
 
-	err := invoke.Apply(router)
+	err := invoke.Call(router)
 	suite.Equal([]int{1}, called)
 	suite.Require().Error(err)
 	suite.Contains(err.Error(), "INVOKE ERROR")
@@ -156,7 +156,7 @@ func (suite *InvokeTestSuite) TestWrongInputType() {
 		},
 	}
 
-	err := invoke.Apply(router)
+	err := invoke.Call(router)
 	suite.Equal([]int{1}, called)
 	suite.Require().Error(err)
 	suite.Contains(err.Error(), "INVOKE ERROR")
@@ -179,7 +179,7 @@ func (suite *InvokeTestSuite) TestNonErrorReturnValue() {
 		},
 	}
 
-	err := invoke.Apply(router)
+	err := invoke.Call(router)
 	suite.Equal([]int{1}, called)
 	suite.Require().Error(err)
 	suite.Contains(err.Error(), "INVOKE ERROR")

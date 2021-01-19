@@ -2,7 +2,6 @@ package arrangehttp
 
 import (
 	"context"
-	"fmt"
 	"net/http"
 	"reflect"
 	"time"
@@ -10,7 +9,7 @@ import (
 	"github.com/xmidt-org/arrange"
 	"github.com/xmidt-org/arrange/arrangetls"
 	"github.com/xmidt-org/httpaux"
-	"go.uber.org/dig"
+	"github.com/xmidt-org/httpaux/roundtrip"
 	"go.uber.org/fx"
 	"go.uber.org/multierr"
 )
@@ -106,254 +105,245 @@ type ClientIn struct {
 	Lifecycle fx.Lifecycle
 }
 
-// C is a Fluent Builder for creating an http.Client as an uber/fx component.
-// This type should be constructed with the Client function.
-type C struct {
-	// errs are the collected errors that happened during fluent building
-	errs []error
+// Client describes how to unmarshal and configure a client
+type Client struct {
+	// Name is the optional name of the *http.Client component
+	Name string
 
-	// options are the explicit options added that are NOT injected
-	options []cOption
+	// Key is the configuration key from which this client's factory
+	// is unmarshaled.  If Name is not set and this field is set, then
+	// this field is used by default as the component name.
+	//
+	// If this field is unset, unmarshaling takes place at the root
+	// of the configuration.
+	Key string
 
-	// dependencies are extra dependencies beyond ClientIn
-	dependencies []reflect.Type
+	// Unnamed disables the defaulting of a component name when the Key
+	// field is set.  Useful when an fx.App only has one client that gets
+	// unmarshaled from a key.
+	//
+	// When this field is true, then the *http.Client is never named regardless
+	// of the other fields.
+	Unnamed bool
 
-	// prototype is the ClientFactory instance that is used for cloning and unmarshaling
-	prototype ClientFactory
+	// ClientFactory is the prototype instance used to instantiate an *http.Client.
+	// If unset, ClientConfig is used.
+	//
+	// If set, this instance is cloned before unmarshaling.  That means any values
+	// set on it will act as defaults.
+	ClientFactory ClientFactory
+
+	// Inject is the set of dependencies used to build the client.  This is a set of
+	// types that are injected when the constructor created by Provide is run.
+	//
+	// Injected dependencies are always applied before anything in this struct.
+	Inject arrange.Inject
+
+	// Options is the set of client options outside the enclosing fx.App that are run
+	// before the client is bound to the fx.App lifecycle.  Each element of this sequence
+	// must be a function with one of two signatures:
+	//
+	//   func(*http.Client)
+	//   func(*http.Client) error
+	Options arrange.Invoke
+
+	// Middleware is the set of decorators for the http.RoundTripper that come from outside
+	// the enclosing fx.App.
+	//
+	// Any injected middleware, via the Inject field, are applied before anything
+	// in this field.
+	Middleware roundtrip.Chain
+
+	// Invoke is the optional set of functions executed as an fx.Invoke option.  These functions
+	// are executed after client construction.  Each element of this sequence
+	// must be a function with one of two signatures:
+	//
+	//   func(*http.Client)
+	//   func(*http.Client) error
+	//
+	// If this slice is empty, client code must add at least one fx.Invoke that accepts the
+	// *http.Client or else the server created by this struct will not get started.
+	Invoke arrange.Invoke
 }
 
-// Client begins a Fluent Builder chain for constructing an http.Client from
-// unmarshaled configuration and introducing that http.Client as a component
-// for an enclosing uber/fx app.
-func Client() *C {
-	return new(C).
-		ClientFactory(ClientConfig{})
+// name returns the component name of the *http.Client.  This method returns the
+// empty string if the *http.Client should be an unnamed, global component.
+func (c *Client) name() string {
+	switch {
+	case c.Unnamed:
+		return ""
+	case len(c.Name) > 0:
+		return c.Name
+	default:
+		// covers the case where both Key and Name are unset
+		return c.Key
+	}
 }
 
-// ClientFactory sets the prototype factory that is unmarshaled from Viper.
-// This prototype obeys the rules of arrange.NewTarget.  By default, ClientConfig
-// is used as the ClientFactory.  This build method allows a caller to use
-// custom configuration.
-func (c *C) ClientFactory(prototype ClientFactory) *C {
-	c.prototype = prototype
-	return c
-}
-
-// With adds any number of externally supplied options that will be applied
-// to the client when the enclosing fx.App asks to instantiate it.
+// unmarshal handles reading in a ClientFactory's state from the arrange.Unmarshaler.
+// If Key is set, this method uses UnmarshalKey.  Otherwise, Unmarshal is used.
 //
-// This method is used to provide options created outside the enclosing fx.App.
-// For options that are built as components within the fx.App, use Inject.
-func (c *C) With(o ...ClientOption) *C {
-	c.options = append(
-		c.options,
-		ClientOptions(o...).cOption,
-	)
-
-	return c
-}
-
-// MiddlewareChain adds an external RoundTripperChain as a client option.
-//
-// This method is used to provide middleware created outside the enclosing fx.App.
-// For middleware built as components within the fx.App, use Inject.
-func (c *C) MiddlewareChain(rtc RoundTripperChain) *C {
-	return c.With(func(client *http.Client) error {
-		client.Transport = rtc.Then(client.Transport)
-		return nil
-	})
-}
-
-// Middleware adds external RoundTripperConstructors as middleware.
-//
-// This method is used to provide middleware created outside the enclosing fx.App.
-// For middleware built as components within the fx.App, use Inject.
-func (c *C) Middleware(m ...RoundTripperConstructor) *C {
-	return c.MiddlewareChain(
-		NewRoundTripperChain(m...),
-	)
-}
-
-// Inject allows additional components to be supplied to build an http.Client
-// from the enclosing fx.App.
-//
-// Each dependency supplied via this method must be a struct value that embeds
-// fx.In.  The embedding may be at any arbitrarily nested level.
-//
-// When unmarshaling occurs, these structs are injected via the normal usage
-// of uber/fx.  Each field of each struct is examined to see if it can be converted
-// into something that affects the construction of an http.Client.  Any field that
-// cannot be converted is silently ignored, which allows a single struct to
-// be used for more than one purpose.
-//
-// Injected objects are applied before any external options are supplied.  For example,
-// middleware that has been injected will execute before anything added with
-// the Middleware method.
-func (c *C) Inject(deps ...interface{}) *C {
-	for _, d := range deps {
-		dt := arrange.ValueOf(d).Type()
-		if dig.IsIn(dt) {
-			c.dependencies = append(c.dependencies, dt)
-		} else {
-			c.errs = append(c.errs,
-				fmt.Errorf("%s is not an fx.In struct", dt),
-			)
-		}
+// If the ClientFactory field is unset, ClientConfig{} is used.
+func (c *Client) unmarshal(u arrange.Unmarshaler) (cf ClientFactory, err error) {
+	prototype := c.ClientFactory
+	if prototype == nil {
+		prototype = ClientConfig{}
 	}
 
-	return c
-}
-
-// unmarshalFuncOf determines the function signature for Unmarshal or UnmarshalKey.
-// The first input parameter is always a ClientIn struct.  Following that will be any
-// fx.In structs, and following that will be any simple dependencies.
-func (c *C) unmarshalFuncOf() reflect.Type {
-	return reflect.FuncOf(
-		// inputs
-		append(
-			[]reflect.Type{reflect.TypeOf(ClientIn{})},
-			c.dependencies...,
-		),
-
-		// outputs
-		[]reflect.Type{
-			reflect.TypeOf((*http.Client)(nil)),
-			arrange.ErrorType(),
-		},
-
-		false, // not variadic
-	)
-}
-
-// unmarshal does all the heavy lifting of unmarshaling a ClientFactory and creating an *http.Client.
-// If this method does not return an error, it will have bound the client's CloseIdleConnections
-// to the shutdown of the enclosing fx.App.
-func (c *C) unmarshal(u func(arrange.Unmarshaler, interface{}) error, inputs []reflect.Value) (*http.Client, error) {
-	if len(c.errs) > 0 {
-		return nil, multierr.Combine(c.errs...)
+	target := arrange.NewTarget(prototype)
+	if len(c.Key) > 0 {
+		err = u.UnmarshalKey(c.Key, target.UnmarshalTo.Interface())
+	} else {
+		err = u.Unmarshal(target.UnmarshalTo.Interface())
 	}
 
+	cf = target.Component.Interface().(ClientFactory)
+	return
+}
+
+// configure applies the dependencies (if any) and the options and middleware supplied
+// on this instance to the given *http.Client
+func (c *Client) configure(in ClientIn, client *http.Client, deps []reflect.Value) (err error) {
 	var (
-		target   = arrange.NewTarget(c.prototype)
-		clientIn = inputs[0].Interface().(ClientIn)
-
-		p = arrange.NewModulePrinter(Module, clientIn.Printer)
+		middleware roundtrip.Chain
+		options    arrange.Invoke
 	)
 
-	// unmarshal the ClientFactory object
-	if err := u(clientIn.Unmarshaler, target.UnmarshalTo.Interface()); err != nil {
-		return nil, err
-	}
-
-	// create a clientInfo that will provide context to all the options
-	var ci clientInfo
-
-	// use the unmarshaled factory to create the *http.Client
-	factory := target.Component.Interface().(ClientFactory)
-	var err error
-	if ci.client, err = factory.NewClient(); err != nil {
-		return nil, err
-	}
-
-	// apply any injected dependencies first
-	var optionErrs []error
 	arrange.VisitDependencies(
 		func(d arrange.Dependency) bool {
 			if d.Injected() {
-				// ignore dependencies that can't be converted
-				if co := newCOption(d.Value.Interface()); co != nil {
-					p.Printf("CLIENT INJECT => %s", d)
-					if err = co(&ci); err != nil {
-						optionErrs = append(optionErrs, err)
-					}
-				}
+				arrange.TryConvert(
+					d.Value.Interface(),
+					func(v roundtrip.Chain) {
+						middleware = middleware.Extend(v)
+					},
+					func(v roundtrip.Constructor) {
+						middleware = middleware.Append(v)
+					},
+					func(v []roundtrip.Constructor) {
+						middleware = middleware.Append(v...)
+					},
+					func(v func(*http.Client)) {
+						options = append(options, v)
+					},
+					func(v []func(*http.Client)) {
+						for _, o := range v {
+							options = append(options, o)
+						}
+					},
+					func(v func(*http.Client) error) {
+						options = append(options, v)
+					},
+					func(v []func(*http.Client) error) {
+						for _, o := range v {
+							options = append(options, o)
+						}
+					},
+				)
 			}
 
 			return true
 		},
-		inputs[1:]...,
+		deps...,
 	)
 
-	for _, o := range c.options {
-		if err = o(&ci); err != nil {
-			optionErrs = append(optionErrs, err)
-		}
+	middleware = middleware.Extend(c.Middleware)
+	options = append(options, c.Options...)
+	err = multierr.Append(
+		err,
+		options.Call(client),
+	)
+
+	if err == nil {
+		client.Transport = middleware.ThenRoundTrip(client.Transport)
 	}
 
-	if len(optionErrs) > 0 {
-		return nil, multierr.Combine(optionErrs...)
-	} else {
-		ci.applyMiddleware()
+	return
+}
 
-		// if all went well, ensure that the client closes idle connections
-		// when the fx.App is shutdown
-		clientIn.Lifecycle.Append(fx.Hook{
-			OnStop: func(context.Context) error {
-				ci.client.CloseIdleConnections()
-				return nil
+// provide is the main workhorse that unmarshals the client factory and creates the *http.Client
+func (c *Client) provide(deps []reflect.Value) (client *http.Client, err error) {
+	// the first dependency is always a ClientIn
+	in := deps[0].Interface().(ClientIn)
+
+	var cf ClientFactory
+	cf, err = c.unmarshal(in.Unmarshaler)
+	if err != nil {
+		return
+	}
+
+	client, err = cf.NewClient()
+	if err != nil {
+		return
+	}
+
+	err = c.configure(in, client, deps[1:])
+	if err != nil {
+		return
+	}
+
+	in.Lifecycle.Append(fx.Hook{
+		OnStop: func(context.Context) error {
+			client.CloseIdleConnections()
+			return nil
+		},
+	})
+
+	return
+}
+
+func (c Client) Provide() fx.Option {
+	provideFunc := arrange.Inject{reflect.TypeOf(ClientIn{})}.
+		Extend(c.Inject).
+		MakeFunc(c.provide)
+
+	name := c.name()
+	var options []fx.Option
+	if len(name) > 0 {
+		options = append(options, fx.Provide(
+			fx.Annotated{
+				Name:   name,
+				Target: provideFunc.Interface(),
 			},
-		})
-
-		return ci.client, nil
+		))
+	} else {
+		options = append(options, fx.Provide(
+			provideFunc.Interface(),
+		))
 	}
-}
 
-// makeUnmarshalFunc dynamically creates the function to be passed as a constructor to the fx.App.
-func (c *C) makeUnmarshalFunc(u func(arrange.Unmarshaler, interface{}) error) reflect.Value {
-	return reflect.MakeFunc(
-		c.unmarshalFuncOf(),
-		func(inputs []reflect.Value) []reflect.Value {
-			client, err := c.unmarshal(u, inputs)
-			return []reflect.Value{
-				reflect.ValueOf(client),
-				arrange.NewErrorValue(err),
-			}
-		},
-	)
-}
+	if len(c.Invoke) > 0 {
+		var invokeFunc reflect.Value
+		if len(name) > 0 {
+			// build an fx.In struct
+			invokeFunc = arrange.Inject{
+				arrange.Struct{}.In().Append(
+					arrange.Field{
+						Name: name,
+						Type: (*http.Client)(nil),
+					},
+				).Of(),
+			}.MakeFunc(
+				func(inputs []reflect.Value) error {
+					// the router will always be the 2nd field of the only struct parameter
+					return c.Invoke.Call(inputs[0].Field(1))
+				},
+			)
+		} else {
+			// just a simple global, unnamed dependency
+			invokeFunc = arrange.Inject{
+				(*http.Client)(nil),
+			}.MakeFunc(
+				func(inputs []reflect.Value) error {
+					return c.Invoke.Call(inputs[0])
+				},
+			)
+		}
 
-// Unmarshal creates a function at runtime that produces an *http.Client using this builder's
-// current state.  The builder chain is terminated by this method, and the returned function
-// may be passed to fx.Provide or used as the Target field in fx.Annotated.  Any errors that
-// occur during construction of the *http.Client will short circuit the enclosing fx.App with an error.
-//
-// The signature of the returned function will always be "func(ClientIn, /* dependencies */) (*http.Client, error)".
-// The dependencies will be each of the structs passed to Inject in order.  If no Inject dependencies
-// were supplied, then the returned function will only accept a ClientIn as its sole input parameter.
-func (c *C) Unmarshal() interface{} {
-	return c.makeUnmarshalFunc(
-		func(u arrange.Unmarshaler, v interface{}) error {
-			return u.Unmarshal(v)
-		},
-	).Interface()
-}
+		options = append(options, fx.Invoke(
+			invokeFunc.Interface(),
+		))
+	}
 
-// Provide is the simplest way to leverage a client builder.  This method invokes Unmarshal
-// and wraps it in an fx.Provide that can be directly passed to fx.New.
-func (c *C) Provide() fx.Option {
-	return fx.Provide(
-		c.Unmarshal(),
-	)
-}
-
-// UnmarshalKey is the same as Unmarshal, save that it unmarshals the ClientFactory from
-// a specific configuration key.
-func (c *C) UnmarshalKey(key string) interface{} {
-	return c.makeUnmarshalFunc(
-		func(u arrange.Unmarshaler, v interface{}) error {
-			return u.UnmarshalKey(key, v)
-		},
-	).Interface()
-}
-
-// ProvideKey unmarshals from a given configuration key using UnmarshalKey.  It then returns
-// an fx.Annotated with the key as the Name an the dynamic function created by UnmarshalKey
-// as the Target.
-func (c *C) ProvideKey(key string) fx.Option {
-	return fx.Provide(
-		fx.Annotated{
-			Name:   key,
-			Target: c.UnmarshalKey(key),
-		},
-	)
+	return fx.Options(options...)
 }

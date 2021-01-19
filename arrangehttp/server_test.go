@@ -261,7 +261,9 @@ readTimeout: "EXPECTED ERROR: this is not a valid duration"
 	app := suite.Fx(
 		Server{
 			Invoke: arrange.Invoke{
-				suite.configureRoutes,
+				func(*http.Server) {
+					suite.Fail("Unmarshal errors should shortcircuit app startup")
+				},
 			},
 		}.Provide(),
 	)
@@ -611,9 +613,8 @@ servers:
 
 func (suite *ServerTestSuite) TestOptions() {
 	suite.YAML(`
-servers:
-  main:
-    address: ":0"
+address: ":0"
+readTimeout: "15s"
 `)
 
 	var called []string
@@ -622,13 +623,15 @@ servers:
 		fx.Provide(
 			func() func(*http.Server) {
 				return func(s *http.Server) {
-					suite.NotNil(s)
+					suite.Require().NotNil(s)
+					suite.Equal(15*time.Second, s.ReadTimeout)
 					called = append(called, "injected")
 				}
 			},
 			func() func(*http.Server) error {
 				return func(s *http.Server) error {
-					suite.NotNil(s)
+					suite.Require().NotNil(s)
+					suite.Equal(15*time.Second, s.ReadTimeout)
 					called = append(called, "injected-with-error")
 					return nil
 				}
@@ -637,7 +640,8 @@ servers:
 				Group: "options",
 				Target: func() func(*http.Server) {
 					return func(s *http.Server) {
-						suite.NotNil(s)
+						suite.Require().NotNil(s)
+						suite.Equal(15*time.Second, s.ReadTimeout)
 						called = append(called, "group-1")
 					}
 				},
@@ -646,7 +650,8 @@ servers:
 				Group: "options",
 				Target: func() func(*http.Server) {
 					return func(s *http.Server) {
-						suite.NotNil(s)
+						suite.Require().NotNil(s)
+						suite.Equal(15*time.Second, s.ReadTimeout)
 						called = append(called, "group-2")
 					}
 				},
@@ -655,7 +660,8 @@ servers:
 				Group: "options-with-error",
 				Target: func() func(*http.Server) error {
 					return func(s *http.Server) error {
-						suite.NotNil(s)
+						suite.Require().NotNil(s)
+						suite.Equal(15*time.Second, s.ReadTimeout)
 						called = append(called, "group-with-error-1")
 						return nil
 					}
@@ -665,7 +671,8 @@ servers:
 				Group: "options-with-error",
 				Target: func() func(*http.Server) error {
 					return func(s *http.Server) error {
-						suite.NotNil(s)
+						suite.Require().NotNil(s)
+						suite.Equal(15*time.Second, s.ReadTimeout)
 						called = append(called, "group-with-error-2")
 						return nil
 					}

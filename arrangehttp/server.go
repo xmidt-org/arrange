@@ -217,13 +217,13 @@ func (s *Server) unmarshal(u arrange.Unmarshaler) (sf ServerFactory, err error) 
 	}
 
 	target := arrange.NewTarget(prototype)
-	sf = target.Component.Interface().(ServerFactory)
 	if len(s.Key) > 0 {
 		err = u.UnmarshalKey(s.Key, target.UnmarshalTo.Interface())
 	} else {
 		err = u.Unmarshal(target.UnmarshalTo.Interface())
 	}
 
+	sf = target.Component.Interface().(ServerFactory)
 	return
 }
 

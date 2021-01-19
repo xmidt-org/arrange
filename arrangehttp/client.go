@@ -191,13 +191,13 @@ func (c *Client) unmarshal(u arrange.Unmarshaler) (cf ClientFactory, err error) 
 	}
 
 	target := arrange.NewTarget(prototype)
-	cf = target.Component.Interface().(ClientFactory)
 	if len(c.Key) > 0 {
 		err = u.UnmarshalKey(c.Key, target.UnmarshalTo.Interface())
 	} else {
 		err = u.Unmarshal(target.UnmarshalTo.Interface())
 	}
 
+	cf = target.Component.Interface().(ClientFactory)
 	return
 }
 

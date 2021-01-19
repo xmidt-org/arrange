@@ -1,6 +1,7 @@
 package arrangehttp
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -179,6 +180,24 @@ func (suite *ClientTestSuite) checkClient(client *http.Client, request *http.Req
 	suite.Equal(299, response.StatusCode, "the server did not process the request")
 }
 
+func (suite *ClientTestSuite) TestUnmarshalError() {
+	suite.YAML(`
+timeout: "EXPECTED ERROR: this is not a valid duration"
+`)
+
+	app := suite.Fx(
+		Client{
+			Invoke: arrange.Invoke{
+				func(*http.Client) {
+					suite.Fail("Unmarshal errors should shortcircuit app startup")
+				},
+			},
+		}.Provide(),
+	)
+
+	suite.Error(app.Err())
+}
+
 func (suite *ClientTestSuite) TestClientFactoryError() {
 	var client *http.Client
 
@@ -235,6 +254,81 @@ func (suite *ClientTestSuite) TestDefaults() {
 	)
 
 	app.RequireStop()
+}
+
+func (suite *ClientTestSuite) TestUnnamed() {
+	suite.YAML(`
+clients:
+  main:
+    timeout: "15s"
+`)
+
+	var client *http.Client
+
+	app := suite.Fxtest(
+		Client{
+			Key:     "clients.main",
+			Unnamed: true,
+			Invoke: arrange.Invoke{
+				func(c *http.Client) {
+					suite.Require().NotNil(c)
+					suite.Equal(15*time.Second, c.Timeout)
+					client = c
+				},
+			},
+		}.Provide(),
+	)
+
+	suite.Require().NoError(app.Err())
+	app.RequireStart()
+	defer app.Stop(context.Background())
+	suite.Equal(15*time.Second, client.Timeout)
+
+	request := suite.newRequest(http.Header{"X-Test": {"true"}})
+	suite.checkClient(
+		client,
+		request,
+		http.Header{
+			"X-Test": {"true"},
+		},
+	)
+}
+
+func (suite *ClientTestSuite) TestNamed() {
+	suite.YAML(`
+clients:
+  main:
+    timeout: "15s"
+`)
+
+	var client *http.Client
+
+	app := suite.Fxtest(
+		Client{
+			Name: "foobar",
+			Key:  "clients.main",
+			Invoke: arrange.Invoke{
+				func(c *http.Client) {
+					suite.Equal(15*time.Second, c.Timeout)
+					client = c
+				},
+			},
+		}.Provide(),
+	)
+
+	suite.Require().NoError(app.Err())
+	app.RequireStart()
+	defer app.Stop(context.Background())
+	suite.Equal(15*time.Second, client.Timeout)
+
+	request := suite.newRequest(http.Header{"X-Test": {"true"}})
+	suite.checkClient(
+		client,
+		request,
+		http.Header{
+			"X-Test": {"true"},
+		},
+	)
 }
 
 func (suite *ClientTestSuite) TestMiddleware() {
@@ -300,8 +394,13 @@ func (suite *ClientTestSuite) TestMiddleware() {
 					})
 				},
 			),
+			// use this instead of fx.Populate to verify that the Invoke section is run
+			Invoke: arrange.Invoke{
+				func(c *http.Client) {
+					client = c
+				},
+			},
 		}.Provide(),
-		fx.Populate(&client),
 	)
 
 	suite.Require().NoError(app.Err())
@@ -319,6 +418,125 @@ func (suite *ClientTestSuite) TestMiddleware() {
 			"X-Middleware-Unnamed-Chain": {"true"},
 			"X-Middleware-Option":        {"true"},
 		},
+	)
+}
+
+func (suite *ClientTestSuite) TestOptions() {
+	suite.YAML(`
+timeout: "15s"
+`)
+	var client *http.Client
+	var called []string
+
+	app := suite.Fxtest(
+		fx.Provide(
+			func() func(*http.Client) {
+				return func(c *http.Client) {
+					suite.NotNil(c)
+					called = append(called, "injected")
+				}
+			},
+			func() func(c *http.Client) error {
+				return func(c *http.Client) error {
+					suite.NotNil(c)
+					called = append(called, "injected-with-error")
+					return nil
+				}
+			},
+			fx.Annotated{
+				Group: "options",
+				Target: func() func(*http.Client) {
+					return func(c *http.Client) {
+						suite.NotNil(c)
+						called = append(called, "group-1")
+					}
+				},
+			},
+			fx.Annotated{
+				Group: "options",
+				Target: func() func(*http.Client) {
+					return func(c *http.Client) {
+						suite.NotNil(c)
+						called = append(called, "group-2")
+					}
+				},
+			},
+			fx.Annotated{
+				Group: "options-with-error",
+				Target: func() func(*http.Client) error {
+					return func(c *http.Client) error {
+						suite.NotNil(c)
+						called = append(called, "group-with-error-1")
+						return nil
+					}
+				},
+			},
+			fx.Annotated{
+				Group: "options-with-error",
+				Target: func() func(*http.Client) error {
+					return func(s *http.Client) error {
+						suite.NotNil(s)
+						called = append(called, "group-with-error-2")
+						return nil
+					}
+				},
+			},
+		),
+		Client{
+			Inject: arrange.Inject{
+				struct {
+					fx.In
+					F1 func(*http.Client)
+					F2 func(*http.Client) error
+					F3 []func(*http.Client)       `group:"options"`
+					F4 []func(*http.Client) error `group:"options-with-error"`
+				}{},
+			},
+			Options: arrange.Invoke{
+				func(c *http.Client) {
+					suite.NotNil(c)
+					called = append(called, "external")
+				},
+				func(c *http.Client) error {
+					suite.NotNil(c)
+					called = append(called, "external-with-error")
+					return nil
+				},
+			},
+			// use this instead of fx.Populate to verify that the Invoke section is run
+			Invoke: arrange.Invoke{
+				func(c *http.Client) {
+					suite.Equal(15*time.Second, c.Timeout)
+					client = c
+				},
+			},
+		}.Provide(),
+	)
+
+	suite.Require().NoError(app.Err())
+	app.RequireStart()
+
+	request := suite.newRequest(http.Header{"X-Test": {"true"}})
+	suite.checkClient(
+		client,
+		request,
+		http.Header{
+			"X-Test": {"true"},
+		},
+	)
+
+	suite.ElementsMatch(
+		[]string{
+			"injected",
+			"injected-with-error",
+			"group-1",
+			"group-2",
+			"group-with-error-1",
+			"group-with-error-2",
+			"external",
+			"external-with-error",
+		},
+		called,
 	)
 }
 

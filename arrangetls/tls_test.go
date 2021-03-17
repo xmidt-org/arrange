@@ -592,7 +592,7 @@ func testConfigBasic(t *testing.T) {
 	assert.Len(tc.Certificates, 1)
 	assert.Equal("foobar.com", tc.ServerName)
 	assert.True(tc.InsecureSkipVerify)
-	assert.NotEmpty(tc.NameToCertificate) // verify that BuildNameToCertificate was run
+	assert.NotEmpty(tc.NameToCertificate) //nolint:staticcheck // verify that BuildNameToCertificate was run
 	assert.Nil(tc.VerifyPeerCertificate)
 	assert.Equal(tls.NoClientCert, tc.ClientAuth)
 }
@@ -622,7 +622,7 @@ func testConfigCustomNextProtos(t *testing.T) {
 	assert.Equal(uint16(3), tc.MaxVersion)
 	assert.Equal([]string{"http", "ftp"}, tc.NextProtos)
 	assert.Len(tc.Certificates, 1)
-	assert.NotEmpty(tc.NameToCertificate) // verify that BuildNameToCertificate was run
+	assert.NotEmpty(tc.NameToCertificate) //nolint:staticcheck // verify that BuildNameToCertificate was run
 	assert.Nil(tc.VerifyPeerCertificate)
 	assert.Equal(tls.NoClientCert, tc.ClientAuth)
 }
@@ -671,7 +671,7 @@ func testConfigVerifyPeerCertificate(t *testing.T) {
 	assert.Zero(tc.MaxVersion)
 	assert.Equal([]string{"http/1.1"}, tc.NextProtos)
 	assert.Len(tc.Certificates, 1)
-	assert.NotEmpty(tc.NameToCertificate) // verify that BuildNameToCertificate was run
+	assert.NotEmpty(tc.NameToCertificate) //nolint:staticcheck // verify that BuildNameToCertificate was run
 	assert.Equal(tls.NoClientCert, tc.ClientAuth)
 
 	require.NotNil(tc.VerifyPeerCertificate)
@@ -709,7 +709,7 @@ func testConfigCertPools(t *testing.T) {
 	assert.Equal(uint16(3), tc.MaxVersion)
 	assert.Equal([]string{"http", "ftp"}, tc.NextProtos)
 	assert.Len(tc.Certificates, 1)
-	assert.NotEmpty(tc.NameToCertificate) // verify that BuildNameToCertificate was run
+	assert.NotEmpty(tc.NameToCertificate) //nolint:staticcheck // verify that BuildNameToCertificate was run
 	assert.Nil(tc.VerifyPeerCertificate)
 	assert.Equal(tls.RequireAndVerifyClientCert, tc.ClientAuth)
 	assert.NotNil(tc.ClientCAs)

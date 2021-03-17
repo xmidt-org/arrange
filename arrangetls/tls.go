@@ -20,7 +20,7 @@ type PeerVerifyError struct {
 }
 
 // Error satisfies the error interface.  It returns the Reason text.
-func (pve PeerVerifyError) Error() string {
+func (pve *PeerVerifyError) Error() string {
 	return pve.Reason
 }
 
@@ -163,7 +163,7 @@ func (pvc PeerVerifyConfig) verify(peerCert *x509.Certificate, _ [][]*x509.Certi
 		}
 	}
 
-	return PeerVerifyError{
+	return &PeerVerifyError{
 		Certificate: peerCert,
 		Reason:      "No DNS name or common name matched",
 	}

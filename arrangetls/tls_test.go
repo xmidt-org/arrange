@@ -153,7 +153,7 @@ func testPeerVerifiersFailure(t *testing.T) {
 		t.Run(fmt.Sprintf("len=%d", n), func(t *testing.T) {
 			var (
 				assert       = assert.New(t)
-				expectedErr  = PeerVerifyError{Reason: "expected"}
+				expectedErr  = &PeerVerifyError{Reason: "expected"}
 				executeCount int
 				pvs          PeerVerifiers
 			)
@@ -325,8 +325,10 @@ func testPeerVerifyConfigFailure(t *testing.T) {
 			require.NotNil(verifier)
 			err := verifier(&record.peerCert, nil)
 			assert.Error(err)
-			require.IsType(PeerVerifyError{}, err)
-			assert.Equal(&record.peerCert, err.(PeerVerifyError).Certificate)
+
+			var perr *PeerVerifyError
+			require.True(errors.As(err, &perr))
+			assert.Equal(&record.peerCert, perr.Certificate)
 		})
 	}
 }

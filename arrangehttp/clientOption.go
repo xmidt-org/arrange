@@ -64,7 +64,7 @@ func newCOption(v interface{}) cOption {
 // ClientOption is a functional option type that configures an http.Client.
 type ClientOption func(*http.Client) error
 
-// cOption essentialy converts this ClientOption into the internal option type
+// cOption essentially converts this ClientOption into the internal option type
 func (co ClientOption) cOption(ci *clientInfo) error {
 	return co(ci.client)
 }

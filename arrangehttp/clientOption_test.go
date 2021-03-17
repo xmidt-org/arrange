@@ -9,6 +9,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/xmidt-org/httpaux/roundtrip"
 )
 
 func testClientOptionsEmpty(t *testing.T) {
@@ -139,7 +140,7 @@ func testNewCOptionClientMiddlewareChain(t *testing.T) {
 		require = require.New(t)
 
 		chainCalled bool
-		chain       = NewRoundTripperChain(
+		chain       = roundtrip.NewChain(
 			func(next http.RoundTripper) http.RoundTripper {
 				chainCalled = true
 				return next
@@ -169,7 +170,7 @@ func testNewCOptionConstructor(t *testing.T) {
 		}
 
 		constructorCalled bool
-		constructor       RoundTripperConstructor = func(next http.RoundTripper) http.RoundTripper {
+		constructor       roundtrip.Constructor = func(next http.RoundTripper) http.RoundTripper {
 			constructorCalled = true
 			return next
 		}
@@ -210,7 +211,7 @@ func testNewCOptionConstructorSlice(t *testing.T) {
 		}
 
 		constructorsCalled []bool
-		constructors       = []RoundTripperConstructor{
+		constructors       = []roundtrip.Constructor{
 			func(next http.RoundTripper) http.RoundTripper {
 				constructorsCalled = append(constructorsCalled, true)
 				return next

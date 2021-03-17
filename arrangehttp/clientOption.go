@@ -4,13 +4,14 @@ import (
 	"net/http"
 
 	"github.com/xmidt-org/arrange"
+	"github.com/xmidt-org/httpaux/roundtrip"
 )
 
 // clientInfo is the bucket of information about a client under construction.
 // Functional options modify this type.
 type clientInfo struct {
 	client     *http.Client
-	middleware RoundTripperChain
+	middleware roundtrip.Chain
 }
 
 // applyMiddleware decorates the http.RoundTripper associated with the client.
@@ -37,20 +38,20 @@ func newCOption(v interface{}) cOption {
 		func(v ClientOption) {
 			co = v.cOption
 		},
-		func(chain ClientMiddlewareChain) {
+		func(chain roundtrip.Chain) {
 			co = func(ci *clientInfo) error {
 				ci.middleware = ci.middleware.Append(chain.Then)
 				return nil
 			}
 		},
-		func(ctor RoundTripperConstructor) {
+		func(ctor roundtrip.Constructor) {
 			co = func(ci *clientInfo) error {
 				ci.middleware = ci.middleware.Append(ctor)
 				return nil
 			}
 		},
 		// support value groups
-		func(ctors []RoundTripperConstructor) {
+		func(ctors []roundtrip.Constructor) {
 			co = func(ci *clientInfo) error {
 				ci.middleware = ci.middleware.Append(ctors...)
 				return nil

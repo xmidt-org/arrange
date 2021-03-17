@@ -51,7 +51,7 @@ func testCPUAlreadyProfiling(t *testing.T) {
 		require = require.New(t)
 		path    = filepath.Join(
 			os.TempDir(),
-			fmt.Sprintf("testCPUAlreadyProfiling-%d.prof", rand.Int()),
+			fmt.Sprintf("testCPUAlreadyProfiling-%d.prof", rand.Int()), //nolint:gosec
 		)
 
 		cpu = CPU{
@@ -71,7 +71,7 @@ func testCPUNewPath(t *testing.T) {
 		require = require.New(t)
 		path    = filepath.Join(
 			os.TempDir(),
-			fmt.Sprintf("testCPUNewPath-%d.prof", rand.Int()),
+			fmt.Sprintf("testCPUNewPath-%d.prof", rand.Int()), //nolint:gosec
 		)
 
 		app = fxtest.New(
@@ -101,7 +101,7 @@ func testCPUExistingPath(t *testing.T) {
 		require = require.New(t)
 		path    = filepath.Join(
 			os.TempDir(),
-			fmt.Sprintf("testCPUExistingPath-%d.prof", rand.Int()),
+			fmt.Sprintf("testCPUExistingPath-%d.prof", rand.Int()), //nolint:gosec
 		)
 	)
 
@@ -132,7 +132,7 @@ func testCPUOverwrite(t *testing.T) {
 		require = require.New(t)
 		path    = filepath.Join(
 			os.TempDir(),
-			fmt.Sprintf("testCPUOverwrite-%d.prof", rand.Int()),
+			fmt.Sprintf("testCPUOverwrite-%d.prof", rand.Int()), //nolint:gosec
 		)
 	)
 
@@ -201,7 +201,7 @@ func testHeapNewPath(t *testing.T) {
 		require = require.New(t)
 		path    = filepath.Join(
 			os.TempDir(),
-			fmt.Sprintf("testHeapNewPath-%d.prof", rand.Int()),
+			fmt.Sprintf("testHeapNewPath-%d.prof", rand.Int()), //nolint:gosec
 		)
 
 		app = fxtest.New(
@@ -232,7 +232,7 @@ func testHeapExistingPath(t *testing.T) {
 		require = require.New(t)
 		path    = filepath.Join(
 			os.TempDir(),
-			fmt.Sprintf("testHeapExistingPath-%d.prof", rand.Int()),
+			fmt.Sprintf("testHeapExistingPath-%d.prof", rand.Int()), //nolint:gosec
 		)
 	)
 
@@ -267,7 +267,7 @@ func testHeapOverwrite(t *testing.T) {
 		require = require.New(t)
 		path    = filepath.Join(
 			os.TempDir(),
-			fmt.Sprintf("testHeapOverwrite-%d.prof", rand.Int()),
+			fmt.Sprintf("testHeapOverwrite-%d.prof", rand.Int()), //nolint:gosec
 		)
 	)
 

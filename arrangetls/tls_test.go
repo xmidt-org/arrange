@@ -57,13 +57,13 @@ func testPeerVerifiersUnparseableCertificate(t *testing.T) {
 func testPeerVerifiersSuccess(t *testing.T) {
 	var (
 		require  = require.New(t)
-		random   = rand.New(rand.NewSource(1234))
+		random   = rand.New(rand.NewSource(1234)) //nolint:gosec // this is just a test
 		template = &x509.Certificate{
 			SerialNumber: big.NewInt(35871293874),
 		}
 	)
 
-	key, err := rsa.GenerateKey(random, 512)
+	key, err := rsa.GenerateKey(random, 2048)
 	require.NoError(err)
 
 	peerCert, err := x509.CreateCertificate(random, template, template, &key.PublicKey, key)
@@ -98,13 +98,13 @@ func testPeerVerifiersExtend(t *testing.T) {
 	var (
 		assert   = assert.New(t)
 		require  = require.New(t)
-		random   = rand.New(rand.NewSource(1234))
+		random   = rand.New(rand.NewSource(1234)) //nolint:gosec // this is just a test
 		template = &x509.Certificate{
 			SerialNumber: big.NewInt(94782236446),
 		}
 	)
 
-	key, err := rsa.GenerateKey(random, 512)
+	key, err := rsa.GenerateKey(random, 2048)
 	require.NoError(err)
 
 	peerCert, err := x509.CreateCertificate(random, template, template, &key.PublicKey, key)
@@ -137,13 +137,13 @@ func testPeerVerifiersExtend(t *testing.T) {
 func testPeerVerifiersFailure(t *testing.T) {
 	var (
 		require  = require.New(t)
-		random   = rand.New(rand.NewSource(8362))
+		random   = rand.New(rand.NewSource(8362)) //nolint:gosec // this is just a test
 		template = &x509.Certificate{
 			SerialNumber: big.NewInt(9472387653),
 		}
 	)
 
-	key, err := rsa.GenerateKey(random, 512)
+	key, err := rsa.GenerateKey(random, 2048)
 	require.NoError(err)
 
 	peerCert, err := x509.CreateCertificate(random, template, template, &key.PublicKey, key)
@@ -630,7 +630,7 @@ func testConfigVerifyPeerCertificate(t *testing.T) {
 		assert  = assert.New(t)
 		require = require.New(t)
 
-		random   = rand.New(rand.NewSource(828675))
+		random   = rand.New(rand.NewSource(828675)) //nolint:gosec // this is just a test
 		template = &x509.Certificate{
 			DNSNames:     []string{"foobar.example.com"},
 			SerialNumber: big.NewInt(356493746),
@@ -655,7 +655,7 @@ func testConfigVerifyPeerCertificate(t *testing.T) {
 		}
 	)
 
-	key, err := rsa.GenerateKey(random, 512)
+	key, err := rsa.GenerateKey(random, 2048)
 	require.NoError(err)
 
 	peerCert, err := x509.CreateCertificate(random, template, template, &key.PublicKey, key)

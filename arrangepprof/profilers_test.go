@@ -301,4 +301,5 @@ func TestHeap(t *testing.T) {
 	t.Run("StopDisabled", testHeapStopDisabled)
 	t.Run("NewPath", testHeapNewPath)
 	t.Run("ExistingPath", testHeapExistingPath)
+	t.Run("HeapOverwrite", testHeapOverwrite)
 }

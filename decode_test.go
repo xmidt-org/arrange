@@ -175,9 +175,8 @@ func TestDefaultDecodeHooks(t *testing.T) {
 
 	result, err := mapstructure.DecodeHookExec(
 		config.DecodeHook,
-		reflect.TypeOf(""),
-		reflect.TypeOf(time.Duration(0)),
-		"15s",
+		reflect.ValueOf("15s"),
+		reflect.ValueOf(15*time.Second),
 	)
 
 	assert.Equal(15*time.Second, result)
@@ -185,9 +184,8 @@ func TestDefaultDecodeHooks(t *testing.T) {
 
 	result, err = mapstructure.DecodeHookExec(
 		config.DecodeHook,
-		reflect.TypeOf(""),
-		reflect.TypeOf([]string{}),
-		"a,b,c",
+		reflect.ValueOf("a,b,c"),
+		reflect.ValueOf([]string{}),
 	)
 
 	assert.Equal([]string{"a", "b", "c"}, result)
@@ -195,9 +193,8 @@ func TestDefaultDecodeHooks(t *testing.T) {
 
 	result, err = mapstructure.DecodeHookExec(
 		config.DecodeHook,
-		reflect.TypeOf(""),
-		reflect.TypeOf(time.Time{}),
-		timeString,
+		reflect.ValueOf(timeString),
+		reflect.ValueOf(time.Time{}),
 	)
 
 	assert.Equal(expectedTime, result)
@@ -234,9 +231,8 @@ func testComposeDecodeHooksInitiallyNil(t *testing.T) {
 
 			mapstructure.DecodeHookExec(
 				config.DecodeHook,
-				reflect.TypeOf(""),
-				reflect.TypeOf(int(0)),
-				"test",
+				reflect.ValueOf("test"),
+				reflect.ValueOf(0),
 			)
 
 			assert.Equal(expectedOrder, actualOrder)
@@ -282,9 +278,8 @@ func testComposeDecodeHooksAppendToExisting(t *testing.T) {
 
 			mapstructure.DecodeHookExec(
 				config.DecodeHook,
-				reflect.TypeOf(""),
-				reflect.TypeOf(int(0)),
-				"test",
+				reflect.ValueOf("test"),
+				reflect.ValueOf(0),
 			)
 
 			assert.Equal(expectedOrder, actualOrder)

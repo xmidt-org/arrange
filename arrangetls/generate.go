@@ -19,7 +19,7 @@ func CreateTestCertificate(template *x509.Certificate) (*tls.Certificate, error)
 		err      error
 	)
 
-	key, err = rsa.GenerateKey(rand.Reader, 1024)
+	key, err = rsa.GenerateKey(rand.Reader, 4096)
 	if err == nil {
 		derBytes, err = x509.CreateCertificate(
 			rand.Reader,

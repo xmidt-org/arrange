@@ -255,7 +255,7 @@ func (c *Client) configure(in ClientIn, client *http.Client, deps []reflect.Valu
 	)
 
 	if err == nil {
-		client.Transport = middleware.ThenRoundTrip(client.Transport)
+		client.Transport = middleware.Then(client.Transport)
 	}
 
 	return

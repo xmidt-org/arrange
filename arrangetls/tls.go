@@ -323,7 +323,7 @@ func (c *Config) New(extra ...PeerVerifier) (*tls.Config, error) {
 		MaxVersion:         c.MaxVersion,
 		NextProtos:         nextProtos,
 		ServerName:         c.ServerName,
-		InsecureSkipVerify: c.InsecureSkipVerify,
+		InsecureSkipVerify: c.InsecureSkipVerify, //nolint:gosec // the caller set this explicitly
 	}
 
 	var pvs PeerVerifiers

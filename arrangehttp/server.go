@@ -229,6 +229,7 @@ func (s *Server) unmarshal(u arrange.Unmarshaler) (sf ServerFactory, err error) 
 
 // configure applies the dependencies (if any) and the options and middleware supplied
 // on this instance to the give *http.Server and supporting objects.
+//nolint:funlen // this function is necessarily longer than normal given the try cases
 func (s *Server) configure(in ServerIn, server *http.Server, deps []reflect.Value) (lc ListenerChain, err error) {
 	var (
 		middleware alice.Chain
@@ -381,6 +382,7 @@ func (s *Server) provide(deps []reflect.Value) (router *mux.Router, err error) {
 //   - any function type that takes a sole parameter of *http.Server and returns either nothing
 //     or an error will be executed as a server option along with everything in the Options field.
 //     This also includes slices of the same function types.
+//nolint:dupl // deduping this with the client would make it less readable
 func (s Server) Provide() fx.Option {
 	provideFunc := arrange.Inject{reflect.TypeOf(ServerIn{})}.
 		Extend(s.Inject).

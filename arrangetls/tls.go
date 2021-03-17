@@ -20,7 +20,7 @@ type PeerVerifyError struct {
 }
 
 // Error satisfies the error interface.  It returns the Reason text.
-func (pve PeerVerifyError) Error() string {
+func (pve *PeerVerifyError) Error() string {
 	return pve.Reason
 }
 
@@ -163,7 +163,7 @@ func (pvc PeerVerifyConfig) verify(peerCert *x509.Certificate, _ [][]*x509.Certi
 		}
 	}
 
-	return PeerVerifyError{
+	return &PeerVerifyError{
 		Certificate: peerCert,
 		Reason:      "No DNS name or common name matched",
 	}
@@ -308,12 +308,8 @@ func (c *Config) New(extra ...PeerVerifier) (*tls.Config, error) {
 		return nil, nil
 	}
 
-	var nextProtos []string
-	if len(c.NextProtos) > 0 {
-		for _, np := range c.NextProtos {
-			nextProtos = append(nextProtos, np)
-		}
-	} else {
+	nextProtos := append([]string{}, c.NextProtos...)
+	if len(nextProtos) == 0 {
 		// assume http/1.1 by default
 		nextProtos = append(nextProtos, "http/1.1")
 	}
@@ -323,7 +319,7 @@ func (c *Config) New(extra ...PeerVerifier) (*tls.Config, error) {
 		MaxVersion:         c.MaxVersion,
 		NextProtos:         nextProtos,
 		ServerName:         c.ServerName,
-		InsecureSkipVerify: c.InsecureSkipVerify,
+		InsecureSkipVerify: c.InsecureSkipVerify, //nolint:gosec // the caller set this explicitly
 	}
 
 	var pvs PeerVerifiers

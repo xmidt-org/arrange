@@ -57,13 +57,13 @@ func testPeerVerifiersUnparseableCertificate(t *testing.T) {
 func testPeerVerifiersSuccess(t *testing.T) {
 	var (
 		require  = require.New(t)
-		random   = rand.New(rand.NewSource(1234))
+		random   = rand.New(rand.NewSource(1234)) //nolint:gosec
 		template = &x509.Certificate{
 			SerialNumber: big.NewInt(35871293874),
 		}
 	)
 
-	key, err := rsa.GenerateKey(random, 512)
+	key, err := rsa.GenerateKey(random, 512) //nolint:gosec
 	require.NoError(err)
 
 	peerCert, err := x509.CreateCertificate(random, template, template, &key.PublicKey, key)
@@ -98,13 +98,13 @@ func testPeerVerifiersExtend(t *testing.T) {
 	var (
 		assert   = assert.New(t)
 		require  = require.New(t)
-		random   = rand.New(rand.NewSource(1234))
+		random   = rand.New(rand.NewSource(1234)) //nolint:gosec
 		template = &x509.Certificate{
 			SerialNumber: big.NewInt(94782236446),
 		}
 	)
 
-	key, err := rsa.GenerateKey(random, 512)
+	key, err := rsa.GenerateKey(random, 512) //nolint:gosec
 	require.NoError(err)
 
 	peerCert, err := x509.CreateCertificate(random, template, template, &key.PublicKey, key)
@@ -137,13 +137,13 @@ func testPeerVerifiersExtend(t *testing.T) {
 func testPeerVerifiersFailure(t *testing.T) {
 	var (
 		require  = require.New(t)
-		random   = rand.New(rand.NewSource(8362))
+		random   = rand.New(rand.NewSource(8362)) //nolint:gosec
 		template = &x509.Certificate{
 			SerialNumber: big.NewInt(9472387653),
 		}
 	)
 
-	key, err := rsa.GenerateKey(random, 512)
+	key, err := rsa.GenerateKey(random, 512) //nolint:gosec
 	require.NoError(err)
 
 	peerCert, err := x509.CreateCertificate(random, template, template, &key.PublicKey, key)
@@ -153,7 +153,7 @@ func testPeerVerifiersFailure(t *testing.T) {
 		t.Run(fmt.Sprintf("len=%d", n), func(t *testing.T) {
 			var (
 				assert       = assert.New(t)
-				expectedErr  = PeerVerifyError{Reason: "expected"}
+				expectedErr  = &PeerVerifyError{Reason: "expected"}
 				executeCount int
 				pvs          PeerVerifiers
 			)
@@ -325,8 +325,10 @@ func testPeerVerifyConfigFailure(t *testing.T) {
 			require.NotNil(verifier)
 			err := verifier(&record.peerCert, nil)
 			assert.Error(err)
-			require.IsType(PeerVerifyError{}, err)
-			assert.Equal(&record.peerCert, err.(PeerVerifyError).Certificate)
+
+			var perr *PeerVerifyError
+			require.True(errors.As(err, &perr))
+			assert.Equal(&record.peerCert, perr.Certificate)
 		})
 	}
 }
@@ -590,7 +592,7 @@ func testConfigBasic(t *testing.T) {
 	assert.Len(tc.Certificates, 1)
 	assert.Equal("foobar.com", tc.ServerName)
 	assert.True(tc.InsecureSkipVerify)
-	assert.NotEmpty(tc.NameToCertificate) // verify that BuildNameToCertificate was run
+	assert.NotEmpty(tc.NameToCertificate) //nolint:staticcheck // verify that BuildNameToCertificate was run
 	assert.Nil(tc.VerifyPeerCertificate)
 	assert.Equal(tls.NoClientCert, tc.ClientAuth)
 }
@@ -620,7 +622,7 @@ func testConfigCustomNextProtos(t *testing.T) {
 	assert.Equal(uint16(3), tc.MaxVersion)
 	assert.Equal([]string{"http", "ftp"}, tc.NextProtos)
 	assert.Len(tc.Certificates, 1)
-	assert.NotEmpty(tc.NameToCertificate) // verify that BuildNameToCertificate was run
+	assert.NotEmpty(tc.NameToCertificate) //nolint:staticcheck // verify that BuildNameToCertificate was run
 	assert.Nil(tc.VerifyPeerCertificate)
 	assert.Equal(tls.NoClientCert, tc.ClientAuth)
 }
@@ -630,7 +632,7 @@ func testConfigVerifyPeerCertificate(t *testing.T) {
 		assert  = assert.New(t)
 		require = require.New(t)
 
-		random   = rand.New(rand.NewSource(828675))
+		random   = rand.New(rand.NewSource(828675)) //nolint:gosec // this is just a test
 		template = &x509.Certificate{
 			DNSNames:     []string{"foobar.example.com"},
 			SerialNumber: big.NewInt(356493746),
@@ -655,7 +657,7 @@ func testConfigVerifyPeerCertificate(t *testing.T) {
 		}
 	)
 
-	key, err := rsa.GenerateKey(random, 512)
+	key, err := rsa.GenerateKey(random, 512) //nolint:gosec
 	require.NoError(err)
 
 	peerCert, err := x509.CreateCertificate(random, template, template, &key.PublicKey, key)
@@ -669,7 +671,7 @@ func testConfigVerifyPeerCertificate(t *testing.T) {
 	assert.Zero(tc.MaxVersion)
 	assert.Equal([]string{"http/1.1"}, tc.NextProtos)
 	assert.Len(tc.Certificates, 1)
-	assert.NotEmpty(tc.NameToCertificate) // verify that BuildNameToCertificate was run
+	assert.NotEmpty(tc.NameToCertificate) //nolint:staticcheck // verify that BuildNameToCertificate was run
 	assert.Equal(tls.NoClientCert, tc.ClientAuth)
 
 	require.NotNil(tc.VerifyPeerCertificate)
@@ -707,7 +709,7 @@ func testConfigCertPools(t *testing.T) {
 	assert.Equal(uint16(3), tc.MaxVersion)
 	assert.Equal([]string{"http", "ftp"}, tc.NextProtos)
 	assert.Len(tc.Certificates, 1)
-	assert.NotEmpty(tc.NameToCertificate) // verify that BuildNameToCertificate was run
+	assert.NotEmpty(tc.NameToCertificate) //nolint:staticcheck // verify that BuildNameToCertificate was run
 	assert.Nil(tc.VerifyPeerCertificate)
 	assert.Equal(tls.RequireAndVerifyClientCert, tc.ClientAuth)
 	assert.NotNil(tc.ClientCAs)

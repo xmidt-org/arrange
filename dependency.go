@@ -73,7 +73,7 @@ func (d Dependency) String() string {
 		return fmt.Sprintf("%s.%s %s", d.Container, d.Field.Name, d.Field.Tag)
 	}
 
-	return fmt.Sprintf("%s", d.Value.Type())
+	return d.Value.Type().String()
 }
 
 // DependencyVisitor is a visitor predicate used by VisitDependencies as a callback

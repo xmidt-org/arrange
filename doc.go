@@ -107,7 +107,7 @@
 //
 // Logger support
 //
-// It's often desireable to redirect the DI container's logging output, which contains
+// It's often desirable to redirect the DI container's logging output, which contains
 // information about the dependency graph, to some other location.  Arrange provides
 // easy integration with logging frameworks like go.uber.org/zap:
 //

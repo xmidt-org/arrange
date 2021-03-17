@@ -292,6 +292,36 @@ func (c *Client) provide(deps []reflect.Value) (client *http.Client, err error) 
 	return
 }
 
+// Provide creates an fx.Option that bootstraps an HTTP client.  A *http.Client
+// component is returned to the enclosing fx.App.
+//
+// The constructor supplied to the enclosing fx.App always has a ClientIn as an
+// input parameter followed by each type contained in the Inject field (if any).
+// This dynamically created constructor implements a basic workflow:
+//
+//   - A clone of the ClientFactory object is unmarshaled.  An instance of ClientConfig
+//     is used if no ClientFactory is supplied.
+//
+//   - The ClientFactory is invoked to create the *http.Client.
+//
+//   - Each injected value, dictated by the types in Inject, are examined to see if they
+//     contain dependencies that apply to building a client (see below).
+//
+//   - Each functional option in the Inject dependencies or Options is executed with the client instance.
+//
+//   - Any middleware found in the Inject dependencies or Middleware are applied to the *http.Client.
+//
+//   - If Invoke is not empty, then an fx.Invoke option is also created that is injected with
+//     the *http.Client instance created above and executes each Invoke closure.
+//
+// The set of dependencies in Inject that can apply to an *http.Server are very flexible:
+//
+//   - anything convertible to a httpaux client Constructor or Chain will decorate the *http.Client.
+//
+//   - any function type that takes a sole parameter of *http.Client and returns either nothing
+//     or an error will be executed as a server option along with everything in the Options field.
+//     This also includes slices of the same function types.
+//nolint:dupl // deduping this with the client would make it less readable
 func (c Client) Provide() fx.Option {
 	provideFunc := arrange.Inject{reflect.TypeOf(ClientIn{})}.
 		Extend(c.Inject).

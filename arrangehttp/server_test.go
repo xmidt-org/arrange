@@ -20,6 +20,7 @@ import (
 	"github.com/xmidt-org/arrange"
 	"github.com/xmidt-org/arrange/arrangetest"
 	"github.com/xmidt-org/arrange/arrangetls"
+	"github.com/xmidt-org/httpaux"
 	"go.uber.org/fx"
 )
 
@@ -250,6 +251,7 @@ func (suite *ServerTestSuite) checkServer() *http.Response {
 	response.Body.Close()
 
 	suite.Equal(299, response.StatusCode)
+	httpaux.Cleanup(response)
 	return response
 }
 
@@ -320,7 +322,7 @@ func (suite *ServerTestSuite) TestDefaults() {
 	app.RequireStart()
 	defer app.Stop(context.Background())
 
-	suite.checkServer()
+	suite.checkServer() //nolint:bodyclose
 }
 
 func (suite *ServerTestSuite) TestUnnamed() {
@@ -347,7 +349,7 @@ servers:
 	app.RequireStart()
 	defer app.Stop(context.Background())
 
-	suite.checkServer()
+	suite.checkServer() //nolint:bodyclose
 }
 
 func (suite *ServerTestSuite) TestNamed() {
@@ -374,7 +376,7 @@ servers:
 	app.RequireStart()
 	defer app.Stop(context.Background())
 
-	suite.checkServer()
+	suite.checkServer() //nolint:bodyclose
 }
 
 func (suite *ServerTestSuite) TestDefaultListenerFactory() {
@@ -394,7 +396,7 @@ func (suite *ServerTestSuite) TestDefaultListenerFactory() {
 	app.RequireStart()
 	defer app.Stop(context.Background())
 
-	suite.checkServer()
+	suite.checkServer() //nolint:bodyclose
 }
 
 func (suite *ServerTestSuite) TestMiddleware() {
@@ -490,7 +492,7 @@ servers:
 	app.RequireStart()
 	defer app.Stop(context.Background())
 
-	response := suite.checkServer()
+	response := suite.checkServer() //nolint:bodyclose
 	suite.Equal(
 		"true",
 		response.Header.Get("External-Constructor"),
@@ -597,7 +599,7 @@ servers:
 	app.RequireStart()
 	defer app.Stop(context.Background())
 
-	suite.checkServer()
+	suite.checkServer() //nolint:bodyclose
 	suite.ElementsMatch(
 		[]string{
 			"injected-unnamed-constructor",
@@ -712,7 +714,7 @@ readTimeout: "15s"
 	suite.Require().NoError(app.Err())
 	app.RequireStart()
 
-	suite.checkServer()
+	suite.checkServer() //nolint:bodyclose
 	suite.ElementsMatch(
 		[]string{
 			"injected",

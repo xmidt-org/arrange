@@ -27,6 +27,42 @@ func (ie *InvokeError) Error() string {
 // that was generated dynamically.
 type Invoke []interface{}
 
+// call accepts a function as a reflect.Value and invokes it with the given arguments.
+// If fv is not a function, this method panics.
+func (ivk Invoke) call(fv reflect.Value, args []interface{}) (err error) {
+	var (
+		ft     = fv.Type()
+		inputs = make([]reflect.Value, 0, len(args))
+	)
+
+	for i := 0; i < ft.NumIn(); i++ {
+		input := ValueOf(args[i])
+		inType := ft.In(i)
+		switch {
+		case inType == input.Type():
+			inputs = append(inputs, input)
+
+		case input.Type().ConvertibleTo(inType):
+			inputs = append(inputs, input.Convert(inType))
+
+		default:
+			err = multierr.Append(err, &InvokeError{
+				Type:    ft,
+				Message: fmt.Sprintf("parameter %d is the wrong type", i),
+			})
+		}
+	}
+
+	if len(inputs) == ft.NumIn() {
+		outputs := fv.Call(inputs)
+		if len(outputs) == 1 && outputs[0].IsValid() && !outputs[0].IsNil() {
+			err = multierr.Append(err, outputs[0].Interface().(error))
+		}
+	}
+
+	return
+}
+
 // Call passes the given arguments to each closure in this sequence.  All closures
 // must take the same number of arguments.  The reflect package is used to
 // convert arguments appropriately, so the types do not need to match exactly as long
@@ -39,7 +75,6 @@ func (ivk Invoke) Call(args ...interface{}) (err error) {
 		return
 	}
 
-	inputs := make([]reflect.Value, 0, len(args))
 	for _, f := range ivk {
 		fv := ValueOf(f)
 		ft := fv.Type()
@@ -70,31 +105,7 @@ func (ivk Invoke) Call(args ...interface{}) (err error) {
 			})
 
 		default:
-			inputs = inputs[:0]
-			for i := 0; i < ft.NumIn(); i++ {
-				input := ValueOf(args[i])
-				inType := ft.In(i)
-				switch {
-				case inType == input.Type():
-					inputs = append(inputs, input)
-
-				case input.Type().ConvertibleTo(inType):
-					inputs = append(inputs, input.Convert(inType))
-
-				default:
-					err = multierr.Append(err, &InvokeError{
-						Type:    ft,
-						Message: fmt.Sprintf("parameter %d is the wrong type", i),
-					})
-				}
-			}
-
-			if len(inputs) == ft.NumIn() {
-				outputs := fv.Call(inputs)
-				if len(outputs) == 1 && outputs[0].IsValid() && !outputs[0].IsNil() {
-					err = multierr.Append(err, outputs[0].Interface().(error))
-				}
-			}
+			err = multierr.Append(err, ivk.call(fv, args))
 		}
 	}
 

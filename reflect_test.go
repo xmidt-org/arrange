@@ -91,6 +91,7 @@ func testNewTargetPointer(t *testing.T) {
 	}
 
 	for i, record := range testData {
+		record := record
 		t.Run(strconv.Itoa(i), func(t *testing.T) {
 			var (
 				assert = assert.New(t)

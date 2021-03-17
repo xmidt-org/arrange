@@ -308,12 +308,8 @@ func (c *Config) New(extra ...PeerVerifier) (*tls.Config, error) {
 		return nil, nil
 	}
 
-	var nextProtos []string
-	if len(c.NextProtos) > 0 {
-		for _, np := range c.NextProtos {
-			nextProtos = append(nextProtos, np)
-		}
-	} else {
+	nextProtos := append([]string{}, c.NextProtos...)
+	if len(nextProtos) == 0 {
 		// assume http/1.1 by default
 		nextProtos = append(nextProtos, "http/1.1")
 	}

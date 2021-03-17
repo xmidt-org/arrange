@@ -2,6 +2,8 @@ package arrangehttp
 
 import (
 	"fmt"
+	"io"
+	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -37,6 +39,8 @@ func testRoundTripperChainNew(t *testing.T, testURL string) {
 			response, err := decorated.RoundTrip(httptest.NewRequest("GET", testURL, nil))
 			require.NoError(err)
 			require.NotNil(response)
+			defer response.Body.Close()
+			io.Copy(ioutil.Discard, response.Body)
 			assert.Equal(299, response.StatusCode)
 			assert.Equal(length, callCount)
 
@@ -46,6 +50,8 @@ func testRoundTripperChainNew(t *testing.T, testURL string) {
 			response, err = decorated.RoundTrip(httptest.NewRequest("GET", testURL, nil))
 			require.NoError(err)
 			require.NotNil(response)
+			defer response.Body.Close()
+			io.Copy(ioutil.Discard, response.Body)
 			assert.Equal(299, response.StatusCode)
 			assert.Equal(length, callCount)
 		})
@@ -79,6 +85,8 @@ func testRoundTripperChainAppend(t *testing.T, testURL string) {
 			response, err := decorated.RoundTrip(httptest.NewRequest("GET", testURL, nil))
 			require.NoError(err)
 			require.NotNil(response)
+			defer response.Body.Close()
+			io.Copy(ioutil.Discard, response.Body)
 			assert.Equal(299, response.StatusCode)
 			assert.Equal(length, callCount)
 
@@ -88,6 +96,8 @@ func testRoundTripperChainAppend(t *testing.T, testURL string) {
 			response, err = decorated.RoundTrip(httptest.NewRequest("GET", testURL, nil))
 			require.NoError(err)
 			require.NotNil(response)
+			defer response.Body.Close()
+			io.Copy(ioutil.Discard, response.Body)
 			assert.Equal(299, response.StatusCode)
 			assert.Equal(length, callCount)
 		})
@@ -123,6 +133,8 @@ func testRoundTripperChainExtend(t *testing.T, testURL string) {
 			response, err := decorated.RoundTrip(httptest.NewRequest("GET", testURL, nil))
 			require.NoError(err)
 			require.NotNil(response)
+			defer response.Body.Close()
+			io.Copy(ioutil.Discard, response.Body)
 			assert.Equal(299, response.StatusCode)
 			assert.Equal(length, callCount)
 
@@ -132,6 +144,8 @@ func testRoundTripperChainExtend(t *testing.T, testURL string) {
 			response, err = decorated.RoundTrip(httptest.NewRequest("GET", testURL, nil))
 			require.NoError(err)
 			require.NotNil(response)
+			defer response.Body.Close()
+			io.Copy(ioutil.Discard, response.Body)
 			assert.Equal(299, response.StatusCode)
 			assert.Equal(length, callCount)
 		})
@@ -155,7 +169,8 @@ func testRoundTripperChainEmpty(t *testing.T, testURL string) {
 	require.NoError(err)
 	require.NotNil(response)
 	assert.Equal(299, response.StatusCode)
-
+	defer response.Body.Close()
+	io.Copy(ioutil.Discard, response.Body)
 	chain.Append()
 
 	decorated = chain.Then(nil)
@@ -166,6 +181,8 @@ func testRoundTripperChainEmpty(t *testing.T, testURL string) {
 	response, err = decorated.RoundTrip(httptest.NewRequest("GET", testURL, nil))
 	require.NoError(err)
 	require.NotNil(response)
+	defer response.Body.Close()
+	io.Copy(ioutil.Discard, response.Body)
 	assert.Equal(299, response.StatusCode)
 
 	chain.Extend(NewRoundTripperChain())
@@ -178,6 +195,8 @@ func testRoundTripperChainEmpty(t *testing.T, testURL string) {
 	response, err = decorated.RoundTrip(httptest.NewRequest("GET", testURL, nil))
 	require.NoError(err)
 	require.NotNil(response)
+	defer response.Body.Close()
+	io.Copy(ioutil.Discard, response.Body)
 	assert.Equal(299, response.StatusCode)
 }
 

@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 - Added a convenience for declaring injected dependencies
 - Simplified declarative builders in arrangehttp
 - arrangetest package now encapsulates more uber/fx testing
+- removed arrangehttp roundtripper functionality in favor of httpaux
 
 ## [v0.2.1]
 - Support more slice types for server and client options

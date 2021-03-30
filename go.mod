@@ -15,7 +15,7 @@ require (
 	github.com/spf13/pflag v1.0.5 // indirect
 	github.com/spf13/viper v1.7.1
 	github.com/stretchr/testify v1.7.0
-	github.com/xmidt-org/httpaux v0.1.3
+	github.com/xmidt-org/httpaux v0.1.6
 	go.uber.org/dig v1.10.0
 	go.uber.org/fx v1.13.1
 	go.uber.org/multierr v1.6.0

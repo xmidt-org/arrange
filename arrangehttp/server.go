@@ -12,6 +12,7 @@ import (
 	"github.com/xmidt-org/arrange"
 	"github.com/xmidt-org/arrange/arrangetls"
 	"github.com/xmidt-org/httpaux"
+	serveraux "github.com/xmidt-org/httpaux/server"
 	"go.uber.org/fx"
 	"go.uber.org/multierr"
 )
@@ -77,7 +78,7 @@ func (sc ServerConfig) NewServer(h http.Handler) (server *http.Server, err error
 
 	server = &http.Server{
 		Addr:              sc.Address,
-		Handler:           header.Then(h),
+		Handler:           serveraux.Header(header.SetTo)(h),
 		ReadTimeout:       sc.ReadTimeout,
 		ReadHeaderTimeout: sc.ReadHeaderTimeout,
 		WriteTimeout:      sc.WriteTimeout,

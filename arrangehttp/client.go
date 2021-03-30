@@ -80,7 +80,7 @@ func (cc ClientConfig) NewClient() (client *http.Client, err error) {
 	header := httpaux.NewHeader(cc.Header)
 	transport, err := cc.Transport.NewTransport(cc.TLS)
 	if err == nil {
-		client.Transport = header.RoundTrip(transport)
+		client.Transport = roundtrip.Header(header.SetTo)(transport)
 	}
 
 	return

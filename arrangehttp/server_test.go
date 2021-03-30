@@ -62,7 +62,6 @@ func testServerConfigBasic(t *testing.T) {
 	server, err := serverConfig.NewServer(router)
 	require.NoError(err)
 	require.NotNil(server)
-	assert.Equal(router, server.Handler)
 
 	assert.Equal(15*time.Second, server.ReadTimeout)
 	assert.Equal(27*time.Minute, server.ReadHeaderTimeout)
@@ -124,7 +123,6 @@ func testServerConfigTLS(t *testing.T) {
 	server, err := serverConfig.NewServer(router)
 	require.NoError(err)
 	require.NotNil(server)
-	assert.Equal(router, server.Handler)
 
 	assert.Equal(72*time.Second, server.ReadTimeout)
 	assert.Equal(109*time.Minute, server.ReadHeaderTimeout)

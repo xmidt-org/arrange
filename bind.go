@@ -127,15 +127,15 @@ func (b Bind) With(args ...interface{}) fx.Option {
 		withValues = append(withValues, reflect.ValueOf(a))
 	}
 
-	appOpts := make([]fx.Option, 0, len(b))
-	for _, f := range b {
+	appOpts := make([]fx.Option, len(b))
+	for i, f := range b {
 		fv := reflect.ValueOf(f)
 		if fv.Kind() != reflect.Func {
-			appOpts = append(appOpts, fx.Error(
+			appOpts[i] = fx.Error(
 				&NotAFunctionError{
 					Type: fv.Type(),
 				},
-			))
+			)
 
 			continue
 		}
@@ -159,7 +159,7 @@ func (b Bind) With(args ...interface{}) fx.Option {
 			).Interface()
 		}
 
-		appOpts = append(appOpts, optFunc(target))
+		appOpts[i] = optFunc(target)
 	}
 
 	return fx.Options(appOpts...)

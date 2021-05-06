@@ -77,7 +77,7 @@ func buildWrapperIn(inner reflect.Type, withValues []reflect.Value) (deps []refl
 }
 
 // buildWrapperOut creates the slice of output parameter types for the wrapper function.
-// This is just a copy of whatever output parameters returned by the inner function.
+// This is just a copy of whatever output parameters are returned by the inner function.
 func buildWrapperOut(inner reflect.Type) (out []reflect.Type) {
 	out = make([]reflect.Type, inner.NumOut())
 	for i := 0; i < inner.NumOut(); i++ {

@@ -23,7 +23,7 @@ func (nofe *NotAFunctionError) Error() string {
 // Any type other than a function will short-circuit fx.App startup with an error.
 //
 // The motivation for this type is situations where some objects come from outside the fx.App
-// and it may be undesireable to supply them as components.  The following two code examples are
+// and it may be undesirable to supply them as components.  The following two code examples are
 // equivalent:
 //
 //   // standard way of referring to non-components

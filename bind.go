@@ -127,7 +127,7 @@ func (b Bind) With(args ...interface{}) fx.Option {
 		withValues = append(withValues, reflect.ValueOf(a))
 	}
 
-	var appOpts []fx.Option
+	appOpts := make([]fx.Option, 0, len(b))
 	for _, f := range b {
 		fv := reflect.ValueOf(f)
 		if fv.Kind() != reflect.Func {

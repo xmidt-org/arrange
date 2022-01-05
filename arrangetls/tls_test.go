@@ -667,7 +667,7 @@ func testConfigVerifyPeerCertificate(t *testing.T) {
 	require.NoError(err)
 	require.NotNil(tc)
 
-	assert.Zero(tc.MinVersion)
+	assert.Equal(uint16(tls.VersionTLS13), tc.MinVersion)
 	assert.Zero(tc.MaxVersion)
 	assert.Equal([]string{"http/1.1"}, tc.NextProtos)
 	assert.Len(tc.Certificates, 1)
@@ -758,6 +758,52 @@ func testConfigRootCAsError(t *testing.T) {
 	require.Nil(tc)
 }
 
+func testConfigVersionDefaults(t *testing.T) {
+	testCases := []struct {
+		cfg                Config
+		expectedMinVersion uint16
+		expectedMaxVersion uint16
+	}{
+		{
+			cfg:                Config{},
+			expectedMinVersion: tls.VersionTLS13,
+			expectedMaxVersion: 0,
+		},
+		{
+			cfg: Config{
+				MinVersion: tls.VersionTLS12,
+				MaxVersion: tls.VersionTLS10,
+			},
+			expectedMinVersion: tls.VersionTLS12,
+			expectedMaxVersion: tls.VersionTLS12,
+		},
+		{
+			cfg: Config{
+				MaxVersion: tls.VersionTLS11,
+			},
+			expectedMinVersion: tls.VersionTLS13,
+			expectedMaxVersion: tls.VersionTLS13,
+		},
+	}
+
+	for i, testCase := range testCases {
+		t.Run(strconv.Itoa(i), func(t *testing.T) {
+			var (
+				assert  = assert.New(t)
+				require = require.New(t)
+				tc, err = testCase.cfg.New()
+			)
+
+			require.NoError(err)
+			require.NotNil(tc)
+
+			assert.Equal(testCase.expectedMinVersion, tc.MinVersion)
+			assert.Equal(testCase.expectedMaxVersion, tc.MaxVersion)
+			assert.Equal(strongCipherSuites, tc.CipherSuites)
+		})
+	}
+}
+
 func TestConfig(t *testing.T) {
 	t.Run("Nil", testConfigNil)
 	t.Run("NoCertificate", testConfigNoCertificate)
@@ -768,4 +814,5 @@ func TestConfig(t *testing.T) {
 	t.Run("CertPools", testConfigCertPools)
 	t.Run("RootCAsError", testConfigRootCAsError)
 	t.Run("ClientCAsError", testConfigClientCAsError)
+	t.Run("VersionDefaults", testConfigVersionDefaults)
 }

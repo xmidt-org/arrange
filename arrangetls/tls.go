@@ -11,6 +11,12 @@ import (
 var (
 	ErrTLSCertificateRequired         = errors.New("Both a certificateFile and keyFile are required")
 	ErrUnableToAddClientCACertificate = errors.New("Unable to add client CA certificate")
+
+	// strongCipherSuites are the tls.CipherSuite values that are safe for TLS versions less than 1.3
+	strongCipherSuites = []uint16{
+		tls.TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,
+		tls.TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,
+	}
 )
 
 // PeerVerifyError represents a verification error for a particular certificate
@@ -320,6 +326,23 @@ func (c *Config) New(extra ...PeerVerifier) (*tls.Config, error) {
 		NextProtos:         nextProtos,
 		ServerName:         c.ServerName,
 		InsecureSkipVerify: c.InsecureSkipVerify, //nolint:gosec // the caller set this explicitly
+
+		// always use the strong cipher suites for tls versions < 1.3
+		CipherSuites: strongCipherSuites,
+	}
+
+	// If MinVersion was unset in configuration, explicitly establish it as 1.3.
+	// This is different from the default crypto/tls behavior, as that package
+	// defaults to 1.0 if MinVersion is unset.
+	if tc.MinVersion == 0 {
+		tc.MinVersion = tls.VersionTLS13
+	}
+
+	// If MaxVersion is set and less than MinVersion, set it explicitly to MinVersion.
+	// We don't need to worry about the case where MaxVersion is unset, as crypto/tls
+	// uses 1.3 in that case.
+	if tc.MaxVersion != 0 && tc.MaxVersion < tc.MinVersion {
+		tc.MaxVersion = tc.MinVersion
 	}
 
 	var pvs PeerVerifiers

@@ -304,33 +304,19 @@ type Config struct {
 	PeerVerify *PeerVerifyConfig
 }
 
-// New constructs a *tls.Config from this Config instance, usually unmarshaled
-// from some external source.  If this instance is nil, it returns nil with no error.
-//
-// The extra PeerVerifiers, if supplied, are used to build the tls.Config.VerifyPeerCertificate
-// strategy.
-func (c *Config) New(extra ...PeerVerifier) (*tls.Config, error) {
-	if c == nil {
-		return nil, nil
-	}
-
+// nextProtos returns the appropriate next protocols for the TLS handshake.  By default, http/1.1 is used.
+func (c *Config) nextProtos() []string {
 	nextProtos := append([]string{}, c.NextProtos...)
 	if len(nextProtos) == 0 {
 		// assume http/1.1 by default
 		nextProtos = append(nextProtos, "http/1.1")
 	}
 
-	tc := &tls.Config{
-		MinVersion:         c.MinVersion,
-		MaxVersion:         c.MaxVersion,
-		NextProtos:         nextProtos,
-		ServerName:         c.ServerName,
-		InsecureSkipVerify: c.InsecureSkipVerify, //nolint:gosec // the caller set this explicitly
+	return nextProtos
+}
 
-		// always use the strong cipher suites for tls versions < 1.3
-		CipherSuites: strongCipherSuites,
-	}
-
+// enforceVersions ensures certain constraints on the TLS version are met.
+func (c *Config) enforceVersions(tc *tls.Config) {
 	// If MinVersion was unset in configuration, explicitly establish it as 1.3.
 	// This is different from the default crypto/tls behavior, as that package
 	// defaults to 1.0 if MinVersion is unset.
@@ -344,14 +330,20 @@ func (c *Config) New(extra ...PeerVerifier) (*tls.Config, error) {
 	if tc.MaxVersion != 0 && tc.MaxVersion < tc.MinVersion {
 		tc.MaxVersion = tc.MinVersion
 	}
+}
 
+// peerVerifiers configures the application-layer peer verifier code.
+func (c *Config) peerVerifiers(tc *tls.Config, extra ...PeerVerifier) {
 	var pvs PeerVerifiers
 	pvs = c.PeerVerify.AppendTo(pvs)
 	pvs = pvs.Append(extra...)
 	pvs.SetTo(tc)
+}
 
+// certificates configures the TLS certificates defined in this configuration.
+func (c *Config) certificates(tc *tls.Config) error {
 	if certs, err := c.Certificates.AppendTo(nil); err != nil {
-		return nil, err
+		return err
 	} else {
 		tc.Certificates = certs
 	}
@@ -359,7 +351,7 @@ func (c *Config) New(extra ...PeerVerifier) (*tls.Config, error) {
 	if c.RootCAs.Len() > 0 {
 		rootCAs := x509.NewCertPool()
 		if count, err := c.RootCAs.AppendTo(rootCAs); err != nil {
-			return nil, err
+			return err
 		} else if count > 0 {
 			tc.RootCAs = rootCAs
 		}
@@ -368,7 +360,7 @@ func (c *Config) New(extra ...PeerVerifier) (*tls.Config, error) {
 	if c.ClientCAs.Len() > 0 {
 		clientCAs := x509.NewCertPool()
 		if count, err := c.ClientCAs.AppendTo(clientCAs); err != nil {
-			return nil, err
+			return err
 		} else if count > 0 {
 			tc.ClientCAs = clientCAs
 			tc.ClientAuth = tls.RequireAndVerifyClientCert
@@ -378,5 +370,35 @@ func (c *Config) New(extra ...PeerVerifier) (*tls.Config, error) {
 	// NOTE: This method is deprecated, but in order not to break
 	// older code we call it here, for now.
 	tc.BuildNameToCertificate()
+	return nil
+}
+
+// New constructs a *tls.Config from this Config instance, usually unmarshaled
+// from some external source.  If this instance is nil, it returns nil with no error.
+//
+// The extra PeerVerifiers, if supplied, are used to build the tls.Config.VerifyPeerCertificate
+// strategy.
+func (c *Config) New(extra ...PeerVerifier) (*tls.Config, error) {
+	if c == nil {
+		return nil, nil
+	}
+
+	tc := &tls.Config{
+		MinVersion:         c.MinVersion,
+		MaxVersion:         c.MaxVersion,
+		NextProtos:         c.nextProtos(),
+		ServerName:         c.ServerName,
+		InsecureSkipVerify: c.InsecureSkipVerify, //nolint:gosec // the caller set this explicitly
+
+		// always use the strong cipher suites for tls versions < 1.3
+		CipherSuites: strongCipherSuites,
+	}
+
+	c.enforceVersions(tc)
+	c.peerVerifiers(tc, extra...)
+	if err := c.certificates(tc); err != nil {
+		return nil, err
+	}
+
 	return tc, nil
 }

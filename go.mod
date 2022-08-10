@@ -16,13 +16,11 @@ require (
 	github.com/spf13/viper v1.7.1
 	github.com/stretchr/testify v1.7.2
 	github.com/xmidt-org/httpaux v0.3.2
-	go.uber.org/dig v1.10.0
-	go.uber.org/fx v1.13.1
+	go.uber.org/dig v1.15.0
+	go.uber.org/fx v1.18.1
 	go.uber.org/multierr v1.8.0
 	golang.org/x/lint v0.0.0-20201208152925-83fdc39ff7b5 // indirect
-	golang.org/x/sys v0.0.0-20210331175145-43e1dd70ce54 // indirect
 	golang.org/x/text v0.3.5 // indirect
-	golang.org/x/tools v0.1.0 // indirect
 	gopkg.in/ini.v1 v1.62.0 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 )

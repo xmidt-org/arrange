@@ -3,7 +3,7 @@ module github.com/xmidt-org/arrange
 go 1.15
 
 require (
-	github.com/gorilla/mux v1.7.4
+	github.com/gorilla/mux v1.8.0
 	github.com/justinas/alice v1.2.0
 	github.com/mitchellh/mapstructure v1.5.0
 	github.com/spf13/viper v1.12.0

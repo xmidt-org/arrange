@@ -7,7 +7,7 @@ require (
 	github.com/gorilla/mux v1.7.4
 	github.com/justinas/alice v1.2.0
 	github.com/magiconair/properties v1.8.5 // indirect
-	github.com/mitchellh/mapstructure v1.4.1
+	github.com/mitchellh/mapstructure v1.5.0
 	github.com/pelletier/go-toml v1.8.1 // indirect
 	github.com/spf13/afero v1.6.0 // indirect
 	github.com/spf13/cast v1.3.1 // indirect
@@ -18,7 +18,7 @@ require (
 	github.com/xmidt-org/httpaux v0.2.1
 	go.uber.org/dig v1.10.0
 	go.uber.org/fx v1.13.1
-	go.uber.org/multierr v1.6.0
+	go.uber.org/multierr v1.8.0
 	golang.org/x/lint v0.0.0-20201208152925-83fdc39ff7b5 // indirect
 	golang.org/x/sys v0.0.0-20210331175145-43e1dd70ce54 // indirect
 	golang.org/x/text v0.3.5 // indirect

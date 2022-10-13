@@ -44,7 +44,7 @@ func (ij Inject) Types() []reflect.Type {
 //
 // The returned function type will have this basic signature:
 //
-//   func(ij[0], ij[1], ... ij[n]) (out[0], out[1], ... out[m])
+//	func(ij[0], ij[1], ... ij[n]) (out[0], out[1], ... out[m])
 //
 // where n is the length of this Inject instance and m is the length
 // of the out variadic slice.
@@ -60,12 +60,12 @@ func (ij Inject) FuncOf(out ...reflect.Type) reflect.Type {
 // and can return 0 or more outputs.  The fn parameter thus must have this basic
 // signature:
 //
-//   func([]reflect.Value) (out[0], out[1], ... out[m])
+//	func([]reflect.Value) (out[0], out[1], ... out[m])
 //
 // The returned function value will have the same set of inputs as returned by FuncOf,
 // but will have the set of outputs described by the fn parameter:
 //
-//   func(ij[0], ij[1], ... ij[n]) (out[0], out[1], ... out[m])
+//	func(ij[0], ij[1], ... ij[n]) (out[0], out[1], ... out[m])
 //
 // where n is the length of this Inject instance and m is the number of output
 // parameters in the fn parameter (which can be zero).

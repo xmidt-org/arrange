@@ -26,29 +26,29 @@ func (nofe *NotAFunctionError) Error() string {
 // and it may be undesirable to supply them as components.  The following two code examples are
 // equivalent:
 //
-//   // standard way of referring to non-components
-//   // there is no need for Bind in this case
-//   var buffer *bytes.Buffer
-//   app := fx.New(
-//     fx.Invoke(
-//       func() {
-//         // just use the variable in scope
-//         buffer.WriteString("hello, world")
-//       },
-//     ),
-//   )
+//	// standard way of referring to non-components
+//	// there is no need for Bind in this case
+//	var buffer *bytes.Buffer
+//	app := fx.New(
+//	  fx.Invoke(
+//	    func() {
+//	      // just use the variable in scope
+//	      buffer.WriteString("hello, world")
+//	    },
+//	  ),
+//	)
 //
-//   // using Bind.With
-//   // assume that internal, unexported code creates buffer
-//   var buffer *bytes.Buffer
-//   app := fx.New(
-//     arrange.Bind{
-//       func(buf *bytes.Buffer) {
-//         // buf is populated by With
-//         buf.WriteString("hello, world")
-//       },
-//     }.With(buffer),
-//   )
+//	// using Bind.With
+//	// assume that internal, unexported code creates buffer
+//	var buffer *bytes.Buffer
+//	app := fx.New(
+//	  arrange.Bind{
+//	    func(buf *bytes.Buffer) {
+//	      // buf is populated by With
+//	      buf.WriteString("hello, world")
+//	    },
+//	  }.With(buffer),
+//	)
 //
 // The signature for each function is very flexible and can be most anything allowed by
 // fx.Provide or fx.Invoke.

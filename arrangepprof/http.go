@@ -20,7 +20,7 @@ const DefaultPathPrefix = "/debug/pprof"
 //
 // The typical way to use this function is to call it against a Subrouter, e.g.:
 //
-//   ConfigureRoutes(router.PathPrefix("/foo/").Subrouter())
+//	ConfigureRoutes(router.PathPrefix("/foo/").Subrouter())
 //
 // NOTE: This method does not do the special mapping for pprof.Index for
 // a path prefix with no trailing slash, e.g. "/debug/pprof".  Callers will

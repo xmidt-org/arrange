@@ -2,7 +2,7 @@ package arrange
 
 import (
 	"fmt"
-	"io/ioutil"
+	"io"
 	"strings"
 	"time"
 
@@ -26,7 +26,7 @@ func ExampleProvide() {
 	}
 
 	fx.New(
-		LoggerWriter(ioutil.Discard),
+		LoggerWriter(io.Discard),
 		ForViper(v),
 		Provide(Config{}),
 		fx.Invoke(
@@ -64,7 +64,7 @@ func ExampleProvideKey() {
 	}
 
 	fx.New(
-		LoggerWriter(ioutil.Discard),
+		LoggerWriter(io.Discard),
 		ForViper(v),
 		ProvideKey("server", Config{}),
 		fx.Invoke(
@@ -108,7 +108,7 @@ func ExampleKeys() {
 	}
 
 	fx.New(
-		LoggerWriter(ioutil.Discard),
+		LoggerWriter(io.Discard),
 		ForViper(v),
 		Keys("servers.http", "servers.pprof").Provide(Config{}),
 		fx.Invoke(

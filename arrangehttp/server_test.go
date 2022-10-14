@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"net"
 	"net/http"
 	"testing"
@@ -190,7 +189,7 @@ func testServerConfigHeader(t *testing.T) {
 		require.NoError(err)
 		require.NotNil(response)
 		defer response.Body.Close()
-		io.Copy(ioutil.Discard, response.Body)
+		io.Copy(io.Discard, response.Body)
 
 		assert.Equal([]string{"true"}, response.Header["Test1"])
 		assert.Equal([]string{"1", "2"}, response.Header["Test2"])
@@ -245,7 +244,7 @@ func (suite *ServerTestSuite) checkServer() *http.Response {
 	response, err := http.Get(suite.serverURL())
 	suite.Require().NoError(err)
 	suite.Require().NotNil(response)
-	io.Copy(ioutil.Discard, response.Body)
+	io.Copy(io.Discard, response.Body)
 	response.Body.Close()
 
 	suite.Equal(299, response.StatusCode)

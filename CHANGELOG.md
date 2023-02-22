@@ -5,6 +5,8 @@ The format is based on [Keep a Changelog](http://keepachangelog.com/en/1.0.0/)
 and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+
+## [v0.4.0]
 - tls 1.3 is used as the default minimum version
 - only strong cipher suites are allowed for tls version less than 1.3
 
@@ -82,7 +84,8 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 ## v0.1.0
 - Initial creation
 
-[Unreleased]: https://github.com/xmidt-org/arrange/compare/v0.3.0..HEAD
+[Unreleased]: https://github.com/xmidt-org/arrange/compare/v0.4.0..HEAD
+[v0.4.0]: https://github.com/xmidt-org/arrange/compare/v0.3.0...v0.4.0
 [v0.3.0]: https://github.com/xmidt-org/arrange/compare/v0.2.3...v0.3.0
 [v0.2.3]: https://github.com/xmidt-org/arrange/compare/v0.2.2...v0.2.3
 [v0.2.2]: https://github.com/xmidt-org/arrange/compare/v0.2.1...v0.2.2

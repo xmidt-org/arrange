@@ -97,13 +97,13 @@ func Logger(p fx.Printer) fx.Option {
 //
 // A great use of this is with go.uber.org/zap:
 //
-//   l := zap.NewDevelopment() // or any zap logger
-//   fx.New(
-//     // DI container logging will go to the above logger at the INFO level
-//     arrange.LoggerFunc(l.Sugar().Infof),
+//	l := zap.NewDevelopment() // or any zap logger
+//	fx.New(
+//	  // DI container logging will go to the above logger at the INFO level
+//	  arrange.LoggerFunc(l.Sugar().Infof),
 //
-//     // the zap logger will now be used for both uber/fx and arrange messages
-//   )
+//	  // the zap logger will now be used for both uber/fx and arrange messages
+//	)
 func LoggerFunc(pf PrinterFunc) fx.Option {
 	return Logger(pf)
 }

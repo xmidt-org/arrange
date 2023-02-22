@@ -14,13 +14,13 @@ import (
 //
 // This:
 //
-//   v := viper.New()
-//   v.UnmarshalExact(config)
+//	v := viper.New()
+//	v.UnmarshalExact(config)
 //
 // is the same as this:
 //
-//   v := viper.New()
-//   v.Unmarshal(config, arrange.ErrorUnused(true))
+//	v := viper.New()
+//	v.Unmarshal(config, arrange.ErrorUnused(true))
 func ErrorUnused(f bool) viper.DecoderConfigOption {
 	return func(dc *mapstructure.DecoderConfig) {
 		dc.ErrorUnused = f

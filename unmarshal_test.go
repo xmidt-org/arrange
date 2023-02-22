@@ -399,9 +399,9 @@ test3:
 
 	assert.ElementsMatch(
 		[]*TestConfig{
-			&TestConfig{Name: "first", Age: 11},
-			&TestConfig{Name: "second", Age: 22},
-			&TestConfig{Name: "third", Age: 33},
+			{Name: "first", Age: 11},
+			{Name: "second", Age: 22},
+			{Name: "third", Age: 33},
 		},
 		actual.Tests,
 	)

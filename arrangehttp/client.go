@@ -321,6 +321,7 @@ func (c *Client) provide(deps []reflect.Value) (client *http.Client, err error) 
 //   - any function type that takes a sole parameter of *http.Client and returns either nothing
 //     or an error will be executed as a server option along with everything in the Options field.
 //     This also includes slices of the same function types.
+//
 //nolint:dupl // deduping this with the client would make it less readable
 func (c Client) Provide() fx.Option {
 	provideFunc := arrange.Inject{reflect.TypeOf(ClientIn{})}.

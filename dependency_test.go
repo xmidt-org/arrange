@@ -2,51 +2,71 @@ package arrange
 
 import (
 	"bytes"
-	"net/http"
 	"reflect"
 	"testing"
 
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
+	"github.com/stretchr/testify/suite"
 	"go.uber.org/fx"
 )
 
-func testVisitDependenciesSimple(t *testing.T) {
-	var (
-		assert   = assert.New(t)
-		require  = require.New(t)
-		expected = new(bytes.Buffer)
+type VisitDependenciesSuite struct {
+	suite.Suite
+}
 
-		called bool
-	)
-
+func (suite *VisitDependenciesSuite) visitDependencies(deps []any, expecteds []DependencyVisitor) {
+	counter := 0
 	VisitDependencies(
 		func(d Dependency) bool {
-			if called {
-				assert.Fail("the visitor should not have been called after returning false")
-				return false
-			}
-
-			t.Log("visited", d)
-			assert.Empty(d.Name())
-			assert.Empty(d.Group())
-			assert.False(d.Optional())
-			assert.Nil(d.Field)
-			assert.Nil(d.Container)
-
-			require.True(d.Value.IsValid())
-			assert.Equal(d.Value.Interface(), expected)
-			assert.True(d.Injected())
-			assert.NotEmpty(d.String())
-
-			called = true
-			return false // skip everything else
+			suite.Require().GreaterOrEqual(len(expecteds), counter, "Too many calls to the visitor")
+			v := expecteds[counter](d)
+			counter++
+			return v
 		},
-		reflect.ValueOf(expected), reflect.ValueOf(new(http.Request)),
+		deps...,
 	)
 }
 
-func testVisitDependenciesIn(t *testing.T) {
+func (suite *VisitDependenciesSuite) TestSimple() {
+	var (
+		buffer    = new(bytes.Buffer)
+		expecteds = []DependencyVisitor{
+			func(d Dependency) bool {
+				suite.Empty(d.Name())
+				suite.Empty(d.Group())
+				suite.False(d.Optional())
+				suite.Nil(d.Field)
+				suite.Nil(d.Container)
+
+				suite.Require().True(d.Value.IsValid())
+				suite.Same(d.Value.Interface(), buffer)
+				suite.True(d.Injected())
+				suite.NotEmpty(d.String())
+
+				return false // skip everything else
+			},
+		}
+	)
+
+	suite.Run("ReflectValues", func() {
+		suite.visitDependencies(
+			[]any{
+				reflect.ValueOf(buffer), reflect.ValueOf("this should be skipped"),
+			},
+			expecteds,
+		)
+	})
+
+	suite.Run("Raw", func() {
+		suite.visitDependencies(
+			[]any{
+				buffer, "this should be skipped",
+			},
+			expecteds,
+		)
+	})
+}
+
+func (suite *VisitDependenciesSuite) TestIn() {
 	type In struct {
 		fx.In
 		A *bytes.Buffer
@@ -54,15 +74,7 @@ func testVisitDependenciesIn(t *testing.T) {
 		C []*bytes.Buffer `group:"buffers"`
 	}
 
-	type Skipped struct {
-		fx.In
-		B *bytes.Buffer
-	}
-
 	var (
-		assert  = assert.New(t)
-		require = require.New(t)
-
 		in = In{
 			A: bytes.NewBufferString("A"),
 			C: []*bytes.Buffer{bytes.NewBufferString("C1"), bytes.NewBufferString("C2")},
@@ -71,72 +83,67 @@ func testVisitDependenciesIn(t *testing.T) {
 		expecteds = []DependencyVisitor{
 			// A
 			func(d Dependency) bool {
-				t.Log("visited", d)
-				assert.Empty(d.Name())
-				assert.Empty(d.Group())
-				assert.False(d.Optional())
-				assert.NotNil(d.Field)
-				assert.Equal(reflect.TypeOf(In{}), d.Container)
-				require.True(d.Value.IsValid())
-				assert.Equal(bytes.NewBufferString("A"), d.Value.Interface())
-				assert.True(d.Injected())
-				assert.NotEmpty(d.String())
+				suite.Empty(d.Name())
+				suite.Empty(d.Group())
+				suite.False(d.Optional())
+				suite.NotNil(d.Field)
+				suite.Equal(reflect.TypeOf(In{}), d.Container)
+				suite.Require().True(d.Value.IsValid())
+				suite.Same(in.A, d.Value.Interface())
+				suite.True(d.Injected())
+				suite.NotEmpty(d.String())
 				return true
 			},
 			// B
 			func(d Dependency) bool {
-				t.Log("visited", d)
-				assert.Equal("named", d.Name())
-				assert.Empty(d.Group())
-				assert.True(d.Optional())
-				assert.NotNil(d.Field)
-				assert.Equal(reflect.TypeOf(In{}), d.Container)
-				assert.True(d.Value.IsValid())
-				assert.False(d.Injected())
-				assert.NotEmpty(d.String())
+				suite.Equal("named", d.Name())
+				suite.Empty(d.Group())
+				suite.True(d.Optional())
+				suite.NotNil(d.Field)
+				suite.Equal(reflect.TypeOf(In{}), d.Container)
+				suite.True(d.Value.IsValid())
+				suite.False(d.Injected())
+				suite.NotEmpty(d.String())
 				return true
 			},
 			// C
 			func(d Dependency) bool {
-				t.Log("visited", d)
-				assert.Empty(d.Name())
-				assert.Equal("buffers", d.Group())
-				assert.False(d.Optional())
-				assert.NotNil(d.Field)
-				assert.Equal(reflect.TypeOf(In{}), d.Container)
-				require.True(d.Value.IsValid())
-				assert.Equal(
+				suite.Empty(d.Name())
+				suite.Equal("buffers", d.Group())
+				suite.False(d.Optional())
+				suite.NotNil(d.Field)
+				suite.Equal(reflect.TypeOf(In{}), d.Container)
+				suite.Require().True(d.Value.IsValid())
+				suite.Equal(
 					[]*bytes.Buffer{
 						bytes.NewBufferString("C1"), bytes.NewBufferString("C2"),
 					},
 					d.Value.Interface(),
 				)
 
-				assert.True(d.Injected())
-				assert.NotEmpty(d.String())
+				suite.True(d.Injected())
+				suite.NotEmpty(d.String())
 				return false
 			},
 		}
-
-		counter int
 	)
 
-	VisitDependencies(
-		func(d Dependency) bool {
-			if counter >= len(expecteds) {
-				assert.Fail("Too many calls to the visitor")
-				return false
-			}
+	suite.Run("ReflectValues", func() {
+		suite.visitDependencies(
+			[]any{reflect.ValueOf(in), reflect.ValueOf("this should be skipped")},
+			expecteds,
+		)
+	})
 
-			v := expecteds[counter](d)
-			counter++
-			return v
-		},
-		reflect.ValueOf(in), reflect.ValueOf(Skipped{}),
-	)
+	suite.Run("Raw", func() {
+		suite.visitDependencies(
+			[]any{in, "this should be skipped"},
+			expecteds,
+		)
+	})
 }
 
-func testVisitDependenciesRecursion(t *testing.T) {
+func (suite *VisitDependenciesSuite) TestRecursion() {
 	type Embedded struct {
 		fx.In
 		B *bytes.Buffer   `name:"named" optional:"true"`
@@ -148,15 +155,7 @@ func testVisitDependenciesRecursion(t *testing.T) {
 		Embedded
 	}
 
-	type Skipped struct {
-		fx.In
-		B *bytes.Buffer
-	}
-
 	var (
-		assert  = assert.New(t)
-		require = require.New(t)
-
 		recurse = Recurse{
 			A: bytes.NewBufferString("A"),
 			Embedded: Embedded{
@@ -167,73 +166,65 @@ func testVisitDependenciesRecursion(t *testing.T) {
 		expecteds = []DependencyVisitor{
 			// A
 			func(d Dependency) bool {
-				t.Log("visited", d)
-				assert.Empty(d.Name())
-				assert.Empty(d.Group())
-				assert.False(d.Optional())
-				assert.NotNil(d.Field)
-				assert.Equal(reflect.TypeOf(Recurse{}), d.Container)
-				require.True(d.Value.IsValid())
-				assert.Equal(bytes.NewBufferString("A"), d.Value.Interface())
-				assert.True(d.Injected())
-				assert.NotEmpty(d.String())
+				suite.Empty(d.Name())
+				suite.Empty(d.Group())
+				suite.False(d.Optional())
+				suite.NotNil(d.Field)
+				suite.Equal(reflect.TypeOf(Recurse{}), d.Container)
+				suite.Require().True(d.Value.IsValid())
+				suite.Same(recurse.A, d.Value.Interface())
+				suite.True(d.Injected())
+				suite.NotEmpty(d.String())
 				return true
 			},
 			// B
 			func(d Dependency) bool {
-				t.Log("visited", d)
-				assert.Equal("named", d.Name())
-				assert.Empty(d.Group())
-				assert.True(d.Optional())
-				assert.NotNil(d.Field)
-				assert.Equal(reflect.TypeOf(Embedded{}), d.Container)
-				assert.True(d.Value.IsValid())
-				assert.False(d.Injected())
-				assert.NotEmpty(d.String())
+				suite.Equal("named", d.Name())
+				suite.Empty(d.Group())
+				suite.True(d.Optional())
+				suite.NotNil(d.Field)
+				suite.Equal(reflect.TypeOf(Embedded{}), d.Container)
+				suite.Same(recurse.Embedded.B, d.Value.Interface())
+				suite.True(d.Value.IsValid())
+				suite.False(d.Injected())
+				suite.NotEmpty(d.String())
 				return true
 			},
 			// C
 			func(d Dependency) bool {
-				t.Log("visited", d)
-				assert.Empty(d.Name())
-				assert.Equal("buffers", d.Group())
-				assert.False(d.Optional())
-				assert.NotNil(d.Field)
-				assert.Equal(reflect.TypeOf(Embedded{}), d.Container)
-				require.True(d.Value.IsValid())
-				assert.Equal(
-					[]*bytes.Buffer{
-						bytes.NewBufferString("C1"), bytes.NewBufferString("C2"),
-					},
+				suite.Empty(d.Name())
+				suite.Equal("buffers", d.Group())
+				suite.False(d.Optional())
+				suite.NotNil(d.Field)
+				suite.Equal(reflect.TypeOf(Embedded{}), d.Container)
+				suite.Require().True(d.Value.IsValid())
+				suite.Equal(
+					[]*bytes.Buffer{bytes.NewBufferString("C1"), bytes.NewBufferString("C2")},
 					d.Value.Interface(),
 				)
 
-				assert.True(d.Injected())
-				assert.NotEmpty(d.String())
+				suite.True(d.Injected())
+				suite.NotEmpty(d.String())
 				return false
 			},
 		}
-
-		counter int
 	)
 
-	VisitDependencies(
-		func(d Dependency) bool {
-			if counter >= len(expecteds) {
-				assert.Fail("Too many calls to the visitor")
-				return false
-			}
+	suite.Run("ReflectValues", func() {
+		suite.visitDependencies(
+			[]any{reflect.ValueOf(recurse), reflect.ValueOf("this should be skipped")},
+			expecteds,
+		)
+	})
 
-			v := expecteds[counter](d)
-			counter++
-			return v
-		},
-		reflect.ValueOf(recurse), reflect.ValueOf(Skipped{}),
-	)
+	suite.Run("Raw", func() {
+		suite.visitDependencies(
+			[]any{recurse, "this should be skipped"},
+			expecteds,
+		)
+	})
 }
 
 func TestVisitDependencies(t *testing.T) {
-	t.Run("Simple", testVisitDependenciesSimple)
-	t.Run("In", testVisitDependenciesIn)
-	t.Run("Recursion", testVisitDependenciesRecursion)
+	suite.Run(t, new(VisitDependenciesSuite))
 }

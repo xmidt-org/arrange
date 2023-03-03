@@ -17,7 +17,7 @@ type Dependency struct {
 	Container reflect.Type
 
 	// Field is the struct field from which this dependency was taken.  This will
-	// be nil for global, unnamed components.
+	// be nil for dependencies that were not part of an fx.In struct.
 	Field *reflect.StructField
 
 	// Value is the actual value that was injected.  For plain dependencies that

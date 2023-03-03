@@ -91,8 +91,13 @@ type DependencyVisitor func(Dependency) bool
 //
 // For non-struct values or for structs that do not embed fx.In, the visitor is simply invoked
 // with that value but with Name, Group, etc fields left unset.
-func VisitDependencies(visitor DependencyVisitor, deps ...reflect.Value) {
-	for _, dv := range deps {
+func VisitDependencies(visitor DependencyVisitor, deps ...any) {
+	for _, dep := range deps {
+		dv, ok := dep.(reflect.Value)
+		if !ok {
+			dv = reflect.ValueOf(dep)
+		}
+
 		// for any structs that embed fx.In, recursively visit their fields
 		if dig.IsIn(dv.Type()) {
 			for stack := []reflect.Value{dv}; len(stack) > 0; {

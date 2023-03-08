@@ -11,5 +11,5 @@ require (
 	github.com/xmidt-org/httpaux v0.3.2
 	go.uber.org/dig v1.16.1
 	go.uber.org/fx v1.19.2
-	go.uber.org/multierr v1.9.0
+	go.uber.org/multierr v1.10.0
 )

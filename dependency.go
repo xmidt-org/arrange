@@ -81,6 +81,48 @@ func (d Dependency) String() string {
 // halted early.
 type DependencyVisitor func(Dependency) bool
 
+// applyVisitor invokes the visitor, possibly recursively, over a given value.
+func applyVisitor(visitor DependencyVisitor, v reflect.Value) (cont bool) {
+	cont = true
+
+	// for any structs that embed fx.In, recursively visit their fields
+	if dig.IsIn(v.Type()) {
+		for stack := []reflect.Value{v}; cont && len(stack) > 0; {
+			var (
+				end           = len(stack) - 1
+				container     = stack[end]
+				containerType = container.Type()
+			)
+
+			stack = stack[:end]
+			for i := 0; cont && i < container.NumField(); i++ {
+				field := containerType.Field(i)
+				fieldValue := container.Field(i)
+
+				// NOTE: skip unexported fields or those whose value cannot be accessed
+				if len(field.PkgPath) > 0 ||
+					!fieldValue.IsValid() ||
+					!fieldValue.CanInterface() ||
+					field.Type == InType() ||
+					field.Type == OutType() {
+					continue
+				}
+
+				if dig.IsIn(field.Type) {
+					// this field is something that itself contains dependencies
+					stack = append(stack, fieldValue)
+				} else {
+					cont = visitor(Dependency{Container: containerType, Field: &field, Value: fieldValue})
+				}
+			}
+		}
+	} else {
+		cont = visitor(Dependency{Value: v}) // a "naked" dependency
+	}
+
+	return
+}
+
 // VisitDependencies applies the given visitor to a sequence of dependencies.  The deps
 // slice can contain any values allowed by go.uber.org/fx in constructor functions, i.e.
 // they must all be dependencies that were either injected or skipped (as when optional:"true" is set).
@@ -92,45 +134,23 @@ type DependencyVisitor func(Dependency) bool
 // For non-struct values or for structs that do not embed fx.In, the visitor is simply invoked
 // with that value but with Name, Group, etc fields left unset.
 func VisitDependencies(visitor DependencyVisitor, deps ...any) {
-	for _, dep := range deps {
-		dv, ok := dep.(reflect.Value)
+	cont := true
+	for i := 0; cont && i < len(deps); i++ {
+		dv, ok := deps[i].(reflect.Value)
 		if !ok {
-			dv = reflect.ValueOf(dep)
+			dv = reflect.ValueOf(deps[i])
 		}
 
-		// for any structs that embed fx.In, recursively visit their fields
-		if dig.IsIn(dv.Type()) {
-			for stack := []reflect.Value{dv}; len(stack) > 0; {
-				var (
-					end           = len(stack) - 1
-					container     = stack[end]
-					containerType = container.Type()
-				)
+		cont = applyVisitor(visitor, dv)
+	}
+}
 
-				stack = stack[:end]
-				for i := 0; i < container.NumField(); i++ {
-					field := containerType.Field(i)
-					fieldValue := container.Field(i)
-
-					// NOTE: skip unexported fields or those whose value cannot be accessed
-					if len(field.PkgPath) > 0 ||
-						!fieldValue.IsValid() ||
-						!fieldValue.CanInterface() ||
-						field.Type == InType() ||
-						field.Type == OutType() {
-						continue
-					}
-
-					if dig.IsIn(field.Type) {
-						// this field is something that itself contains dependencies
-						stack = append(stack, fieldValue)
-					} else if !visitor(Dependency{Container: containerType, Field: &field, Value: fieldValue}) {
-						return
-					}
-				}
-			}
-		} else if !visitor(Dependency{Value: dv}) { // a "naked" dependency
-			return
-		}
+// VisitDependencyValues is like VisitDependencies, but operates over an explicitly created
+// sequence of reflect.Value instances.  This function is useful for dynamically created
+// functions via reflect.MakeFunc.
+func VisitDependencyValues(visitor DependencyVisitor, deps ...reflect.Value) {
+	cont := true
+	for i := 0; cont && i < len(deps); i++ {
+		cont = applyVisitor(visitor, deps[i])
 	}
 }

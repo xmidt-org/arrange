@@ -17,7 +17,7 @@ func (suite *VisitDependenciesSuite) visitDependencies(deps []any, expecteds []D
 	counter := 0
 	VisitDependencies(
 		func(d Dependency) bool {
-			suite.Require().GreaterOrEqual(len(expecteds), counter, "Too many calls to the visitor")
+			suite.Require().Greater(len(expecteds), counter, "Too many calls to the visitor")
 			v := expecteds[counter](d)
 			counter++
 			return v

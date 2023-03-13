@@ -232,13 +232,13 @@ func (s *Server) unmarshal(u arrange.Unmarshaler) (sf ServerFactory, err error) 
 // on this instance to the give *http.Server and supporting objects.
 //
 //nolint:funlen // this function is necessarily longer than normal given the try cases
-func (s *Server) configure(in ServerIn, server *http.Server, deps []reflect.Value) (lc ListenerChain, err error) {
+func (s *Server) configure(in ServerIn, server *http.Server, deps ...reflect.Value) (lc ListenerChain, err error) {
 	var (
 		middleware alice.Chain
 		options    arrange.Invoke
 	)
 
-	arrange.VisitDependencies(
+	arrange.VisitDependencyValues(
 		func(d arrange.Dependency) bool {
 			if d.Injected() {
 				arrange.TryConvert(
@@ -320,7 +320,7 @@ func (s *Server) provide(deps []reflect.Value) (router *mux.Router, err error) {
 	}
 
 	var lc ListenerChain
-	lc, err = s.configure(in, server, deps[1:])
+	lc, err = s.configure(in, server, deps[1:]...)
 	if err != nil {
 		return
 	}

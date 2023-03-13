@@ -203,13 +203,13 @@ func (c *Client) unmarshal(u arrange.Unmarshaler) (cf ClientFactory, err error) 
 
 // configure applies the dependencies (if any) and the options and middleware supplied
 // on this instance to the given *http.Client
-func (c *Client) configure(in ClientIn, client *http.Client, deps []reflect.Value) (err error) {
+func (c *Client) configure(in ClientIn, client *http.Client, deps ...reflect.Value) (err error) {
 	var (
 		middleware roundtrip.Chain
 		options    arrange.Invoke
 	)
 
-	arrange.VisitDependencies(
+	arrange.VisitDependencyValues(
 		func(d arrange.Dependency) bool {
 			if d.Injected() {
 				arrange.TryConvert(
@@ -277,7 +277,7 @@ func (c *Client) provide(deps []reflect.Value) (client *http.Client, err error) 
 		return
 	}
 
-	err = c.configure(in, client, deps[1:])
+	err = c.configure(in, client, deps[1:]...)
 	if err != nil {
 		return
 	}

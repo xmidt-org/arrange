@@ -108,7 +108,7 @@ func (lc ListenerChain) Factory(next ListenerFactory) ListenerFactory {
 
 // CaptureListenAddress returns a ListenerConstructor that sends the actual network address of
 // the created listener to a channel.  This is useful to capture the actual address
-// of a server, usually for testing, when an address such as ":0" is used.
+// of a server, usually for testing, when an address such as "127.0.0.1:0" is used.
 //
 // The returned contructor performs no actual decoration.
 func CaptureListenAddress(ch chan<- net.Addr) ListenerConstructor {
@@ -123,7 +123,7 @@ func CaptureListenAddress(ch chan<- net.Addr) ListenerConstructor {
 // is called with a failure message and this function returns a nil net.Addr and false.
 //
 // This function is intended for tests that use CaptureListenAddress to obtain the
-// address of a server started on addresses like ":0".  Callers may pass t.Fatalf to fail
+// address of a server started on addresses like "127.0.0.1:0".  Callers may pass t.Fatalf to fail
 // the test immediately or pass t.Errorf or t.Logf to continue with the test.
 // The second bool return can be used to indicate if an address was actually found on the channel.
 func AwaitListenAddress(fail func(string, ...interface{}), ch <-chan net.Addr, d time.Duration) (a net.Addr, ok bool) {
@@ -154,15 +154,25 @@ type DefaultListenerFactory struct {
 // It essentially does the same thing as net/http, but allows the network
 // to be configured externally and ensures that the listen address matches
 // the server address.
-func (f DefaultListenerFactory) Listen(ctx context.Context, server *http.Server) (net.Listener, error) {
+func (f DefaultListenerFactory) Listen(ctx context.Context, server *http.Server) (l net.Listener, err error) {
 	network := f.Network
 	if len(network) == 0 {
 		network = "tcp"
 	}
-
-	l, err := f.ListenConfig.Listen(ctx, network, server.Addr)
-	if err != nil {
-		return nil, err
+	if server.Addr != "" {
+		l, err = f.ListenConfig.Listen(ctx, network, server.Addr)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		// if address is not defined use loopback
+		l, err = net.Listen("tcp", "127.0.0.1:0")
+		if err != nil {
+			l, err = net.Listen("tcp6", "[::1]:0")
+			if err != nil {
+				return nil, err
+			}
+		}
 	}
 
 	if server.TLSConfig != nil {

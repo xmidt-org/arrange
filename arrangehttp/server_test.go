@@ -46,7 +46,7 @@ func testServerConfigBasic(t *testing.T) {
 		require = require.New(t)
 
 		serverConfig = ServerConfig{
-			Address:           ":0",
+			Address:           "127.0.0.1:0",
 			ReadTimeout:       15 * time.Second,
 			ReadHeaderTimeout: 27 * time.Minute,
 			WriteTimeout:      38 * time.Second,
@@ -99,7 +99,7 @@ func testServerConfigTLS(t *testing.T) {
 		require = require.New(t)
 
 		serverConfig = ServerConfig{
-			Address:           ":0",
+			Address:           "127.0.0.1:0",
 			ReadTimeout:       72 * time.Second,
 			ReadHeaderTimeout: 109 * time.Minute,
 			WriteTimeout:      63 * time.Second,
@@ -327,7 +327,7 @@ func (suite *ServerTestSuite) TestUnnamed() {
 	suite.YAML(`
 servers:
   main:
-    address: ":0"
+    address: "127.0.0.1:0"
 `)
 
 	app := suite.Fxtest(
@@ -354,7 +354,7 @@ func (suite *ServerTestSuite) TestNamed() {
 	suite.YAML(`
 servers:
   main:
-    address: ":0"
+    address: "127.0.0.1:0"
 `)
 
 	app := suite.Fxtest(
@@ -401,7 +401,7 @@ func (suite *ServerTestSuite) TestMiddleware() {
 	suite.YAML(`
 servers:
   main:
-    address: ":0"
+    address: "127.0.0.1:0"
 `)
 
 	app := suite.Fxtest(
@@ -521,7 +521,7 @@ func (suite *ServerTestSuite) TestListener() {
 	suite.YAML(`
 servers:
   main:
-    address: ":0"
+    address: "127.0.0.1:0"
 `)
 
 	var called []string
@@ -613,7 +613,7 @@ servers:
 
 func (suite *ServerTestSuite) TestOptions() {
 	suite.YAML(`
-address: ":0"
+address: "127.0.0.1:0"
 readTimeout: "15s"
 `)
 

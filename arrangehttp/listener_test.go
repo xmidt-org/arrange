@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"strings"
 	"testing"
 	"time"
 
@@ -41,7 +42,7 @@ func testListenerChainNew(t *testing.T) {
 				})
 			}
 
-			listener, err := factory.Listen(context.Background(), &http.Server{Addr: ":0"})
+			listener, err := factory.Listen(context.Background(), &http.Server{Addr: "127.0.0.1:0"})
 			require.NoError(err)
 			defer listener.Close()
 
@@ -69,7 +70,7 @@ func testListenerChainAppend(t *testing.T) {
 				})
 			}
 
-			listener, err := factory.Listen(context.Background(), &http.Server{Addr: ":0"})
+			listener, err := factory.Listen(context.Background(), &http.Server{Addr: "127.0.0.1:0"})
 			require.NoError(err)
 			defer listener.Close()
 
@@ -97,7 +98,7 @@ func testListenerChainExtend(t *testing.T) {
 				})
 			}
 
-			listener, err := factory.Listen(context.Background(), &http.Server{Addr: ":0"})
+			listener, err := factory.Listen(context.Background(), &http.Server{Addr: "127.0.0.1:0"})
 			require.NoError(err)
 			defer listener.Close()
 
@@ -128,7 +129,7 @@ func testListenerChainFactory(t *testing.T) {
 			decorated := NewListenerChain(constructors...).Factory(factory)
 			require.NotNil(decorated)
 
-			listener, err := decorated.Listen(context.Background(), &http.Server{Addr: ":0"})
+			listener, err := decorated.Listen(context.Background(), &http.Server{Addr: "127.0.0.1:0"})
 			require.NoError(err)
 			defer listener.Close()
 			assert.NotNil(listener.Addr())
@@ -150,7 +151,7 @@ func testDefaultListenerFactoryBasic(t *testing.T) {
 
 		factory DefaultListenerFactory
 		server  = &http.Server{
-			Addr: ":0",
+			Addr: "127.0.0.1:0",
 		}
 	)
 
@@ -168,7 +169,7 @@ func testDefaultListenerFactoryTLS(t *testing.T) {
 
 		factory DefaultListenerFactory
 		server  = &http.Server{
-			Addr: ":0",
+			Addr: "127.0.0.1:0",
 		}
 	)
 
@@ -201,7 +202,7 @@ func testDefaultListenerFactoryListenError(t *testing.T) {
 		}
 
 		server = &http.Server{
-			Addr: ":0",
+			Addr: "127.0.0.1:0",
 		}
 	)
 
@@ -228,7 +229,7 @@ func TestCaptureListenAddress(t *testing.T) {
 		chain   = NewListenerChain(CaptureListenAddress(address))
 
 		server = &http.Server{
-			Addr: ":0",
+			Addr: "127.0.0.1:0",
 		}
 	)
 
@@ -241,6 +242,32 @@ func TestCaptureListenAddress(t *testing.T) {
 	select {
 	case listenAddr := <-address:
 		assert.Equal(listener.Addr(), listenAddr)
+	case <-time.After(2 * time.Second):
+		assert.Fail("No listen address was sent to the channel")
+	}
+}
+
+func TestEmptyAddress(t *testing.T) {
+	var (
+		assert  = assert.New(t)
+		require = require.New(t)
+
+		address = make(chan net.Addr, 1)
+		chain   = NewListenerChain(CaptureListenAddress(address))
+
+		server = &http.Server{}
+	)
+
+	listener, err := chain.Factory(DefaultListenerFactory{}).
+		Listen(context.Background(), server)
+	require.NoError(err)
+
+	defer listener.Close()
+
+	select {
+	case listenAddr := <-address:
+		assert.Equal(listener.Addr(), listenAddr)
+		assert.True(net.ParseIP(listenAddr.String()[0:strings.LastIndex(listenAddr.String(), ":")]).IsLoopback())
 	case <-time.After(2 * time.Second):
 		assert.Fail("No listen address was sent to the channel")
 	}
@@ -362,7 +389,7 @@ func testServeNoServerExits(t *testing.T) {
 		require = require.New(t)
 
 		server = &http.Server{
-			Addr: ":0",
+			Addr: "127.0.0.1:0",
 		}
 
 		result = make(chan error, 1)
@@ -392,7 +419,7 @@ func testServeWithServerExit(t *testing.T) {
 		require = require.New(t)
 
 		server = &http.Server{
-			Addr: ":0",
+			Addr: "127.0.0.1:0",
 		}
 
 		result = make(chan error, 1)
@@ -439,7 +466,7 @@ func testServerOnStartNoServerExits(t *testing.T) {
 		require = require.New(t)
 
 		server = &http.Server{
-			Addr: ":0",
+			Addr: "127.0.0.1:0",
 		}
 
 		result        = make(chan error, 1)
@@ -467,7 +494,7 @@ func testServerOnStartWithServerExit(t *testing.T) {
 		require = require.New(t)
 
 		server = &http.Server{
-			Addr: ":0",
+			Addr: "127.0.0.1:0",
 		}
 
 		serverExitCalled = make(chan struct{})
@@ -508,7 +535,7 @@ func testServerOnStartListenError(t *testing.T) {
 		require = require.New(t)
 
 		server = &http.Server{
-			Addr: ":0",
+			Addr: "127.0.0.1:0",
 		}
 
 		expectedErr = errors.New("expected error from Listen")

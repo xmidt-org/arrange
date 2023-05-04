@@ -9,7 +9,7 @@ require (
 	github.com/spf13/viper v1.15.0
 	github.com/stretchr/testify v1.8.2
 	github.com/xmidt-org/httpaux v0.3.2
-	go.uber.org/dig v1.16.1
+	go.uber.org/dig v1.17.0
 	go.uber.org/fx v1.19.2
 	go.uber.org/multierr v1.10.0
 )

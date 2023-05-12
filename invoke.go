@@ -98,7 +98,7 @@ func (ivk Invoke) Call(args ...interface{}) (err error) {
 				Message: "too many return values",
 			})
 
-		case ft.NumOut() == 1 && ft.Out(0) != ErrorType():
+		case ft.NumOut() == 1 && ft.Out(0) != Type[error]():
 			err = multierr.Append(err, &InvokeError{
 				Type:    ft,
 				Message: "return value is not an error",

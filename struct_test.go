@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/suite"
+	"go.uber.org/fx"
 )
 
 type StructTestSuite struct {
@@ -99,7 +100,7 @@ func (suite *StructTestSuite) TestSeveral() {
 
 	{
 		f := st.Field(5)
-		suite.Equal(InType(), f.Type)
+		suite.Equal(Type[fx.In](), f.Type)
 		suite.Empty(f.PkgPath)
 		suite.True(f.Anonymous)
 	}

@@ -34,7 +34,7 @@ func (suite *InjectTestSuite) TestFuncOf() {
 			s.Of(),
 		)
 
-		ft = ij.FuncOf(reflect.TypeOf(int(0)), ErrorType())
+		ft = ij.FuncOf(reflect.TypeOf(int(0)), Type[error]())
 	)
 
 	suite.Require().NotNil(ft)
@@ -46,7 +46,7 @@ func (suite *InjectTestSuite) TestFuncOf() {
 
 	suite.Equal(2, ft.NumOut())
 	suite.Equal(reflect.TypeOf(int(0)), ft.Out(0))
-	suite.Equal(ErrorType(), ft.Out(1))
+	suite.Equal(Type[error](), ft.Out(1))
 }
 
 func (suite *InjectTestSuite) TestMakeFunc() {

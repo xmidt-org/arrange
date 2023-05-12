@@ -61,7 +61,7 @@ func (hr *HTTP) buildRouterIn() reflect.Type {
 	fields := []reflect.StructField{
 		{
 			Name:      "In",
-			Type:      arrange.InType(),
+			Type:      arrange.Type[fx.In](),
 			Anonymous: true,
 		},
 		{

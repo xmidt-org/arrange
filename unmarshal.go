@@ -31,7 +31,7 @@ func makeUnmarshalFunc(prototype interface{}, uf func(Unmarshaler, interface{}) 
 			[]reflect.Type{reflect.TypeOf((*Unmarshaler)(nil)).Elem()},
 
 			// function outputs:
-			[]reflect.Type{t.Component.Type(), ErrorType()},
+			[]reflect.Type{t.Component.Type(), Type[error]()},
 
 			false, // not variadic
 		),

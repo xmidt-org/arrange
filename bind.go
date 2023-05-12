@@ -144,7 +144,7 @@ func (b Bind) With(args ...interface{}) fx.Option {
 
 		// choose either fx.Invoke or fx.Provide, based on the return values
 		optFunc := fx.Invoke
-		if ft.NumOut() > 1 || (ft.NumOut() == 1 && !ft.Out(0).Implements(ErrorType())) {
+		if ft.NumOut() > 1 || (ft.NumOut() == 1 && !ft.Out(0).Implements(Type[error]())) {
 			optFunc = fx.Provide
 		}
 

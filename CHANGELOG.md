@@ -6,6 +6,7 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 - VisitDependencyValues handles reflect.Value dependencies
+- Use a generic Type() function for extracting runtime types
 
 ## [v0.4.0]
 - tls 1.3 is used as the default minimum version

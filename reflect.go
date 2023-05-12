@@ -2,38 +2,12 @@ package arrange
 
 import (
 	"reflect"
-
-	"go.uber.org/fx"
 )
-
-// errorType is the cached reflection lookup for the error type
-var errorType reflect.Type = reflect.TypeOf((*error)(nil)).Elem()
-
-// ErrorType returns the reflection type for the error interface
-func ErrorType() reflect.Type {
-	return errorType
-}
-
-// inType is the cached reflection lookup for fx.In
-var inType reflect.Type = reflect.TypeOf(fx.In{})
-
-// InType returns the reflection type of fx.In
-func InType() reflect.Type {
-	return inType
-}
-
-// outType is the cached reflection lookup for fx.Out
-var outType reflect.Type = reflect.TypeOf(fx.Out{})
-
-// OutType returns the reflection type of fx.Out
-func OutType() reflect.Type {
-	return outType
-}
 
 // NewErrorValue is a convenience for safely producing a reflect.Value from an error.
 // Useful when creating function stubs for reflect.MakeFunc.
 func NewErrorValue(err error) reflect.Value {
-	errPtr := reflect.New(ErrorType())
+	errPtr := reflect.New(Type[error]())
 	if err != nil {
 		errPtr.Elem().Set(reflect.ValueOf(err))
 	}
@@ -63,6 +37,12 @@ func TypeOf(v interface{}) reflect.Type {
 	}
 
 	return reflect.TypeOf(v)
+}
+
+// Type returns the runtime, reflection type for a generic parameter.  Primarily
+// useful when dynamically building constructors.
+func Type[T any]() reflect.Type {
+	return reflect.TypeOf((*T)(nil)).Elem()
 }
 
 // Target describes a sink for an unmarshal operation.

@@ -6,6 +6,7 @@ import (
 	"strconv"
 
 	"go.uber.org/dig"
+	"go.uber.org/fx"
 )
 
 // Dependency represents a reflected value (possibly) injected by an enclosing fx.App
@@ -103,8 +104,8 @@ func applyVisitor(visitor DependencyVisitor, v reflect.Value) (cont bool) {
 				if len(field.PkgPath) > 0 ||
 					!fieldValue.IsValid() ||
 					!fieldValue.CanInterface() ||
-					field.Type == InType() ||
-					field.Type == OutType() {
+					field.Type == Type[fx.In]() ||
+					field.Type == Type[fx.Out]() {
 					continue
 				}
 

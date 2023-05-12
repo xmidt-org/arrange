@@ -4,6 +4,8 @@ import (
 	"reflect"
 	"strconv"
 	"strings"
+
+	"go.uber.org/fx"
 )
 
 // Field describes a single injected dependency as part of an
@@ -42,7 +44,7 @@ func (s Struct) In() Struct {
 	return append(s, reflect.StructField{
 		Name:      "In",
 		Anonymous: true,
-		Type:      InType(),
+		Type:      Type[fx.In](),
 	})
 }
 

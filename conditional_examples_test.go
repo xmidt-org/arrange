@@ -5,6 +5,8 @@ import (
 
 	"github.com/spf13/viper"
 	"go.uber.org/fx"
+	"go.uber.org/fx/fxevent"
+	"go.uber.org/zap"
 )
 
 func ExampleIf() {
@@ -16,7 +18,9 @@ func ExampleIf() {
 	}
 
 	fx.New(
-		DiscardLogger(),
+		fx.WithLogger(func() fxevent.Logger {
+			return &fxevent.ZapLogger{Logger: zap.NewNop()}
+		}),
 		ForViper(v), // necessary for the Provide call below
 		If(v.IsSet("address")).Then(
 			Provide(Config{}),

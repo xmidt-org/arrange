@@ -2,12 +2,13 @@ package arrange
 
 import (
 	"fmt"
-	"io/ioutil"
 	"strings"
 	"time"
 
 	"github.com/spf13/viper"
 	"go.uber.org/fx"
+	"go.uber.org/fx/fxevent"
+	"go.uber.org/zap"
 )
 
 func ExampleProvide() {
@@ -26,7 +27,9 @@ func ExampleProvide() {
 	}
 
 	fx.New(
-		LoggerWriter(ioutil.Discard),
+		fx.WithLogger(func() fxevent.Logger {
+			return &fxevent.ZapLogger{Logger: zap.NewNop()}
+		}),
 		ForViper(v),
 		Provide(Config{}),
 		fx.Invoke(
@@ -64,7 +67,9 @@ func ExampleProvideKey() {
 	}
 
 	fx.New(
-		LoggerWriter(ioutil.Discard),
+		fx.WithLogger(func() fxevent.Logger {
+			return &fxevent.ZapLogger{Logger: zap.NewNop()}
+		}),
 		ForViper(v),
 		ProvideKey("server", Config{}),
 		fx.Invoke(
@@ -108,7 +113,9 @@ func ExampleKeys() {
 	}
 
 	fx.New(
-		LoggerWriter(ioutil.Discard),
+		fx.WithLogger(func() fxevent.Logger {
+			return &fxevent.ZapLogger{Logger: zap.NewNop()}
+		}),
 		ForViper(v),
 		Keys("servers.http", "servers.pprof").Provide(Config{}),
 		fx.Invoke(

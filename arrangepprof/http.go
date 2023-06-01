@@ -65,18 +65,13 @@ func (hr *HTTP) buildRouterIn() reflect.Type {
 			Anonymous: true,
 		},
 		{
-			Name: "Printer",
-			Type: arrange.PrinterType(),
-			Tag:  `optional:"true"`,
-		},
-		{
 			Name: "Router",
 			Type: reflect.TypeOf((*mux.Router)(nil)),
 		},
 	}
 
 	if len(hr.RouterName) > 0 {
-		fields[2].Tag = reflect.StructTag(`name:"` + hr.RouterName + `"`)
+		fields[1].Tag = reflect.StructTag(`name:"` + hr.RouterName + `"`)
 	}
 
 	return reflect.StructOf(fields)
@@ -102,12 +97,7 @@ func (hr *HTTP) invoke(args []reflect.Value) []reflect.Value {
 	var (
 		in = args[0]
 
-		p = arrange.NewModulePrinter(
-			module,
-			in.Field(1).Interface().(fx.Printer),
-		)
-
-		r = in.Field(2).Interface().(*mux.Router)
+		r = in.Field(1).Interface().(*mux.Router)
 
 		prefix = hr.PathPrefix
 	)
@@ -120,8 +110,6 @@ func (hr *HTTP) invoke(args []reflect.Value) []reflect.Value {
 	for prefix[len(prefix)-1] == '/' {
 		prefix = prefix[0 : len(prefix)-1]
 	}
-
-	p.Printf("Mapping pprof HTTP handlers to %s", prefix)
 
 	// NOTE: this works if prefix was "/", as mapping to "" is valid
 	r.HandleFunc(prefix, pprof.Index)

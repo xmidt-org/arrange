@@ -7,7 +7,6 @@ import (
 	"runtime"
 	"runtime/pprof"
 
-	"github.com/xmidt-org/arrange"
 	"go.uber.org/fx"
 )
 
@@ -83,15 +82,12 @@ func (c CPU) Provide() fx.Option {
 		}) {
 			// optimization: don't bother registering if Path is empty
 			if len(c.Path) > 0 {
-				p := arrange.NewModulePrinter(module, in.Printer)
 				in.Lifecycle.Append(fx.Hook{
 					OnStart: func(context.Context) error {
-						p.Printf("Start CPU profiling to %s", c.Path)
 						return c.start()
 					},
 					OnStop: func(context.Context) error {
 						err := c.stop()
-						p.Printf("Stop CPU profiling to %s", c.Path)
 						return err
 					},
 				})
@@ -150,17 +146,9 @@ func (h Heap) Provide() fx.Option {
 		}) {
 			// optimization: don't bother registering if Path is empty
 			if len(h.Path) > 0 {
-				p := arrange.NewModulePrinter(module, in.Printer)
 				in.Lifecycle.Append(fx.Hook{
 					OnStop: func(context.Context) error {
-						err := h.stop()
-						if err != nil {
-							p.Printf("Error writing heap profile to %s: %s", h.Path, err)
-						} else {
-							p.Printf("Wrote heap profile data to %s", h.Path)
-						}
-
-						return err
+						return h.stop()
 					},
 				})
 			}

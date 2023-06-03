@@ -369,7 +369,7 @@ func (c *Config) certificates(tc *tls.Config) error {
 
 	// NOTE: This method is deprecated, but in order not to break
 	// older code we call it here, for now.
-	tc.BuildNameToCertificate()
+	tc.BuildNameToCertificate() //nolint:staticcheck
 	return nil
 }
 

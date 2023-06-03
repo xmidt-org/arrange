@@ -10,8 +10,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/xmidt-org/arrange"
 	"go.uber.org/fx"
+	"go.uber.org/fx/fxevent"
 	"go.uber.org/fx/fxtest"
 )
 
@@ -19,7 +19,6 @@ func testCPUProvideDisabled(t *testing.T) {
 	assert := assert.New(t)
 	app := fxtest.New(
 		t,
-		arrange.TestLogger(t),
 		CPU{}.Provide(), // no Path means CPU profiling should be disabled
 	)
 
@@ -76,7 +75,6 @@ func testCPUNewPath(t *testing.T) {
 
 		app = fxtest.New(
 			t,
-			arrange.TestLogger(t),
 			CPU{
 				Path: path,
 			}.Provide(),
@@ -111,7 +109,9 @@ func testCPUExistingPath(t *testing.T) {
 	defer os.Remove(path)
 
 	app := fx.New(
-		arrange.TestLogger(t),
+		fx.WithLogger(func() fxevent.Logger {
+			return fxtest.NewTestLogger(t)
+		}),
 		CPU{
 			Path: path,
 		}.Provide(),
@@ -143,7 +143,6 @@ func testCPUOverwrite(t *testing.T) {
 
 	app := fxtest.New(
 		t,
-		arrange.TestLogger(t),
 		CPU{
 			Path:      path,
 			Overwrite: true,
@@ -173,7 +172,6 @@ func testHeapProvideDisabled(t *testing.T) {
 	assert := assert.New(t)
 	app := fxtest.New(
 		t,
-		arrange.TestLogger(t),
 		Heap{}.Provide(), // no Path means heap profiling should be disabled
 	)
 
@@ -206,7 +204,6 @@ func testHeapNewPath(t *testing.T) {
 
 		app = fxtest.New(
 			t,
-			arrange.TestLogger(t),
 			Heap{
 				Path: path,
 			}.Provide(),
@@ -241,8 +238,8 @@ func testHeapExistingPath(t *testing.T) {
 	require.NoError(f.Close())
 	defer os.Remove(path)
 
-	app := fx.New(
-		arrange.TestLogger(t),
+	app := fxtest.New(
+		t,
 		Heap{
 			Path: path,
 		}.Provide(),
@@ -278,7 +275,6 @@ func testHeapOverwrite(t *testing.T) {
 
 	app := fxtest.New(
 		t,
-		arrange.TestLogger(t),
 		Heap{
 			Path:      path,
 			Overwrite: true,

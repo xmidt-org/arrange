@@ -22,23 +22,15 @@ type ViperUnmarshaler struct {
 	// Options is the optional slice of viper.DecoderConfigOptions passed to all
 	// unmarshal calls
 	Options []viper.DecoderConfigOption
-
-	// Printer is the required fx.Printer component to which informational messages are written.
-	//
-	// NOTE: This field won't be defaulted.  It must be set.  ForViper ensures this field
-	// is set even if no fx.Printer component is present in the enclosing fx.App.
-	Printer fx.Printer
 }
 
 // Unmarshal implements Unmarshaler
 func (vu ViperUnmarshaler) Unmarshal(value interface{}) error {
-	vu.Printer.Printf("UNMARSHAL => %T", value)
 	return vu.Viper.Unmarshal(value, vu.Options...)
 }
 
 // UnmarshalKey implements Unmarshaler
 func (vu ViperUnmarshaler) UnmarshalKey(key string, value interface{}) error {
-	vu.Printer.Printf("UNMARSHAL KEY\t[%s] => %T", key, value)
 	return vu.Viper.UnmarshalKey(key, value, vu.Options...)
 }
 
@@ -78,7 +70,6 @@ func ForViper(v *viper.Viper, o ...viper.DecoderConfigOption) fx.Option {
 						append([]viper.DecoderConfigOption{}, o...),
 						in.Options...,
 					),
-					Printer: NewModulePrinter(Module, in.Printer),
 				}
 			},
 		),

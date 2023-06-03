@@ -20,6 +20,7 @@ issues:
       linters:
         - dupl
         - funlen
+        - gosec
 
 linters-settings:
   errorlint:

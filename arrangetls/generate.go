@@ -6,7 +6,6 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/pem"
-	"io/ioutil"
 	"os"
 )
 
@@ -49,10 +48,10 @@ func CreateTestServerFiles(certificate *tls.Certificate) (certificateFileName, k
 		keyBytes        []byte
 	)
 
-	certificateFile, err = ioutil.TempFile("", "test-cert-*.pem")
+	certificateFile, err = os.CreateTemp("", "test-cert-*.pem")
 	if err == nil {
 		defer certificateFile.Close()
-		keyFile, err = ioutil.TempFile("", "test-key-*.pem")
+		keyFile, err = os.CreateTemp("", "test-key-*.pem")
 	}
 
 	if err == nil {

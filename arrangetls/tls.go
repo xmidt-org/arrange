@@ -4,7 +4,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"errors"
-	"io/ioutil"
+	"os"
 	"strings"
 )
 
@@ -253,7 +253,7 @@ func (ecp *ExternalCertPool) Append(more ...string) {
 func (ecp ExternalCertPool) AppendTo(pool *x509.CertPool) (int, error) {
 	var loaded int
 	for _, ec := range ecp {
-		pemCert, err := ioutil.ReadFile(ec)
+		pemCert, err := os.ReadFile(ec)
 		if err != nil {
 			return loaded, err
 		}
@@ -369,7 +369,7 @@ func (c *Config) certificates(tc *tls.Config) error {
 
 	// NOTE: This method is deprecated, but in order not to break
 	// older code we call it here, for now.
-	tc.BuildNameToCertificate()
+	tc.BuildNameToCertificate() //nolint:staticcheck
 	return nil
 }
 

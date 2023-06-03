@@ -9,6 +9,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/suite"
 	"go.uber.org/fx"
+	"go.uber.org/fx/fxevent"
 	"go.uber.org/fx/fxtest"
 )
 
@@ -35,7 +36,9 @@ func (suite *BindTestSuite) TestEmpty() {
 func (suite *BindTestSuite) TestNotAFunction() {
 	called := 0
 	app := fx.New(
-		DiscardLogger(),
+		fx.WithLogger(func() fxevent.Logger {
+			return fxtest.NewTestLogger(suite.T())
+		}),
 		Bind{
 			func() {
 				// this will be fine

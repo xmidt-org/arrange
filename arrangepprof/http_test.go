@@ -8,7 +8,6 @@ import (
 
 	"github.com/gorilla/mux"
 	"github.com/stretchr/testify/assert"
-	"github.com/xmidt-org/arrange"
 	"go.uber.org/fx"
 	"go.uber.org/fx/fxtest"
 )
@@ -47,7 +46,6 @@ func testHTTPUnnamedRouter(t *testing.T) {
 		router = new(mux.Router)
 		app    = fxtest.New(
 			t,
-			arrange.TestLogger(t),
 			fx.Supply(router),
 			HTTP{}.Provide(),
 		)
@@ -80,7 +78,6 @@ func testHTTPNamedRouter(t *testing.T) {
 		router = new(mux.Router)
 		app    = fxtest.New(
 			t,
-			arrange.TestLogger(t),
 			fx.Provide(
 				fx.Annotated{
 					Name: "test",
@@ -122,7 +119,6 @@ func testHTTPCustomPathPrefix(t *testing.T) {
 		router = new(mux.Router)
 		app    = fxtest.New(
 			t,
-			arrange.TestLogger(t),
 			fx.Supply(router),
 			HTTP{
 				PathPrefix: "/test/debug/",

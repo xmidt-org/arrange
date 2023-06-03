@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/fx"
+	"go.uber.org/fx/fxevent"
 	"go.uber.org/fx/fxtest"
 )
 
@@ -32,8 +33,7 @@ test:
 
 		data Data
 		vu   = ViperUnmarshaler{
-			Viper:   v,
-			Printer: NewPrinterWriter(&output),
+			Viper: v,
 		}
 	)
 
@@ -45,13 +45,11 @@ test:
 	output.Reset()
 	require.NoError(vu.Unmarshal(&data))
 	assert.Equal(Data{Value: 123}, data)
-	assert.NotEmpty(output.String())
 
 	output.Reset()
 	data = Data{}
 	require.NoError(vu.UnmarshalKey("test", &data))
 	assert.Equal(Data{Value: 456}, data)
-	assert.NotEmpty(output.String())
 }
 
 func testViperUnmarshalerWithOptions(t *testing.T) {
@@ -80,7 +78,6 @@ test:
 		vu   = ViperUnmarshaler{
 			Viper:   v,
 			Options: []viper.DecoderConfigOption{option},
-			Printer: NewPrinterWriter(&output),
 		}
 	)
 
@@ -92,7 +89,6 @@ test:
 	output.Reset()
 	require.NoError(vu.Unmarshal(&data))
 	assert.Equal(Data{Value: 123}, data)
-	assert.NotEmpty(output.String())
 	assert.True(optionCalled)
 
 	output.Reset()
@@ -100,7 +96,6 @@ test:
 	data = Data{}
 	require.NoError(vu.UnmarshalKey("test", &data))
 	assert.Equal(Data{Value: 456}, data)
-	assert.NotEmpty(output.String())
 	assert.True(optionCalled)
 }
 
@@ -117,7 +112,9 @@ func testForViperNil(t *testing.T) {
 	)
 
 	app := fx.New(
-		TestLogger(t),
+		fx.WithLogger(func() fxevent.Logger {
+			return fxtest.NewTestLogger(t)
+		}),
 		ForViper(nil),
 		fx.Populate(&unmarshaler),
 	)
@@ -136,7 +133,9 @@ func testForViperNoOptions(t *testing.T) {
 
 	fxtest.New(
 		t,
-		TestLogger(t),
+		fx.WithLogger(func() fxevent.Logger {
+			return fxtest.NewTestLogger(t)
+		}),
 		ForViper(v),
 		fx.Populate(&unmarshaler),
 	)
@@ -145,7 +144,6 @@ func testForViperNoOptions(t *testing.T) {
 	require.True(ok)
 	assert.True(v == vu.Viper)
 	assert.Empty(vu.Options)
-	assert.NotNil(vu.Printer)
 }
 
 func testForViperWithOptions(t *testing.T) {
@@ -169,7 +167,9 @@ func testForViperWithOptions(t *testing.T) {
 
 	fxtest.New(
 		t,
-		TestLogger(t),
+		fx.WithLogger(func() fxevent.Logger {
+			return fxtest.NewTestLogger(t)
+		}),
 		ForViper(v, option1),
 		fx.Provide(
 			func() []viper.DecoderConfigOption {
@@ -183,7 +183,6 @@ func testForViperWithOptions(t *testing.T) {
 	require.True(ok)
 	assert.True(v == vu.Viper)
 	assert.Len(vu.Options, 2)
-	assert.NotNil(vu.Printer)
 
 	vu.Unmarshal(nil)
 	assert.True(option1Called)

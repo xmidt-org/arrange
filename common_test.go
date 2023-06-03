@@ -16,13 +16,6 @@ type TestConfig struct {
 // TestConfigs need to be read from viper.
 type AnotherConfig TestConfig
 
-// badWriter is an io.Writer that always returns an error
-type badWriter struct{}
-
-func (ae badWriter) Write([]byte) (int, error) {
-	return 0, errors.New("expected io.Writer error")
-}
-
 type badUnmarshaler struct{}
 
 func (bu badUnmarshaler) Unmarshal(interface{}) error {

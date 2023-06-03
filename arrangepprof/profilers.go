@@ -10,8 +10,6 @@ import (
 	"go.uber.org/fx"
 )
 
-const module = "Arrange PPROF"
-
 var (
 	// ErrAlreadyProfiling indicates that a CPU profile to a particular path
 	// has already been started

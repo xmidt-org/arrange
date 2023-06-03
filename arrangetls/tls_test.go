@@ -7,7 +7,6 @@ import (
 	"crypto/x509/pkix"
 	"errors"
 	"fmt"
-	"io/ioutil"
 	"math/big"
 	"math/rand"
 	"os"
@@ -486,7 +485,7 @@ func testExternalCertPoolMissingFile(t *testing.T) {
 
 func testExternalCertPoolInvalidFile(t *testing.T) {
 	require := require.New(t)
-	invalidFile, err := ioutil.TempFile("", "invalid.*.cert")
+	invalidFile, err := os.CreateTemp("", "invalid.*.cert")
 	require.NoError(err)
 
 	defer os.Remove(invalidFile.Name())

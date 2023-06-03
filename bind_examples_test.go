@@ -5,6 +5,8 @@ import (
 	"fmt"
 
 	"go.uber.org/fx"
+	"go.uber.org/fx/fxevent"
+	"go.uber.org/zap"
 )
 
 func ExampleBind() {
@@ -12,7 +14,9 @@ func ExampleBind() {
 	var value int
 
 	fx.New(
-		DiscardLogger(),
+		fx.WithLogger(func() fxevent.Logger {
+			return &fxevent.ZapLogger{Logger: zap.NewNop()}
+		}),
 		fx.Provide(
 			func() []byte {
 				// an example of a component created in the normal fashion

@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/fx"
+	"go.uber.org/fx/fxevent"
 	"go.uber.org/fx/fxtest"
 )
 
@@ -26,7 +27,9 @@ func testUnmarshalSuccess(t *testing.T) {
 
 	fxtest.New(
 		t,
-		TestLogger(t),
+		fx.WithLogger(func() fxevent.Logger {
+			return fxtest.NewTestLogger(t)
+		}),
 		ForViper(v),
 		fx.Provide(
 			Unmarshal(TestConfig{}),
@@ -55,7 +58,9 @@ func testUnmarshalError(t *testing.T) {
 	t.Log("EXPECTED ERROR OUTPUT:")
 
 	app := fx.New(
-		TestLogger(t),
+		fx.WithLogger(func() fxevent.Logger {
+			return fxtest.NewTestLogger(t)
+		}),
 		fx.Provide(
 			func() Unmarshaler {
 				return badUnmarshaler{}
@@ -86,7 +91,9 @@ func testUnmarshalKeySuccess(t *testing.T) {
 
 	fxtest.New(
 		t,
-		TestLogger(t),
+		fx.WithLogger(func() fxevent.Logger {
+			return fxtest.NewTestLogger(t)
+		}),
 		ForViper(v),
 		fx.Provide(
 			UnmarshalKey("test", TestConfig{}),
@@ -115,7 +122,9 @@ func testUnmarshalKeyError(t *testing.T) {
 	t.Log("EXPECTED ERROR OUTPUT:")
 
 	app := fx.New(
-		TestLogger(t),
+		fx.WithLogger(func() fxevent.Logger {
+			return fxtest.NewTestLogger(t)
+		}),
 		fx.Provide(
 			func() Unmarshaler {
 				return badUnmarshaler{}
@@ -154,7 +163,9 @@ age: 64
 
 	fxtest.New(
 		t,
-		TestLogger(t),
+		fx.WithLogger(func() fxevent.Logger {
+			return fxtest.NewTestLogger(t)
+		}),
 		ForViper(v),
 		Provide(TestConfig{Interval: 15 * time.Second}),
 		Provide(&AnotherConfig{Interval: 17 * time.Hour}),
@@ -202,7 +213,9 @@ nosuch: asdfasdfasdf
 	t.Log("EXPECTED ERROR OUTPUT:")
 
 	app := fx.New(
-		TestLogger(t),
+		fx.WithLogger(func() fxevent.Logger {
+			return fxtest.NewTestLogger(t)
+		}),
 		ForViper(v, Exact),
 		Provide(TestConfig{}),
 		fx.Populate(&value),
@@ -250,7 +263,9 @@ test3:
 
 	fxtest.New(
 		t,
-		TestLogger(t),
+		fx.WithLogger(func() fxevent.Logger {
+			return fxtest.NewTestLogger(t)
+		}),
 		ForViper(v),
 		ProvideKey("test1", TestConfig{Interval: 15 * time.Second}),
 		ProvideKey("test2", &TestConfig{Interval: 23 * time.Minute}),
@@ -302,7 +317,9 @@ test:
 	t.Log("EXPECTED ERROR OUTPUT:")
 
 	app := fx.New(
-		TestLogger(t),
+		fx.WithLogger(func() fxevent.Logger {
+			return fxtest.NewTestLogger(t)
+		}),
 		ForViper(v, Exact),
 		ProvideKey("test", TestConfig{}),
 		fx.Populate(&value),
@@ -366,7 +383,9 @@ test3:
 
 	fxtest.New(
 		t,
-		TestLogger(t),
+		fx.WithLogger(func() fxevent.Logger {
+			return fxtest.NewTestLogger(t)
+		}),
 		ForViper(v, global),
 		fx.Provide(
 			func() []viper.DecoderConfigOption {

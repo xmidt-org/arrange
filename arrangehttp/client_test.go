@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -174,7 +173,7 @@ func (suite *ClientTestSuite) checkClient(client *http.Client, request *http.Req
 
 	suite.Require().NotNil(response)
 	defer suite.NoError(response.Body.Close())
-	_, err = io.Copy(ioutil.Discard, response.Body)
+	_, err = io.Copy(io.Discard, response.Body)
 	suite.Require().NoError(err)
 
 	suite.Equal(299, response.StatusCode, "the server did not process the request")

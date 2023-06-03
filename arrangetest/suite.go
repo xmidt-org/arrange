@@ -11,6 +11,7 @@ import (
 	"github.com/stretchr/testify/suite"
 	"github.com/xmidt-org/arrange"
 	"go.uber.org/fx"
+	"go.uber.org/fx/fxevent"
 	"go.uber.org/fx/fxtest"
 )
 
@@ -127,7 +128,9 @@ func (suite *Suite) JSON(j interface{}) {
 // are the preferred way to create uber/fx App instances for testing.
 func (suite *Suite) Option() fx.Option {
 	return fx.Options(
-		arrange.TestLogger(suite.T()),
+		fx.WithLogger(func() fxevent.Logger {
+			return fxtest.NewTestLogger(suite.T())
+		}),
 		arrange.ForViper(suite.Viper()),
 	)
 }

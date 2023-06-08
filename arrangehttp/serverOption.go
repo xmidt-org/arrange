@@ -109,14 +109,21 @@ func AsServerOption(v any) ServerOption {
 	})
 }
 
-// BaseContext returns a server option that sets or replaces the http.Server.BaseContext function
+// ConnState returns a server option that sets or replaces the http.Server.ConnState function.
+func ConnState(fn func(net.Conn, http.ConnState)) ServerOption {
+	return AsServerOption(func(s *http.Server) {
+		s.ConnState = fn
+	})
+}
+
+// BaseContext returns a server option that sets or replaces the http.Server.BaseContext function.
 func BaseContext(fn func(net.Listener) context.Context) ServerOption {
 	return AsServerOption(func(s *http.Server) {
 		s.BaseContext = fn
 	})
 }
 
-// ConnContext returns a server option that sets or replaces the http.Server.ConnContext function
+// ConnContext returns a server option that sets or replaces the http.Server.ConnContext function.
 func ConnContext(fn func(context.Context, net.Conn) context.Context) ServerOption {
 	return AsServerOption(func(s *http.Server) {
 		s.ConnContext = fn

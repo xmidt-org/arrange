@@ -202,6 +202,24 @@ func (suite *ServerOptionSuite) TestServerOptions() {
 	})
 }
 
+func (suite *ServerOptionSuite) TestConnState() {
+	var (
+		called                = false
+		expectedConn net.Conn = new(net.IPConn)
+	)
+
+	suite.Require().NoError(
+		ConnState(func(actualConn net.Conn, cs http.ConnState) {
+			suite.Same(expectedConn, actualConn)
+			suite.Equal(http.StateNew, cs)
+			called = true
+		}).Apply(suite.expectedServer),
+	)
+
+	suite.expectedServer.ConnState(expectedConn, http.StateNew)
+	suite.True(called)
+}
+
 func (suite *ServerOptionSuite) TestBaseContext() {
 	type contextKey struct{}
 	expectedCtx := context.WithValue(context.Background(), contextKey{}, "yes")

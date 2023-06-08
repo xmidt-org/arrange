@@ -128,9 +128,9 @@ type ConnContextFunc interface {
 	~func(context.Context, net.Conn) context.Context
 }
 
-type connContextFuncs[CF ConnContextFunc] []CF
+type connContextFuncs[CCF ConnContextFunc] []CCF
 
-func (ccf connContextFuncs[CF]) build(ctx context.Context, c net.Conn) context.Context {
+func (ccf connContextFuncs[CCF]) build(ctx context.Context, c net.Conn) context.Context {
 	for _, fn := range ccf {
 		ctx = fn(ctx, c)
 	}
@@ -141,7 +141,7 @@ func (ccf connContextFuncs[CF]) build(ctx context.Context, c net.Conn) context.C
 // ConnContext returns a server option that sets or augments the http.Server.ConnContext function.
 // Any existing ConnContext on the server is merged with the given functions to create a single
 // ConnContext closure that uses each function to build the context for each server connection.
-func ConnContext[CF ConnContextFunc](ctxFns ...CF) ServerOption {
+func ConnContext[CCF ConnContextFunc](ctxFns ...CCF) ServerOption {
 	return AsServerOption(func(s *http.Server) {
 		size := len(ctxFns)
 		if size == 0 {
@@ -150,7 +150,7 @@ func ConnContext[CF ConnContextFunc](ctxFns ...CF) ServerOption {
 			size += 1
 		}
 
-		ccf := make(connContextFuncs[CF], 0, size)
+		ccf := make(connContextFuncs[CCF], 0, size)
 		if s.ConnContext != nil {
 			ccf = append(ccf, s.ConnContext)
 		}

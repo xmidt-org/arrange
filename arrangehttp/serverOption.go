@@ -123,10 +123,40 @@ func BaseContext(fn func(net.Listener) context.Context) ServerOption {
 	})
 }
 
-// ConnContext returns a server option that sets or replaces the http.Server.ConnContext function.
-func ConnContext(fn func(context.Context, net.Conn) context.Context) ServerOption {
+// ConnContextFunc is the type of function required by net/http.Server.ConnContext.
+type ConnContextFunc interface {
+	~func(context.Context, net.Conn) context.Context
+}
+
+type connContextFuncs[CF ConnContextFunc] []CF
+
+func (ccf connContextFuncs[CF]) build(ctx context.Context, c net.Conn) context.Context {
+	for _, fn := range ccf {
+		ctx = fn(ctx, c)
+	}
+
+	return ctx
+}
+
+// ConnContext returns a server option that sets or augments the http.Server.ConnContext function.
+// Any existing ConnContext on the server is merged with the given functions to create a single
+// ConnContext closure that uses each function to build the context for each server connection.
+func ConnContext[CF ConnContextFunc](ctxFns ...CF) ServerOption {
 	return AsServerOption(func(s *http.Server) {
-		s.ConnContext = fn
+		size := len(ctxFns)
+		if size == 0 {
+			return
+		} else if s.ConnContext != nil {
+			size += 1
+		}
+
+		ccf := make(connContextFuncs[CF], 0, size)
+		if s.ConnContext != nil {
+			ccf = append(ccf, s.ConnContext)
+		}
+
+		ccf = append(ccf, ctxFns...)
+		s.ConnContext = ccf.build
 	})
 }
 

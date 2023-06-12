@@ -10,7 +10,7 @@ require (
 	github.com/stretchr/testify v1.8.4
 	github.com/xmidt-org/httpaux v0.3.2
 	go.uber.org/dig v1.17.0
-	go.uber.org/fx v1.19.3
+	go.uber.org/fx v1.20.0
 	go.uber.org/multierr v1.11.0
 	go.uber.org/zap v1.24.0
 )

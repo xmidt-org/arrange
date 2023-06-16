@@ -116,10 +116,31 @@ func ConnState(fn func(net.Conn, http.ConnState)) ServerOption {
 	})
 }
 
+// BaseContextFunc is a composable type that is used to build http.Server.BaseContext functions.
+type BaseContextFunc interface {
+	~func(context.Context, net.Listener) context.Context
+}
+
+type baseContextFuncs[BCF BaseContextFunc] []BCF
+
+func (bcf baseContextFuncs[BCF]) build(l net.Listener) (ctx context.Context) {
+	ctx = context.Background()
+	for _, fn := range bcf {
+		ctx = fn(ctx, l)
+	}
+
+	return
+}
+
 // BaseContext returns a server option that sets or replaces the http.Server.BaseContext function.
-func BaseContext(fn func(net.Listener) context.Context) ServerOption {
+// Each individual context function is composed to produce the context for the given listener.
+func BaseContext[BCF BaseContextFunc](ctxFns ...BCF) ServerOption {
 	return AsServerOption(func(s *http.Server) {
-		s.BaseContext = fn
+		if len(ctxFns) > 0 {
+			bcf := make(baseContextFuncs[BCF], 0, len(ctxFns))
+			bcf = append(bcf, ctxFns...)
+			s.BaseContext = bcf.build
+		}
 	})
 }
 

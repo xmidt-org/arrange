@@ -5,9 +5,6 @@ import (
 	"crypto/tls"
 	"net"
 	"net/http"
-	"time"
-
-	"go.uber.org/fx"
 )
 
 // ListenerFactory is a strategy for creating net.Listener instances.  Since any applied
@@ -118,27 +115,6 @@ func CaptureListenAddress(ch chan<- net.Addr) ListenerConstructor {
 	}
 }
 
-// AwaitListenAddress waits for a net.Addr on a channel for a specified duration.
-// If no net address appears on the channel within the timeout, the given fail function
-// is called with a failure message and this function returns a nil net.Addr and false.
-//
-// This function is intended for tests that use CaptureListenAddress to obtain the
-// address of a server started on addresses like ":0".  Callers may pass t.Fatalf to fail
-// the test immediately or pass t.Errorf or t.Logf to continue with the test.
-// The second bool return can be used to indicate if an address was actually found on the channel.
-func AwaitListenAddress(fail func(string, ...interface{}), ch <-chan net.Addr, d time.Duration) (a net.Addr, ok bool) {
-	timer := time.NewTimer(d)
-	defer timer.Stop()
-	select {
-	case a = <-ch:
-		ok = true
-	case <-timer.C:
-		fail("No listen address returned within %s", d)
-	}
-
-	return
-}
-
 // DefaultListenerFactory is the default implementation of ListenerFactory.  The
 // zero value of this type is a valid factory.
 type DefaultListenerFactory struct {
@@ -170,53 +146,4 @@ func (f DefaultListenerFactory) Listen(ctx context.Context, server *http.Server)
 	}
 
 	return l, nil
-}
-
-// ServerExit is callback function run when the server exits its accept loop.
-// A ServerExit function must never panic, or server cleanup will be interrupted.
-type ServerExit func()
-
-// ShutdownOnExit returns a ServerExit strategy that calls the supplied
-// uber/fx Shutdowner when a server exits.  This ensures that if a given server
-// exits its accept loop, the entire fx.App is stopped.
-func ShutdownOnExit(shutdowner fx.Shutdowner, opts ...fx.ShutdownOption) ServerExit {
-	return func() {
-		shutdowner.Shutdown(opts...)
-	}
-}
-
-// Servable describes the behavior of an object that implements an accept loop.
-// *http.Server implements this interface.
-type Servable interface {
-	// Serve executes an accept loop using the given listener.  This method
-	// does not return until the listener is closed.
-	Serve(net.Listener) error
-}
-
-// Serve executes the given servable's accept loop using the supplied net.Listener.
-// This function can be run as a goroutine.
-//
-// Any onExit functions will be called when the server's accept loop exits.
-func Serve(s Servable, l net.Listener, onExit ...ServerExit) error {
-	defer func() {
-		for _, f := range onExit {
-			f()
-		}
-	}()
-
-	return s.Serve(l)
-}
-
-// ServerOnStart returns an fx.Hook.OnStart closure that starts the given server's
-// accept loop.
-func ServerOnStart(s *http.Server, f ListenerFactory, onExit ...ServerExit) func(context.Context) error {
-	return func(ctx context.Context) error {
-		listener, err := f.Listen(ctx, s)
-		if err != nil {
-			return err
-		}
-
-		go Serve(s, listener, onExit...)
-		return nil
-	}
 }

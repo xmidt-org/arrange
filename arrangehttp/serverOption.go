@@ -29,6 +29,7 @@ func (isote *InvalidServerOptionTypeError) Error() string {
 // ServerOption is a general-purpose modifier for an http.Server.  Typically, these will
 // created as value groups within an enclosing fx application.
 type ServerOption interface {
+	// Apply modifies the given server.
 	Apply(*http.Server) error
 }
 

@@ -166,16 +166,15 @@ func ProvideServerCustom[F ServerFactory, H http.Handler](serverName string, ext
 		}
 	}
 
-	prefix := serverName + "."
 	return fx.Options(
 		fx.Provide(
 			fx.Annotate(
 				ctor,
 				arrange.Tags().
-					OptionalName(prefix+"config").
-					OptionalName(prefix+"handler").
-					Group(prefix+"options").
-					OptionalName(prefix+"listener").
+					OptionalName(serverName+".config").
+					OptionalName(serverName+".handler").
+					Group(serverName+".options").
+					OptionalName(serverName+".listener").
 					ParamTags(),
 				arrange.Tags().Name(serverName).ResultTags(),
 			),
@@ -185,7 +184,7 @@ func ProvideServerCustom[F ServerFactory, H http.Handler](serverName string, ext
 				BindServer,
 				arrange.Tags().
 					Name(serverName).
-					OptionalName(prefix+"listener").
+					OptionalName(serverName+".listener").
 					ParamTags(),
 			),
 		),

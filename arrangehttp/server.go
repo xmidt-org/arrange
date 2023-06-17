@@ -10,6 +10,12 @@ import (
 	"go.uber.org/fx"
 )
 
+const (
+	// ServerAbnormalExitCode is the shutdown exit code, returned by the process,
+	// when an *http.Server exits with an error OTHER than ErrServerClosed.
+	ServerAbnormalExitCode = 255
+)
+
 var (
 	// ErrServerNameRequired indicates that ProvideServer or ProvideServerCustom was called
 	// with an empty server name.
@@ -55,55 +61,54 @@ func NewServerCustom[F ServerFactory, H http.Handler](sf F, h H, opts ...ServerO
 	return
 }
 
-func serve(server *http.Server, listener net.Listener, shutdowner fx.Shutdowner) {
-	defer shutdowner.Shutdown()
-	err := server.Serve(listener)
-	if !errors.Is(err, http.ErrServerClosed) {
-		// TODO
-	}
+func serve(server *http.Server, listener net.Listener) error {
+	return server.Serve(listener)
 }
 
-func listenAndServeTLS(server *http.Server, shutdowner fx.Shutdowner) {
-	defer shutdowner.Shutdown()
-	err := server.ListenAndServeTLS("", "") // certificates must be in the TLSConfig
-	if !errors.Is(err, http.ErrServerClosed) {
-		// TODO
-	}
+func listenAndServeTLS(server *http.Server, _ net.Listener) error {
+	return server.ListenAndServeTLS("", "") // certificates must be in the TLSConfig
 }
 
-func listenAndServe(server *http.Server, shutdowner fx.Shutdowner) {
-	defer shutdowner.Shutdown()
-	err := server.ListenAndServe()
-	if !errors.Is(err, http.ErrServerClosed) {
-		// TODO
-	}
+func listenAndServe(server *http.Server, _ net.Listener) error {
+	return server.ListenAndServe()
 }
 
 func newServerHook(server *http.Server, listener net.Listener, shutdowner fx.Shutdowner) (hook fx.Hook) {
+	lv := reflect.ValueOf(listener)
+
+	var startFunc func(*http.Server, net.Listener) error
+
 	switch {
-	case listener != nil:
-		hook = fx.StartHook(
-			func() {
-				go serve(server, listener, shutdowner)
-			},
-		)
+	// handle the case of a non-nil interface which is invalid (nil object underneath)
+	case lv.IsValid() && (lv.Kind() != reflect.Ptr || !lv.IsNil()):
+		startFunc = serve
 
 	case server.TLSConfig != nil:
-		hook = fx.StartHook(
-			func() {
-				go listenAndServeTLS(server, shutdowner)
-			},
-		)
+		startFunc = listenAndServeTLS
 
 	default:
-		hook = fx.StartHook(
-			func() {
-				go listenAndServe(server, shutdowner)
-			},
-		)
+		startFunc = listenAndServe
 	}
 
-	hook.OnStop = server.Shutdown
+	hook = fx.StartStopHook(
+		func() {
+			go func() {
+				var exitCode int
+				defer func() {
+					shutdowner.Shutdown(
+						fx.ExitCode(exitCode),
+					)
+				}()
+
+				err := startFunc(server, listener)
+				if !errors.Is(err, http.ErrServerClosed) {
+					exitCode = ServerAbnormalExitCode
+				}
+			}()
+		},
+		server.Shutdown,
+	)
+
 	return
 }
 

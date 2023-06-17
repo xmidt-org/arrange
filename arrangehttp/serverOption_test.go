@@ -222,9 +222,10 @@ func (suite *ServerOptionSuite) TestConnState() {
 
 func (suite *ServerOptionSuite) TestBaseContext() {
 	expectedListener := new(net.TCPListener)
+	type contextKey struct{}
 	expectedCtx := context.WithValue(
-		context.WithValue(context.Background(), "foo", "0"),
-		"bar", "1",
+		context.WithValue(context.Background(), contextKey{}, "0"),
+		contextKey{}, "1",
 	)
 
 	server := new(http.Server)
@@ -232,11 +233,11 @@ func (suite *ServerOptionSuite) TestBaseContext() {
 		BaseContext(
 			func(ctx context.Context, actualListener net.Listener) context.Context {
 				suite.Same(expectedListener, actualListener)
-				return context.WithValue(ctx, "foo", "0")
+				return context.WithValue(ctx, contextKey{}, "0")
 			},
 			func(ctx context.Context, actualListener net.Listener) context.Context {
 				suite.Same(expectedListener, actualListener)
-				return context.WithValue(ctx, "bar", "1")
+				return context.WithValue(ctx, contextKey{}, "1")
 			},
 		).Apply(server),
 	)

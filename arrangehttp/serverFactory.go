@@ -9,6 +9,12 @@ import (
 	"github.com/xmidt-org/arrange/arrangetls"
 )
 
+// ServerFactory is the strategy for instantiating an *http.Server.  ServerConfig is this
+// package's implementation of this interface, and allows a ServerFactory instance to be
+// read from an external source.
+//
+// A custom ServerFactory implementation can be injected and used via NewServerCustom
+// or ProvideServerCustom.
 type ServerFactory interface {
 	NewServer() (*http.Server, error)
 }
@@ -18,38 +24,38 @@ type ServerFactory interface {
 // be bootstrapped from external configuration.
 type ServerConfig struct {
 	// Network is the tcp network to listen on.  The default is "tcp".
-	Network string
+	Network string `json:"network" yaml:"network"`
 
 	// Address is the bind address of the server.  If unset, the server binds to
 	// the first port available.  In that case, CaptureListenAddress can be used
 	// to obtain the bind address for the server.
-	Address string
+	Address string `json:"address" yaml:"address"`
 
 	// ReadTimeout corresponds to http.Server.ReadTimeout
-	ReadTimeout time.Duration
+	ReadTimeout time.Duration `json:"readTimeout" yaml:"readTimeout"`
 
 	// ReadHeaderTimeout corresponds to http.Server.ReadHeaderTimeout
-	ReadHeaderTimeout time.Duration
+	ReadHeaderTimeout time.Duration `json:"readHeaderTimeout" yaml:"readHeaderTimeout"`
 
 	// WriteTime corresponds to http.Server.WriteTimeout
-	WriteTimeout time.Duration
+	WriteTimeout time.Duration `json:"writeTimeout" yaml:"writeTimeout"`
 
 	// IdleTimeout corresponds to http.Server.IdleTimeout
-	IdleTimeout time.Duration
+	IdleTimeout time.Duration `json:"idleTimeout" yaml:"idleTimeout"`
 
 	// MaxHeaderBytes corresponds to http.Server.MaxHeaderBytes
-	MaxHeaderBytes int
+	MaxHeaderBytes int `json:"maxHeaderBytes" yaml:"maxHeaderBytes"`
 
 	// KeepAlive corresponds to net.ListenConfig.KeepAlive.  This value is
 	// only used for listeners created via Listen.
-	KeepAlive time.Duration
+	KeepAlive time.Duration `json:"keepAlive" yaml:"keepAlive"`
 
 	// Header supplies HTTP headers to emit on every response from this server
-	Header http.Header
+	Header http.Header `json:"header" yaml:"header"`
 
 	// TLS is the optional unmarshaled TLS configuration.  If set, the resulting
 	// server will use HTTPS.
-	TLS *arrangetls.Config
+	TLS *arrangetls.Config `json:"tls" yaml:"tls"`
 }
 
 // NewServer is the built-in implementation of ServerFactory in this package.

@@ -129,13 +129,11 @@ func BindServer(server *http.Server, listener net.Listener, lifecycle fx.Lifecyc
 // The serverName parameter is used as both the name of the *http.Server component and a prefix
 // for that server's dependencies:
 //
-// (1) NewServer is used to create the server as a component named serverName
-// (2) ServerConfig is an optional dependency with the name serverName+".config".  Making
-// this optional allows the provided server to take the package defaults for configuration.
-// (3) http.Handler is an optional dependency with the name serverName+".handler".  If not supplied,
-// http.DefaultServeMux is used, in keeping with the behavior of net/http.
-// (4) []ServerOption is an optional value group dependency with the name serverName+".options"
-// (5) net.Listener is an optional dependency with the name serverName+".listener"
+//   - NewServer is used to create the server as a component named serverName
+//   - ServerConfig is an optional dependency with the name serverName+".config"
+//   - http.Handler is an optional dependency with the name serverName+".handler"
+//   - []ServerOption is an optional value group dependency with the name serverName+".options"
+//   - net.Listener is an optional dependency with the name serverName+".listener"
 //
 // The external set of options, if supplied, is applied to the server after any injected options.
 // This allows for options that come from outside the enclosing fx.App, as might be the case

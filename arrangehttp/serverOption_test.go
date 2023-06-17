@@ -221,20 +221,29 @@ func (suite *ServerOptionSuite) TestConnState() {
 }
 
 func (suite *ServerOptionSuite) TestBaseContext() {
-	type contextKey struct{}
-	expectedCtx := context.WithValue(context.Background(), contextKey{}, "yes")
+	expectedListener := new(net.TCPListener)
+	expectedCtx := context.WithValue(
+		context.WithValue(context.Background(), "foo", "0"),
+		"bar", "1",
+	)
 
+	server := new(http.Server)
 	suite.Require().NoError(
-		BaseContext(func(net.Listener) context.Context {
-			return expectedCtx
-		}).Apply(suite.expectedServer),
+		BaseContext(
+			func(ctx context.Context, actualListener net.Listener) context.Context {
+				suite.Same(expectedListener, actualListener)
+				return context.WithValue(ctx, "foo", "0")
+			},
+			func(ctx context.Context, actualListener net.Listener) context.Context {
+				suite.Same(expectedListener, actualListener)
+				return context.WithValue(ctx, "bar", "1")
+			},
+		).Apply(server),
 	)
 
-	suite.Require().NotNil(suite.expectedServer.BaseContext)
-	suite.Same(
-		expectedCtx,
-		suite.expectedServer.BaseContext(nil),
-	)
+	suite.Require().NotNil(server.BaseContext)
+	actualCtx := server.BaseContext(expectedListener)
+	suite.Equal(expectedCtx, actualCtx)
 }
 
 func (suite *ServerOptionSuite) TestConnContext() {

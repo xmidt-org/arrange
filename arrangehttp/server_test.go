@@ -80,6 +80,16 @@ func (suite *ServerSuite) TestNewServer() {
 	suite.Equal(":1234", server.Addr)
 }
 
+func (suite *ServerSuite) TestProvideServer() {
+	app := fxtest.New(
+		suite.T(),
+		ProvideServer("main"),
+	)
+
+	app.RequireStart()
+	app.RequireStop()
+}
+
 func TestServer(t *testing.T) {
 	suite.Run(t, new(ServerSuite))
 }

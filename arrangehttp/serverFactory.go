@@ -20,8 +20,8 @@ type ServerFactory interface {
 }
 
 // ServerConfig is the built-in ServerFactory implementation for this package.
-// This struct can be unmarshaled via Viper, thus allowing an http.Server to
-// be bootstrapped from external configuration.
+// This struct can be unmarshaled from an external source, or supplied literally
+// to the *fx.App.
 type ServerConfig struct {
 	// Network is the tcp network to listen on.  The default is "tcp".
 	Network string `json:"network" yaml:"network"`

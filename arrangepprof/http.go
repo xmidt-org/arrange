@@ -6,7 +6,6 @@ import (
 	rpprof "runtime/pprof"
 
 	"github.com/gorilla/mux"
-	"github.com/xmidt-org/arrange"
 	"go.uber.org/fx"
 )
 
@@ -61,7 +60,7 @@ func (hr *HTTP) buildRouterIn() reflect.Type {
 	fields := []reflect.StructField{
 		{
 			Name:      "In",
-			Type:      arrange.Type[fx.In](),
+			Type:      reflect.TypeOf(fx.In{}),
 			Anonymous: true,
 		},
 		{

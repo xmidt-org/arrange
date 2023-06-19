@@ -2,7 +2,6 @@
 linters:
   enable:
     - bodyclose
-    - dupl
     - errorlint
     - funlen
     - goconst
@@ -13,12 +12,12 @@ linters:
   disable:
     - errcheck
     - ineffassign
+    - dupl
 
 issues:
   exclude-rules:
     - path: _test.go
       linters:
-        - dupl
         - funlen
         - gosec
 

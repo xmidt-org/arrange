@@ -5,8 +5,8 @@ package arrangereflect
 //
 // Decorators are executed in the order they are passed to this function.
 func Decorate[T any, D ~func(T) T](t T, d ...D) T {
-	for i := len(d); i >= 0; i-- {
-		t = d[i](t)
+	for i := len(d); i > 0; i-- {
+		t = d[i-1](t)
 	}
 
 	return t

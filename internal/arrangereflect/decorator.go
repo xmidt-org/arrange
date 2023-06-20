@@ -1,4 +1,4 @@
-package arrange
+package arrangereflect
 
 // Decorate handles the general case of decorating an object T.
 // The principal use case is for middleware.

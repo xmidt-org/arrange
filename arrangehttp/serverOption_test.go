@@ -247,27 +247,71 @@ func (suite *ServerOptionSuite) TestBaseContext() {
 	suite.Equal(expectedCtx, actualCtx)
 }
 
-func (suite *ServerOptionSuite) TestConnContext() {
+func (suite *ServerOptionSuite) testConnContextSimple() {
 	type baseKey struct{}
 	type connKey struct{}
 
 	var (
-		baseCtx = context.WithValue(context.Background(), baseKey{}, "yes")
-		connCtx = context.WithValue(baseCtx, connKey{}, "yes")
+		baseCtx     = context.WithValue(context.Background(), baseKey{}, "base")
+		expectedCtx = context.WithValue(baseCtx, connKey{}, "conn")
 	)
 
 	suite.Require().NoError(
 		ConnContext(func(ctx context.Context, _ net.Conn) context.Context {
-			suite.Same(baseCtx, ctx)
-			return connCtx
+			return context.WithValue(ctx, connKey{}, "conn")
 		}).Apply(suite.expectedServer),
 	)
 
 	suite.Require().NotNil(suite.expectedServer.ConnContext)
-	suite.Same(
-		connCtx,
+	suite.Equal(
+		expectedCtx,
 		suite.expectedServer.ConnContext(baseCtx, nil),
 	)
+}
+
+func (suite *ServerOptionSuite) testConnContextExisting() {
+	type existingKey struct{}
+	type baseKey struct{}
+	type connKey1 struct{}
+	type connKey2 struct{}
+
+	var (
+		baseCtx     = context.WithValue(context.Background(), baseKey{}, "base")
+		expectedCtx = context.WithValue(
+			context.WithValue(
+				context.WithValue(baseCtx, existingKey{}, "existing"),
+				connKey1{},
+				"conn1",
+			),
+			connKey2{},
+			"conn2",
+		)
+	)
+
+	suite.expectedServer.ConnContext = func(ctx context.Context, c net.Conn) context.Context {
+		return context.WithValue(ctx, existingKey{}, "existing")
+	}
+
+	suite.Require().NoError(
+		ConnContext(
+			func(ctx context.Context, _ net.Conn) context.Context {
+				return context.WithValue(ctx, connKey1{}, "conn1")
+			},
+			func(ctx context.Context, _ net.Conn) context.Context {
+				return context.WithValue(ctx, connKey2{}, "conn2")
+			},
+		).Apply(suite.expectedServer),
+	)
+
+	suite.Require().NotNil(suite.expectedServer.ConnContext)
+	suite.Equal(
+		expectedCtx,
+		suite.expectedServer.ConnContext(baseCtx, nil),
+	)
+}
+
+func (suite *ServerOptionSuite) TestConnContext() {
+	suite.Run("Simple", suite.testConnContextSimple)
 }
 
 func (suite *ServerOptionSuite) TestErrorLog() {
@@ -283,6 +327,56 @@ func (suite *ServerOptionSuite) TestErrorLog() {
 	suite.Require().NotNil(suite.expectedServer.ErrorLog)
 	suite.expectedServer.ErrorLog.Printf("an error")
 	suite.NotEmpty(output.String())
+}
+
+func (suite *ServerOptionSuite) testServerMiddlewareNoHandler() {
+	var (
+		s = new(http.Server)
+	)
+
+	ServerOptions{
+		ServerMiddleware(
+			func(h http.Handler) http.Handler {
+				return h
+			},
+			func(h http.Handler) http.Handler {
+				return h
+			},
+		),
+	}.Apply(s)
+
+	suite.Same(
+		http.DefaultServeMux,
+		s.Handler,
+	)
+}
+
+func (suite *ServerOptionSuite) testServerMiddlewareWithHandler() {
+	var (
+		expected = new(http.ServeMux)
+
+		s = &http.Server{
+			Handler: expected,
+		}
+	)
+
+	ServerOptions{
+		ServerMiddleware(
+			func(h http.Handler) http.Handler {
+				return h
+			},
+			func(h http.Handler) http.Handler {
+				return h
+			},
+		),
+	}.Apply(s)
+
+	suite.Same(expected, s.Handler)
+}
+
+func (suite *ServerOptionSuite) TestServerMiddleware() {
+	suite.Run("NoHandler", suite.testServerMiddlewareNoHandler)
+	suite.Run("WithHandler", suite.testServerMiddlewareWithHandler)
 }
 
 func TestServerOption(t *testing.T) {

@@ -5,7 +5,7 @@ import (
 	"reflect"
 	"strings"
 
-	"github.com/xmidt-org/arrange"
+	"github.com/xmidt-org/arrange/internal/arrangereflect"
 	"go.uber.org/multierr"
 )
 
@@ -118,8 +118,8 @@ type ClientMiddlewareFunc interface {
 // to the Transport (http.RoundTripper).
 func ClientMiddleware[M ClientMiddlewareFunc](fns ...M) ClientOption {
 	return AsClientOption(func(c *http.Client) {
-		c.Transport = arrange.Decorate(
-			arrange.Safe[http.RoundTripper](c.Transport, http.DefaultTransport),
+		c.Transport = arrangereflect.Decorate(
+			arrangereflect.Safe[http.RoundTripper](c.Transport, http.DefaultTransport),
 			fns...,
 		)
 	})

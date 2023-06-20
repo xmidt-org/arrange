@@ -8,7 +8,7 @@ import (
 	"reflect"
 	"strings"
 
-	"github.com/xmidt-org/arrange"
+	"github.com/xmidt-org/arrange/internal/arrangereflect"
 	"go.uber.org/multierr"
 )
 
@@ -199,8 +199,8 @@ type ServerMiddlewareFunc interface {
 // to a server's handler.
 func ServerMiddleware[M ServerMiddlewareFunc](fns ...M) ServerOption {
 	return AsServerOption(func(s *http.Server) {
-		s.Handler = arrange.Decorate(
-			arrange.Safe[http.Handler](s.Handler, http.DefaultServeMux),
+		s.Handler = arrangereflect.Decorate(
+			arrangereflect.Safe[http.Handler](s.Handler, http.DefaultServeMux),
 			fns...,
 		)
 	})

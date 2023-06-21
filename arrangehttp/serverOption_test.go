@@ -340,6 +340,56 @@ func (suite *ServerOptionSuite) TestErrorLog() {
 	suite.NotEmpty(output.String())
 }
 
+func (suite *ServerOptionSuite) testServerMiddlewareNoHandler() {
+	var (
+		s = new(http.Server)
+	)
+
+	ServerOptions{
+		ServerMiddleware(
+			func(h http.Handler) http.Handler {
+				return h
+			},
+			func(h http.Handler) http.Handler {
+				return h
+			},
+		),
+	}.Apply(s)
+
+	suite.Same(
+		http.DefaultServeMux,
+		s.Handler,
+	)
+}
+
+func (suite *ServerOptionSuite) testServerMiddlewareWithHandler() {
+	var (
+		expected = new(http.ServeMux)
+
+		s = &http.Server{
+			Handler: expected,
+		}
+	)
+
+	ServerOptions{
+		ServerMiddleware(
+			func(h http.Handler) http.Handler {
+				return h
+			},
+			func(h http.Handler) http.Handler {
+				return h
+			},
+		),
+	}.Apply(s)
+
+	suite.Same(expected, s.Handler)
+}
+
+func (suite *ServerOptionSuite) TestServerMiddleware() {
+	suite.Run("NoHandler", suite.testServerMiddlewareNoHandler)
+	suite.Run("WithHandler", suite.testServerMiddlewareWithHandler)
+}
+
 func TestServerOption(t *testing.T) {
 	suite.Run(t, new(ServerOptionSuite))
 }

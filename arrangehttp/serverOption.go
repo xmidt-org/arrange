@@ -8,6 +8,7 @@ import (
 	"reflect"
 	"strings"
 
+	"github.com/xmidt-org/arrange/internal/arrangereflect"
 	"go.uber.org/multierr"
 )
 
@@ -186,5 +187,21 @@ func ConnContext[CCF ConnContextFunc](ctxFns ...CCF) ServerOption {
 func ErrorLog(l *log.Logger) ServerOption {
 	return AsServerOption(func(s *http.Server) {
 		s.ErrorLog = l
+	})
+}
+
+// ServerMiddlewareFunc is the underlying type for any serverside middleware.
+type ServerMiddlewareFunc interface {
+	~func(http.Handler) http.Handler
+}
+
+// ServerMiddleware returns an option that applies any number of middleware functions
+// to a server's handler.
+func ServerMiddleware[M ServerMiddlewareFunc](fns ...M) ServerOption {
+	return AsServerOption(func(s *http.Server) {
+		s.Handler = arrangereflect.Decorate(
+			arrangereflect.Safe[http.Handler](s.Handler, http.DefaultServeMux),
+			fns...,
+		)
 	})
 }

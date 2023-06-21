@@ -5,6 +5,7 @@ import (
 	"reflect"
 	"strings"
 
+	"github.com/xmidt-org/arrange/internal/arrangereflect"
 	"go.uber.org/multierr"
 )
 
@@ -105,5 +106,21 @@ func AsClientOption(v any) ClientOption {
 		return &InvalidClientOptionTypeError{
 			Type: reflect.TypeOf(v),
 		}
+	})
+}
+
+// ClientMiddlewareFunc is the underlying type for round tripper decoration.
+type ClientMiddlewareFunc interface {
+	~func(http.RoundTripper) http.RoundTripper
+}
+
+// ClientMiddleware returns a ClientOption that applies the given middleware
+// to the Transport (http.RoundTripper).
+func ClientMiddleware[M ClientMiddlewareFunc](fns ...M) ClientOption {
+	return AsClientOption(func(c *http.Client) {
+		c.Transport = arrangereflect.Decorate(
+			arrangereflect.Safe[http.RoundTripper](c.Transport, http.DefaultTransport),
+			fns...,
+		)
 	})
 }

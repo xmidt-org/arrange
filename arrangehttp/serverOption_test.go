@@ -4,9 +4,11 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"log"
 	"net"
 	"net/http"
+	"strconv"
 	"testing"
 
 	"github.com/stretchr/testify/suite"
@@ -247,27 +249,80 @@ func (suite *ServerOptionSuite) TestBaseContext() {
 	suite.Equal(expectedCtx, actualCtx)
 }
 
+func (suite *ServerOptionSuite) testConnContextNoInitial(count int) {
+	type ctxKey struct{}
+	expectedCtx := context.Background()
+
+	s := &http.Server{
+		ConnContext: nil, // start with no initial function
+	}
+
+	var fns []func(context.Context, net.Conn) context.Context
+	for i := 0; i < count; i++ {
+		i := i
+		expectedCtx = context.WithValue(expectedCtx, ctxKey{}, strconv.Itoa(i))
+		fns = append(fns, func(ctx context.Context, c net.Conn) context.Context {
+			return context.WithValue(ctx, ctxKey{}, strconv.Itoa(i))
+		})
+	}
+
+	suite.NoError(
+		ConnContext(fns...).Apply(s),
+	)
+
+	if count > 0 {
+		suite.Require().NotNil(s.ConnContext)
+		actualCtx := s.ConnContext(context.Background(), nil) // connection doesn't matter
+		suite.Equal(expectedCtx, actualCtx)
+	} else {
+		suite.Nil(s.ConnContext)
+	}
+}
+
+func (suite *ServerOptionSuite) testConnContextWithInitial(count int) {
+	type ctxKey struct{}
+	expectedCtx := context.WithValue(context.Background(), ctxKey{}, "initial")
+
+	s := &http.Server{
+		ConnContext: func(ctx context.Context, _ net.Conn) context.Context {
+			return context.WithValue(ctx, ctxKey{}, "initial")
+		},
+	}
+
+	var fns []func(context.Context, net.Conn) context.Context
+	for i := 0; i < count; i++ {
+		i := i
+		expectedCtx = context.WithValue(expectedCtx, ctxKey{}, strconv.Itoa(i))
+		fns = append(fns, func(ctx context.Context, c net.Conn) context.Context {
+			return context.WithValue(ctx, ctxKey{}, strconv.Itoa(i))
+		})
+	}
+
+	suite.NoError(
+		ConnContext(fns...).Apply(s),
+	)
+
+	suite.Require().NotNil(s.ConnContext)
+	actualCtx := s.ConnContext(context.Background(), nil) // connection doesn't matter
+	suite.Equal(expectedCtx, actualCtx)
+}
+
 func (suite *ServerOptionSuite) TestConnContext() {
-	type baseKey struct{}
-	type connKey struct{}
+	suite.Run("NoInitial", func() {
+		for _, count := range []int{0, 1, 2, 5} {
+			suite.Run(fmt.Sprintf("count=%d", count), func() {
+				suite.testConnContextNoInitial(count)
+			})
+		}
+	})
 
-	var (
-		baseCtx = context.WithValue(context.Background(), baseKey{}, "yes")
-		connCtx = context.WithValue(baseCtx, connKey{}, "yes")
-	)
-
-	suite.Require().NoError(
-		ConnContext(func(ctx context.Context, _ net.Conn) context.Context {
-			suite.Same(baseCtx, ctx)
-			return connCtx
-		}).Apply(suite.expectedServer),
-	)
-
-	suite.Require().NotNil(suite.expectedServer.ConnContext)
-	suite.Same(
-		connCtx,
-		suite.expectedServer.ConnContext(baseCtx, nil),
-	)
+	suite.Run("WithInitial", func() {
+		for _, count := range []int{0, 1, 2, 5} {
+			suite.Run(fmt.Sprintf("count=%d", count), func() {
+				suite.testConnContextWithInitial(count)
+			})
+		}
+	})
 }
 
 func (suite *ServerOptionSuite) TestErrorLog() {

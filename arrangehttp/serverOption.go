@@ -39,7 +39,7 @@ type ServerOption interface {
 // ServerOptionFunc is a convenient function type that implements ServerOption.
 type ServerOptionFunc func(*http.Server) error
 
-// Apply invokes the function itself.
+// ApplyToServer invokes the function itself.
 func (sof ServerOptionFunc) ApplyToServer(s *http.Server) error { return sof(s) }
 
 // ServerOptions is an aggregate ServerOption that acts as a single option.
@@ -79,7 +79,7 @@ func (so *ServerOptions) Add(opts ...any) {
 //
 // Any of the following kinds of values can be converted:
 //   - any type that implements ServerOption
-//   - any type that supplies an Apply(*http.Server) method that returns no error
+//   - any type that supplies an ApplyToServer(*http.Server) method that returns no error
 //   - an underlying type of func(*http.Server)
 //   - an underlying type of func(*http.Server) error
 //

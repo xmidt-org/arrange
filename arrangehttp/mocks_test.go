@@ -6,7 +6,6 @@ import (
 	"github.com/stretchr/testify/mock"
 )
 
-// mockOption is a mock for both server and client options.
 type mockOption struct {
 	mock.Mock
 }
@@ -17,7 +16,7 @@ func (m *mockOption) ApplyToServer(s *http.Server) error {
 }
 
 func (m *mockOption) ExpectApplyToServer(s *http.Server) *mock.Call {
-	return m.On("Apply", s)
+	return m.On("ApplyToServer", s)
 }
 
 type mockOptionNoError struct {
@@ -29,5 +28,5 @@ func (m *mockOptionNoError) ApplyToServer(s *http.Server) {
 }
 
 func (m *mockOptionNoError) ExpectApplyToServer(s *http.Server) *mock.Call {
-	return m.On("Apply", s)
+	return m.On("ApplyToServer", s)
 }

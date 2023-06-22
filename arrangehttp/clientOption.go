@@ -27,7 +27,8 @@ func (icote *InvalidClientOptionTypeError) Error() string {
 // ClientOption is a general-purpose modifier for an *http.Client.  Typically, these
 // will be created as value group within an enclosing *fx.App.
 type ClientOption interface {
-	// ApplyToClient modifies the given client.
+	// ApplyToClient modifies the given client.  This method can return an error to
+	// indicate that the option was incorrectly applied.
 	ApplyToClient(*http.Client) error
 }
 

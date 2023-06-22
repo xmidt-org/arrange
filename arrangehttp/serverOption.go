@@ -87,14 +87,14 @@ func (so *ServerOptions) Add(opts ...any) {
 // that the type cannot be converted.
 func AsServerOption(v any) ServerOption {
 	type serverOptionNoError interface {
-		Apply(*http.Server)
+		ApplyToServer(*http.Server)
 	}
 
 	if so, ok := v.(ServerOption); ok {
 		return so
 	} else if so, ok := v.(serverOptionNoError); ok {
 		return ServerOptionFunc(func(s *http.Server) error {
-			so.Apply(s)
+			so.ApplyToServer(s)
 			return nil
 		})
 	} else if f, ok := v.(func(*http.Server) error); ok {

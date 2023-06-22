@@ -56,24 +56,6 @@ func (so ServerOptions) ApplyToServer(s *http.Server) (err error) {
 	return
 }
 
-// Add appends options to this slice.  Each value is converted to a ServerOption
-// via AsServerOption.
-func (so *ServerOptions) Add(opts ...any) {
-	if len(opts) == 0 {
-		return
-	}
-
-	if cap(*so) < (len(*so) + len(opts)) {
-		bigger := make(ServerOptions, 0, len(*so)+len(opts))
-		bigger = append(bigger, *so...)
-		*so = bigger
-	}
-
-	for _, o := range opts {
-		*so = append(*so, AsServerOption(o))
-	}
-}
-
 // AsServerOption converts a value into a ServerOption.  This function never returns nil
 // and does not panic if v cannot be converted.
 //
@@ -85,6 +67,12 @@ func (so *ServerOptions) Add(opts ...any) {
 //
 // Any other kind of value will result in a ServerOption that returns an error indicating
 // that the type cannot be converted.
+//
+// A common use case is to wrap a non-error closure:
+//
+//	arrangehttp.AsServerOption(func(s *http.Server) {
+//	  s.Addr = ":something"
+//	})
 func AsServerOption(v any) ServerOption {
 	type serverOptionNoError interface {
 		ApplyToServer(*http.Server)

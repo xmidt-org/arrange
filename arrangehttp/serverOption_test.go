@@ -8,6 +8,7 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"net/http/httptest"
 	"strconv"
 	"testing"
 
@@ -41,7 +42,7 @@ func (suite *AsServerOptionSuite) TestTrivial() {
 	expected.AssertExpectations(suite.T())
 }
 
-func (suite *AsServerOptionSuite) TestApplyNoError() {
+func (suite *AsServerOptionSuite) TestApplyToServerNoError() {
 	expected := new(mockOptionNoError)
 	wrapper := AsServerOption(expected)
 	suite.Require().NotNil(wrapper)
@@ -112,96 +113,71 @@ func (suite *ServerOptionSuite) TestServerOptionFunc() {
 	})
 }
 
+func (suite *ServerOptionSuite) testServerOptionsEmpty() {
+	suite.NoError(
+		ServerOptions{}.ApplyToServer(suite.expectedServer),
+	)
+}
+
+func (suite *ServerOptionSuite) testServerOptionsAllSuccess() {
+	mocks := []*mockOption{
+		new(mockOption),
+		new(mockOption),
+		new(mockOption),
+	}
+
+	mocks[0].ExpectApplyToServer(suite.expectedServer).Return(nil)
+	mocks[1].ExpectApplyToServer(suite.expectedServer).Return(nil)
+	mocks[2].ExpectApplyToServer(suite.expectedServer).Return(nil)
+
+	suite.NoError(
+		ServerOptions{
+			mocks[0], mocks[1], mocks[2],
+		}.ApplyToServer(suite.expectedServer),
+	)
+
+	mocks[0].AssertExpectations(suite.T())
+	mocks[1].AssertExpectations(suite.T())
+	mocks[2].AssertExpectations(suite.T())
+}
+
+func (suite *ServerOptionSuite) testServerOptionsAllFail() {
+	mocks := []*mockOption{
+		new(mockOption),
+		new(mockOption),
+		new(mockOption),
+	}
+
+	expectedErrors := []error{
+		errors.New("expected 0"),
+		errors.New("expected 1"),
+		errors.New("expected 2"),
+	}
+
+	mocks[0].ExpectApplyToServer(suite.expectedServer).Return(expectedErrors[0])
+	mocks[1].ExpectApplyToServer(suite.expectedServer).Return(expectedErrors[1])
+	mocks[2].ExpectApplyToServer(suite.expectedServer).Return(expectedErrors[2])
+
+	actualErrors := multierr.Errors(
+		ServerOptions{
+			mocks[0], mocks[1], mocks[2],
+		}.ApplyToServer(suite.expectedServer),
+	)
+
+	suite.Require().Len(actualErrors, len(expectedErrors))
+	suite.Same(expectedErrors[0], actualErrors[0])
+	suite.Same(expectedErrors[1], actualErrors[1])
+	suite.Same(expectedErrors[2], actualErrors[2])
+
+	mocks[0].AssertExpectations(suite.T())
+	mocks[1].AssertExpectations(suite.T())
+	mocks[2].AssertExpectations(suite.T())
+}
+
 func (suite *ServerOptionSuite) TestServerOptions() {
-	suite.Run("Empty", func() {
-		suite.NoError(
-			ServerOptions{}.ApplyToServer(suite.expectedServer),
-		)
-	})
-
-	suite.Run("AllSuccess", func() {
-		mocks := []*mockOption{
-			new(mockOption),
-			new(mockOption),
-			new(mockOption),
-		}
-
-		mocks[0].ExpectApplyToServer(suite.expectedServer).Return(nil)
-		mocks[1].ExpectApplyToServer(suite.expectedServer).Return(nil)
-		mocks[2].ExpectApplyToServer(suite.expectedServer).Return(nil)
-
-		suite.NoError(
-			ServerOptions{
-				mocks[0], mocks[1], mocks[2],
-			}.ApplyToServer(suite.expectedServer),
-		)
-
-		mocks[0].AssertExpectations(suite.T())
-		mocks[1].AssertExpectations(suite.T())
-		mocks[2].AssertExpectations(suite.T())
-	})
-
-	suite.Run("AllFail", func() {
-		mocks := []*mockOption{
-			new(mockOption),
-			new(mockOption),
-			new(mockOption),
-		}
-
-		expectedErrors := []error{
-			errors.New("expected 0"),
-			errors.New("expected 1"),
-			errors.New("expected 2"),
-		}
-
-		mocks[0].ExpectApplyToServer(suite.expectedServer).Return(expectedErrors[0])
-		mocks[1].ExpectApplyToServer(suite.expectedServer).Return(expectedErrors[1])
-		mocks[2].ExpectApplyToServer(suite.expectedServer).Return(expectedErrors[2])
-
-		actualErrors := multierr.Errors(
-			ServerOptions{
-				mocks[0], mocks[1], mocks[2],
-			}.ApplyToServer(suite.expectedServer),
-		)
-
-		suite.Require().Len(actualErrors, len(expectedErrors))
-		suite.Same(expectedErrors[0], actualErrors[0])
-		suite.Same(expectedErrors[1], actualErrors[1])
-		suite.Same(expectedErrors[2], actualErrors[2])
-
-		mocks[0].AssertExpectations(suite.T())
-		mocks[1].AssertExpectations(suite.T())
-		mocks[2].AssertExpectations(suite.T())
-	})
-
-	suite.Run("Add", func() {
-		var (
-			mock0 = new(mockOption)
-			mock1 = new(mockOption)
-			mock2 = new(mockOptionNoError)
-			mock3 = new(mockOptionNoError)
-
-			so ServerOptions
-		)
-
-		so.Add()
-		suite.Empty(so)
-
-		so.Add(mock0, mock1.ApplyToServer, mock2, mock3.ApplyToServer)
-		suite.Require().Len(so, 4)
-
-		mock0.ExpectApplyToServer(suite.expectedServer).Return(nil)
-		mock1.ExpectApplyToServer(suite.expectedServer).Return(nil)
-		mock2.ExpectApplyToServer(suite.expectedServer)
-		mock3.ExpectApplyToServer(suite.expectedServer)
-
-		suite.NoError(so.ApplyToServer(suite.expectedServer))
-
-		mock0.AssertExpectations(suite.T())
-		mock1.AssertExpectations(suite.T())
-		mock2.AssertExpectations(suite.T())
-		mock3.AssertExpectations(suite.T())
-	})
+	suite.Run("Empty", suite.testServerOptionsEmpty)
+	suite.Run("AllSuccess", suite.testServerOptionsAllSuccess)
+	suite.Run("AllFail", suite.testServerOptionsAllFail)
 }
 
 func (suite *ServerOptionSuite) TestConnState() {
@@ -340,54 +316,83 @@ func (suite *ServerOptionSuite) TestErrorLog() {
 	suite.NotEmpty(output.String())
 }
 
-func (suite *ServerOptionSuite) testServerMiddlewareNoHandler() {
+func (suite *ServerOptionSuite) testServerMiddleware(initialHandler http.Handler, count int) *httptest.ResponseRecorder {
 	var (
-		s = new(http.Server)
-	)
-
-	ServerOptions{
-		ServerMiddleware(
-			func(h http.Handler) http.Handler {
-				return h
-			},
-			func(h http.Handler) http.Handler {
-				return h
-			},
-		),
-	}.ApplyToServer(s)
-
-	suite.Same(
-		http.DefaultServeMux,
-		s.Handler,
-	)
-}
-
-func (suite *ServerOptionSuite) testServerMiddlewareWithHandler() {
-	var (
-		expected = new(http.ServeMux)
-
-		s = &http.Server{
-			Handler: expected,
+		current    = 0
+		middleware []func(http.Handler) http.Handler
+		s          = &http.Server{
+			Handler: initialHandler,
 		}
 	)
 
-	ServerOptions{
-		ServerMiddleware(
-			func(h http.Handler) http.Handler {
-				return h
-			},
-			func(h http.Handler) http.Handler {
-				return h
-			},
-		),
-	}.ApplyToServer(s)
+	for i := 0; i < count; i++ {
+		i := i
+		middleware = append(middleware, func(next http.Handler) http.Handler {
+			suite.Require().NotNil(next)
+			return http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+				suite.Equal(current, i)
+				current++
+				response.Header().Set(fmt.Sprintf("Middleware-%d", i), "true")
+				next.ServeHTTP(response, request)
+			})
+		})
+	}
 
-	suite.Same(expected, s.Handler)
+	ServerMiddleware(middleware...).ApplyToServer(s)
+	suite.Require().NotNil(s.Handler)
+
+	var (
+		request  = httptest.NewRequest("GET", "/", nil)
+		response = httptest.NewRecorder()
+	)
+
+	s.Handler.ServeHTTP(response, request)
+	suite.Equal(count, current)
+	for i := 0; i < count; i++ {
+		suite.Equal(
+			"true",
+			response.HeaderMap.Get(fmt.Sprintf("Middleware-%d", i)),
+		)
+	}
+
+	return response
+}
+
+func (suite *ServerOptionSuite) testServerMiddlewareNoHandler(count int) {
+	response := suite.testServerMiddleware(nil, count)
+	suite.Equal(404, response.Code) // uninitialized DefaultServeMux
+}
+
+func (suite *ServerOptionSuite) testServerMiddlewareWithHandler(count int) {
+	response := suite.testServerMiddleware(
+		http.HandlerFunc(func(response http.ResponseWriter, _ *http.Request) {
+			response.Header().Set("Handler", "true")
+		}),
+		count,
+	)
+
+	suite.Equal(
+		"true",
+		response.HeaderMap.Get("Handler"),
+	)
 }
 
 func (suite *ServerOptionSuite) TestServerMiddleware() {
-	suite.Run("NoHandler", suite.testServerMiddlewareNoHandler)
-	suite.Run("WithHandler", suite.testServerMiddlewareWithHandler)
+	suite.Run("NoHandler", func() {
+		for _, count := range []int{0, 1, 2, 5} {
+			suite.Run(fmt.Sprintf("count=%d", count), func() {
+				suite.testServerMiddlewareNoHandler(count)
+			})
+		}
+	})
+
+	suite.Run("WithHandler", func() {
+		for _, count := range []int{0, 1, 2, 5} {
+			suite.Run(fmt.Sprintf("count=%d", count), func() {
+				suite.testServerMiddlewareWithHandler(count)
+			})
+		}
+	})
 }
 
 func TestServerOption(t *testing.T) {

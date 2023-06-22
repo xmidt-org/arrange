@@ -53,24 +53,6 @@ func (co ClientOptions) ApplyToClient(c *http.Client) (err error) {
 	return
 }
 
-// Add appends options to this slice.  Each value is converted to a ClientOption
-// via AsClientOption.
-func (co *ClientOptions) Add(opts ...any) {
-	if len(opts) == 0 {
-		return
-	}
-
-	if cap(*co) < (len(*co) + len(opts)) {
-		bigger := make(ClientOptions, 0, len(*co)+len(opts))
-		bigger = append(bigger, *co...)
-		*co = bigger
-	}
-
-	for _, o := range opts {
-		*co = append(*co, AsClientOption(o))
-	}
-}
-
 // AsClientOption converts a value into a ClientOption.  This function never returns nil
 // and does not panic if v cannot be converted.
 //

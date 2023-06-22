@@ -106,10 +106,19 @@ func AsServerOption(v any) ServerOption {
 		})
 	}
 
-	return ServerOptionFunc(func(_ *http.Server) error {
-		return &InvalidServerOptionTypeError{
+	return InvalidServerOption(
+		&InvalidServerOptionTypeError{
 			Type: reflect.TypeOf(v),
-		}
+		},
+	)
+}
+
+// InvalidServerOption returns an option that simply returns the given error.
+// Useful in code where panics aren't desireable but indication of an error
+// still needs to be returned during server construction.
+func InvalidServerOption(err error) ServerOption {
+	return ServerOptionFunc(func(_ *http.Server) error {
+		return err
 	})
 }
 

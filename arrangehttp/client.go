@@ -20,7 +20,7 @@ var (
 //
 // This function can be used as an fx decorator for a client within the enclosing application.
 func ApplyClientOptions(client *http.Client, opts ...ClientOption) (*http.Client, error) {
-	err := ClientOptions(opts).Apply(client)
+	err := ClientOptions(opts).ApplyToClient(client)
 	return client, err
 }
 

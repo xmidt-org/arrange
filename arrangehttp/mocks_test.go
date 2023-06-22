@@ -6,27 +6,28 @@ import (
 	"github.com/stretchr/testify/mock"
 )
 
-type mockServerOption struct {
+// mockOption is a mock for both server and client options.
+type mockOption struct {
 	mock.Mock
 }
 
-func (m *mockServerOption) Apply(s *http.Server) error {
+func (m *mockOption) ApplyToServer(s *http.Server) error {
 	args := m.Called(s)
 	return args.Error(0)
 }
 
-func (m *mockServerOption) ExpectApply(s *http.Server) *mock.Call {
+func (m *mockOption) ExpectApplyToServer(s *http.Server) *mock.Call {
 	return m.On("Apply", s)
 }
 
-type mockServerOptionNoError struct {
+type mockOptionNoError struct {
 	mock.Mock
 }
 
-func (m *mockServerOptionNoError) Apply(s *http.Server) {
+func (m *mockOptionNoError) ApplyToServer(s *http.Server) {
 	m.Called(s)
 }
 
-func (m *mockServerOptionNoError) ExpectApply(s *http.Server) *mock.Call {
+func (m *mockOptionNoError) ExpectApplyToServer(s *http.Server) *mock.Call {
 	return m.On("Apply", s)
 }

@@ -30,25 +30,27 @@ func (isote *InvalidServerOptionTypeError) Error() string {
 // ServerOption is a general-purpose modifier for an http.Server.  Typically, these will
 // created as value groups within an enclosing fx application.
 type ServerOption interface {
-	// Apply modifies the given server.
-	Apply(*http.Server) error
+	// ApplyToServer modifies the given server.  This method may return an error
+	// to indicate that the option either made no sense given the state of the server
+	// or was incorrectly applied.
+	ApplyToServer(*http.Server) error
 }
 
 // ServerOptionFunc is a convenient function type that implements ServerOption.
 type ServerOptionFunc func(*http.Server) error
 
 // Apply invokes the function itself.
-func (sof ServerOptionFunc) Apply(s *http.Server) error { return sof(s) }
+func (sof ServerOptionFunc) ApplyToServer(s *http.Server) error { return sof(s) }
 
 // ServerOptions is an aggregate ServerOption that acts as a single option.
 type ServerOptions []ServerOption
 
-// Apply invokes each option in order.  Options are always invoked, even when
+// ApplyToServer invokes each option in order.  Options are always invoked, even when
 // one or more errors occur.  The returned error may be an aggregate error
 // and can always be inspected via go.uber.org/multierr.
-func (so ServerOptions) Apply(s *http.Server) (err error) {
+func (so ServerOptions) ApplyToServer(s *http.Server) (err error) {
 	for _, o := range so {
-		err = multierr.Append(err, o.Apply(s))
+		err = multierr.Append(err, o.ApplyToServer(s))
 	}
 
 	return

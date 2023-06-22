@@ -18,12 +18,12 @@ func (suite *ServerSuite) TestApplyServerOptions() {
 		expectedServer = new(http.Server)
 		actualServer   *http.Server
 
-		mock0 = new(mockServerOption)
-		mock1 = new(mockServerOption)
+		mock0 = new(mockOption)
+		mock1 = new(mockOption)
 	)
 
-	mock0.ExpectApply(expectedServer).Return(nil)
-	mock1.ExpectApply(expectedServer).Return(nil)
+	mock0.ExpectApplyToServer(expectedServer).Return(nil)
+	mock1.ExpectApplyToServer(expectedServer).Return(nil)
 
 	app := fxtest.New(
 		suite.T(),

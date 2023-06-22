@@ -28,7 +28,7 @@ var (
 //
 // This function can be used as an fx decorator for a server within the enclosing application.
 func ApplyServerOptions(server *http.Server, opts ...ServerOption) (*http.Server, error) {
-	err := ServerOptions(opts).Apply(server)
+	err := ServerOptions(opts).ApplyToServer(server)
 	return server, err
 }
 

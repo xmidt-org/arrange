@@ -27,22 +27,22 @@ var (
 // aggregate error which can be inspected via go.uber.org/multierr.
 //
 // This function can be used as an fx decorator for a server within the enclosing application.
-func ApplyServerOptions(server *http.Server, opts ...ServerOption) (*http.Server, error) {
-	err := ServerOptions(opts).ApplyToServer(server)
+func ApplyServerOptions(server *http.Server, opts ...Option[http.Server]) (*http.Server, error) {
+	err := Options[http.Server](opts).Apply(server)
 	return server, err
 }
 
 // NewServer is the primary server constructor for arrange.  Use this when you are creating a server
 // from a (possibly unmarshaled) ServerConfig.  The options can be annotated to come from a value group,
 // which is useful when there are multiple servers in a single fx.App.
-func NewServer(sc ServerConfig, h http.Handler, opts ...ServerOption) (*http.Server, error) {
+func NewServer(sc ServerConfig, h http.Handler, opts ...Option[http.Server]) (*http.Server, error) {
 	return NewServerCustom(sc, h, opts...)
 }
 
 // NewServerCustom is a server constructor that allows a client to customize the concrete
 // ServerFactory and http.Handler for the server.  This function is useful when you have a
 // custom (possibly unmarshaled) configuration struct that implements ServerFactory.
-func NewServerCustom[F ServerFactory, H http.Handler](sf F, h H, opts ...ServerOption) (s *http.Server, err error) {
+func NewServerCustom[F ServerFactory, H http.Handler](sf F, h H, opts ...Option[http.Server]) (s *http.Server, err error) {
 	s, err = sf.NewServer()
 	if err == nil {
 		// guard against both the http.Handler being nil and it being
@@ -141,13 +141,13 @@ func BindServer(server *http.Server, listener net.Listener, lifecycle fx.Lifecyc
 //
 // BindServer is used as an fx.Invoke function to bind the resulting server to the enclosing
 // application's lifecycle.
-func ProvideServer(serverName string, external ...ServerOption) fx.Option {
+func ProvideServer(serverName string, external ...Option[http.Server]) fx.Option {
 	return ProvideServerCustom[ServerConfig, http.Handler](serverName, external...)
 }
 
 // ProvideServerCustom is like ProvideServer, but it allows customization of the concrete
 // ServerFactory and http.Handler dependencies.
-func ProvideServerCustom[F ServerFactory, H http.Handler](serverName string, external ...ServerOption) fx.Option {
+func ProvideServerCustom[F ServerFactory, H http.Handler](serverName string, external ...Option[http.Server]) fx.Option {
 	if len(serverName) == 0 {
 		return fx.Error(ErrServerNameRequired)
 	}
@@ -156,7 +156,7 @@ func ProvideServerCustom[F ServerFactory, H http.Handler](serverName string, ext
 	// will call out that function in logs.
 	ctor := NewServerCustom[F, H]
 	if len(external) > 0 {
-		ctor = func(sf F, h H, injected ...ServerOption) (s *http.Server, err error) {
+		ctor = func(sf F, h H, injected ...Option[http.Server]) (s *http.Server, err error) {
 			s, err = NewServerCustom(sf, h, injected...)
 			if err == nil {
 				s, err = ApplyServerOptions(s, external...)

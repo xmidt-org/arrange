@@ -1,32 +1,30 @@
 package arrangehttp
 
 import (
-	"net/http"
-
 	"github.com/stretchr/testify/mock"
 )
 
-type mockServerOption struct {
+type mockOption[T any] struct {
 	mock.Mock
 }
 
-func (m *mockServerOption) Apply(s *http.Server) error {
-	args := m.Called(s)
+func (m *mockOption[T]) Apply(t *T) error {
+	args := m.Called(t)
 	return args.Error(0)
 }
 
-func (m *mockServerOption) ExpectApply(s *http.Server) *mock.Call {
-	return m.On("Apply", s)
+func (m *mockOption[T]) ExpectApply(t *T) *mock.Call {
+	return m.On("Apply", t)
 }
 
-type mockServerOptionNoError struct {
+type mockOptionNoError[T any] struct {
 	mock.Mock
 }
 
-func (m *mockServerOptionNoError) Apply(s *http.Server) {
-	m.Called(s)
+func (m *mockOptionNoError[T]) Apply(t *T) {
+	m.Called(t)
 }
 
-func (m *mockServerOptionNoError) ExpectApply(s *http.Server) *mock.Call {
-	return m.On("Apply", s)
+func (m *mockOptionNoError[T]) ExpectApply(t *T) *mock.Call {
+	return m.On("Apply", t)
 }

@@ -14,13 +14,21 @@ var (
 	ErrClientNameRequired = errors.New("A client name is required")
 )
 
+// RoundTripperFunc is a function type that implements http.RoundTripper.  Useful
+// when building client middleware.
+type RoundTripperFunc func(*http.Request) (*http.Response, error)
+
+func (rtf RoundTripperFunc) RoundTrip(request *http.Request) (*http.Response, error) {
+	return rtf(request)
+}
+
 // ApplyClientOptions executes options against a client.  The original client is returned, along
 // with any error(s) that occurred.  All options are executed, so the returned error may be an
 // aggregate error which can be inspected via go.uber.org/multierr.
 //
 // This function can be used as an fx decorator for a client within the enclosing application.
 func ApplyClientOptions(client *http.Client, opts ...ClientOption) (*http.Client, error) {
-	err := ClientOptions(opts).Apply(client)
+	err := ClientOptions(opts).ApplyToClient(client)
 	return client, err
 }
 

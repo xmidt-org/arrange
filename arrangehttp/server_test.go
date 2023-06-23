@@ -18,8 +18,8 @@ func (suite *ServerSuite) TestApplyServerOptions() {
 		expectedServer = new(http.Server)
 		actualServer   *http.Server
 
-		mock0 = new(mockServerOption)
-		mock1 = new(mockServerOption)
+		mock0 = new(mockOption[http.Server])
+		mock1 = new(mockOption[http.Server])
 	)
 
 	mock0.ExpectApply(expectedServer).Return(nil)
@@ -32,11 +32,11 @@ func (suite *ServerSuite) TestApplyServerOptions() {
 				return expectedServer
 			},
 			fx.Annotate(
-				func() ServerOption { return mock0 },
+				func() Option[http.Server] { return mock0 },
 				fx.ResultTags(`group:"options"`),
 			),
 			fx.Annotate(
-				func() ServerOption { return mock1 },
+				func() Option[http.Server] { return mock1 },
 				fx.ResultTags(`group:"options"`),
 			),
 		),

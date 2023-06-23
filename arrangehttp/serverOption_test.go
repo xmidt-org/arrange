@@ -3,205 +3,19 @@ package arrangehttp
 import (
 	"bytes"
 	"context"
-	"errors"
 	"fmt"
 	"log"
 	"net"
 	"net/http"
+	"net/http/httptest"
 	"strconv"
 	"testing"
 
 	"github.com/stretchr/testify/suite"
-	"go.uber.org/multierr"
 )
 
-type AsServerOptionSuite struct {
-	suite.Suite
-	expectedServer *http.Server
-}
-
-func (suite *AsServerOptionSuite) SetupTest() {
-	suite.expectedServer = new(http.Server)
-}
-
-func (suite *AsServerOptionSuite) TestInvalidType() {
-	o := AsServerOption(123)
-	suite.Require().NotNil(o)
-
-	var expectedErr *InvalidServerOptionTypeError
-	suite.ErrorAs(o.Apply(suite.expectedServer), &expectedErr)
-	suite.Require().NotNil(expectedErr)
-	suite.Require().NotNil(expectedErr.Type)
-	suite.NotEmpty(expectedErr.Error())
-}
-
-func (suite *AsServerOptionSuite) TestTrivial() {
-	expected := new(mockServerOption)
-	suite.Same(expected, AsServerOption(expected))
-	expected.AssertExpectations(suite.T())
-}
-
-func (suite *AsServerOptionSuite) TestApplyNoError() {
-	expected := new(mockServerOptionNoError)
-	wrapper := AsServerOption(expected)
-	suite.Require().NotNil(wrapper)
-
-	expected.ExpectApply(suite.expectedServer)
-	suite.NoError(wrapper.Apply(suite.expectedServer))
-	expected.AssertExpectations(suite.T())
-}
-
-func (suite *AsServerOptionSuite) TestClosure() {
-	expected := new(mockServerOption)
-	wrapper := AsServerOption(expected.Apply)
-	suite.Require().NotNil(wrapper)
-
-	expected.ExpectApply(suite.expectedServer).Return(nil)
-	suite.NoError(wrapper.Apply(suite.expectedServer))
-	expected.AssertExpectations(suite.T())
-}
-
-func (suite *AsServerOptionSuite) TestClosureNoError() {
-	expected := new(mockServerOptionNoError)
-	wrapper := AsServerOption(expected.Apply)
-	suite.Require().NotNil(wrapper)
-
-	expected.ExpectApply(suite.expectedServer)
-	suite.NoError(wrapper.Apply(suite.expectedServer))
-	expected.AssertExpectations(suite.T())
-}
-
-func TestAsServerOption(t *testing.T) {
-	suite.Run(t, new(AsServerOptionSuite))
-}
-
 type ServerOptionSuite struct {
-	suite.Suite
-	expectedServer *http.Server
-}
-
-func (suite *ServerOptionSuite) SetupTest() {
-	suite.expectedServer = new(http.Server)
-}
-
-func (suite *ServerOptionSuite) SetupSubTest() {
-	suite.expectedServer = new(http.Server)
-}
-
-func (suite *ServerOptionSuite) TestServerOptionFunc() {
-	suite.Run("NoError", func() {
-		f := ServerOptionFunc(func(actual *http.Server) error {
-			suite.Same(suite.expectedServer, actual)
-			return nil
-		})
-
-		suite.NoError(f(suite.expectedServer))
-	})
-
-	suite.Run("Error", func() {
-		expectedErr := errors.New("expected")
-		f := ServerOptionFunc(func(actual *http.Server) error {
-			suite.Same(suite.expectedServer, actual)
-			return expectedErr
-		})
-
-		suite.Same(
-			expectedErr,
-			f(suite.expectedServer),
-		)
-	})
-}
-
-func (suite *ServerOptionSuite) TestServerOptions() {
-	suite.Run("Empty", func() {
-		suite.NoError(
-			ServerOptions{}.Apply(suite.expectedServer),
-		)
-	})
-
-	suite.Run("AllSuccess", func() {
-		mocks := []*mockServerOption{
-			new(mockServerOption),
-			new(mockServerOption),
-			new(mockServerOption),
-		}
-
-		mocks[0].ExpectApply(suite.expectedServer).Return(nil)
-		mocks[1].ExpectApply(suite.expectedServer).Return(nil)
-		mocks[2].ExpectApply(suite.expectedServer).Return(nil)
-
-		suite.NoError(
-			ServerOptions{
-				mocks[0], mocks[1], mocks[2],
-			}.Apply(suite.expectedServer),
-		)
-
-		mocks[0].AssertExpectations(suite.T())
-		mocks[1].AssertExpectations(suite.T())
-		mocks[2].AssertExpectations(suite.T())
-	})
-
-	suite.Run("AllFail", func() {
-		mocks := []*mockServerOption{
-			new(mockServerOption),
-			new(mockServerOption),
-			new(mockServerOption),
-		}
-
-		expectedErrors := []error{
-			errors.New("expected 0"),
-			errors.New("expected 1"),
-			errors.New("expected 2"),
-		}
-
-		mocks[0].ExpectApply(suite.expectedServer).Return(expectedErrors[0])
-		mocks[1].ExpectApply(suite.expectedServer).Return(expectedErrors[1])
-		mocks[2].ExpectApply(suite.expectedServer).Return(expectedErrors[2])
-
-		actualErrors := multierr.Errors(
-			ServerOptions{
-				mocks[0], mocks[1], mocks[2],
-			}.Apply(suite.expectedServer),
-		)
-
-		suite.Require().Len(actualErrors, len(expectedErrors))
-		suite.Same(expectedErrors[0], actualErrors[0])
-		suite.Same(expectedErrors[1], actualErrors[1])
-		suite.Same(expectedErrors[2], actualErrors[2])
-
-		mocks[0].AssertExpectations(suite.T())
-		mocks[1].AssertExpectations(suite.T())
-		mocks[2].AssertExpectations(suite.T())
-	})
-
-	suite.Run("Add", func() {
-		var (
-			mock0 = new(mockServerOption)
-			mock1 = new(mockServerOption)
-			mock2 = new(mockServerOptionNoError)
-			mock3 = new(mockServerOptionNoError)
-
-			so ServerOptions
-		)
-
-		so.Add()
-		suite.Empty(so)
-
-		so.Add(mock0, mock1.Apply, mock2, mock3.Apply)
-		suite.Require().Len(so, 4)
-
-		mock0.ExpectApply(suite.expectedServer).Return(nil)
-		mock1.ExpectApply(suite.expectedServer).Return(nil)
-		mock2.ExpectApply(suite.expectedServer)
-		mock3.ExpectApply(suite.expectedServer)
-
-		suite.NoError(so.Apply(suite.expectedServer))
-
-		mock0.AssertExpectations(suite.T())
-		mock1.AssertExpectations(suite.T())
-		mock2.AssertExpectations(suite.T())
-		mock3.AssertExpectations(suite.T())
-	})
+	OptionSuite[http.Server]
 }
 
 func (suite *ServerOptionSuite) TestConnState() {
@@ -215,10 +29,10 @@ func (suite *ServerOptionSuite) TestConnState() {
 			suite.Same(expectedConn, actualConn)
 			suite.Equal(http.StateNew, cs)
 			called = true
-		}).Apply(suite.expectedServer),
+		}).Apply(suite.target),
 	)
 
-	suite.expectedServer.ConnState(expectedConn, http.StateNew)
+	suite.target.ConnState(expectedConn, http.StateNew)
 	suite.True(called)
 }
 
@@ -332,62 +146,91 @@ func (suite *ServerOptionSuite) TestErrorLog() {
 	)
 
 	suite.Require().NoError(
-		ErrorLog(errorLog).Apply(suite.expectedServer),
+		ErrorLog(errorLog).Apply(suite.target),
 	)
 
-	suite.Require().NotNil(suite.expectedServer.ErrorLog)
-	suite.expectedServer.ErrorLog.Printf("an error")
+	suite.Require().NotNil(suite.target.ErrorLog)
+	suite.target.ErrorLog.Printf("an error")
 	suite.NotEmpty(output.String())
 }
 
-func (suite *ServerOptionSuite) testServerMiddlewareNoHandler() {
+func (suite *ServerOptionSuite) testServerMiddleware(initialHandler http.Handler, count int) *httptest.ResponseRecorder {
 	var (
-		s = new(http.Server)
-	)
-
-	ServerOptions{
-		ServerMiddleware(
-			func(h http.Handler) http.Handler {
-				return h
-			},
-			func(h http.Handler) http.Handler {
-				return h
-			},
-		),
-	}.Apply(s)
-
-	suite.Same(
-		http.DefaultServeMux,
-		s.Handler,
-	)
-}
-
-func (suite *ServerOptionSuite) testServerMiddlewareWithHandler() {
-	var (
-		expected = new(http.ServeMux)
-
-		s = &http.Server{
-			Handler: expected,
+		current    = 0
+		middleware []func(http.Handler) http.Handler
+		s          = &http.Server{
+			Handler: initialHandler,
 		}
 	)
 
-	ServerOptions{
-		ServerMiddleware(
-			func(h http.Handler) http.Handler {
-				return h
-			},
-			func(h http.Handler) http.Handler {
-				return h
-			},
-		),
-	}.Apply(s)
+	for i := 0; i < count; i++ {
+		i := i
+		middleware = append(middleware, func(next http.Handler) http.Handler {
+			suite.Require().NotNil(next)
+			return http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+				suite.Equal(current, i)
+				current++
+				response.Header().Set(fmt.Sprintf("Middleware-%d", i), "true")
+				next.ServeHTTP(response, request)
+			})
+		})
+	}
 
-	suite.Same(expected, s.Handler)
+	ServerMiddleware(middleware...).Apply(s)
+	suite.Require().NotNil(s.Handler)
+
+	var (
+		request  = httptest.NewRequest("GET", "/", nil)
+		response = httptest.NewRecorder()
+	)
+
+	s.Handler.ServeHTTP(response, request)
+	suite.Equal(count, current)
+	for i := 0; i < count; i++ {
+		suite.Equal(
+			"true",
+			response.HeaderMap.Get(fmt.Sprintf("Middleware-%d", i)),
+		)
+	}
+
+	return response
+}
+
+func (suite *ServerOptionSuite) testServerMiddlewareNoHandler(count int) {
+	response := suite.testServerMiddleware(nil, count)
+	suite.Equal(404, response.Code) // uninitialized DefaultServeMux
+}
+
+func (suite *ServerOptionSuite) testServerMiddlewareWithHandler(count int) {
+	response := suite.testServerMiddleware(
+		http.HandlerFunc(func(response http.ResponseWriter, _ *http.Request) {
+			response.Header().Set("Handler", "true")
+		}),
+		count,
+	)
+
+	suite.Equal(
+		"true",
+		response.HeaderMap.Get("Handler"),
+	)
 }
 
 func (suite *ServerOptionSuite) TestServerMiddleware() {
-	suite.Run("NoHandler", suite.testServerMiddlewareNoHandler)
-	suite.Run("WithHandler", suite.testServerMiddlewareWithHandler)
+	suite.Run("NoHandler", func() {
+		for _, count := range []int{0, 1, 2, 5} {
+			suite.Run(fmt.Sprintf("count=%d", count), func() {
+				suite.testServerMiddlewareNoHandler(count)
+			})
+		}
+	})
+
+	suite.Run("WithHandler", func() {
+		for _, count := range []int{0, 1, 2, 5} {
+			suite.Run(fmt.Sprintf("count=%d", count), func() {
+				suite.testServerMiddlewareWithHandler(count)
+			})
+		}
+	})
 }
 
 func TestServerOption(t *testing.T) {

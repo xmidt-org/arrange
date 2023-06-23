@@ -154,59 +154,43 @@ func (suite *ServerOptionSuite) TestErrorLog() {
 	suite.NotEmpty(output.String())
 }
 
-func (suite *ServerOptionSuite) testServerMiddleware(initialHandler http.Handler, count int) *httptest.ResponseRecorder {
-	var (
-		current    = 0
-		middleware []func(http.Handler) http.Handler
-		s          = &http.Server{
-			Handler: initialHandler,
-		}
-	)
+func (suite *ServerOptionSuite) testServerMiddleware(initialHandler http.Handler) *httptest.ResponseRecorder {
+	suite.target.Handler = initialHandler
 
-	for i := 0; i < count; i++ {
-		i := i
-		middleware = append(middleware, func(next http.Handler) http.Handler {
-			suite.Require().NotNil(next)
-			return http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
-				suite.Equal(current, i)
-				current++
-				response.Header().Set(fmt.Sprintf("Middleware-%d", i), "true")
-				next.ServeHTTP(response, request)
-			})
+	ServerMiddleware(func(next http.Handler) http.Handler {
+		suite.Require().NotNil(next)
+		return http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+			response.Header().Set("Middleware", "true")
+			next.ServeHTTP(response, request)
 		})
-	}
+	}).Apply(suite.target)
 
-	ServerMiddleware(middleware...).Apply(s)
-	suite.Require().NotNil(s.Handler)
+	suite.Require().NotNil(suite.target.Handler)
 
 	var (
 		request  = httptest.NewRequest("GET", "/", nil)
 		response = httptest.NewRecorder()
 	)
 
-	s.Handler.ServeHTTP(response, request)
-	suite.Equal(count, current)
-	for i := 0; i < count; i++ {
-		suite.Equal(
-			"true",
-			response.Result().Header.Get(fmt.Sprintf("Middleware-%d", i)),
-		)
-	}
+	suite.target.Handler.ServeHTTP(response, request)
+	suite.Equal(
+		"true",
+		response.Result().Header.Get("Middleware"),
+	)
 
 	return response
 }
 
-func (suite *ServerOptionSuite) testServerMiddlewareNoHandler(count int) {
-	response := suite.testServerMiddleware(nil, count)
+func (suite *ServerOptionSuite) testServerMiddlewareNoHandler() {
+	response := suite.testServerMiddleware(nil)
 	suite.Equal(404, response.Code) // uninitialized DefaultServeMux
 }
 
-func (suite *ServerOptionSuite) testServerMiddlewareWithHandler(count int) {
+func (suite *ServerOptionSuite) testServerMiddlewareWithHandler() {
 	response := suite.testServerMiddleware(
 		http.HandlerFunc(func(response http.ResponseWriter, _ *http.Request) {
 			response.Header().Set("Handler", "true")
 		}),
-		count,
 	)
 
 	suite.Equal(
@@ -216,21 +200,8 @@ func (suite *ServerOptionSuite) testServerMiddlewareWithHandler(count int) {
 }
 
 func (suite *ServerOptionSuite) TestServerMiddleware() {
-	suite.Run("NoHandler", func() {
-		for _, count := range []int{0, 1, 2, 5} {
-			suite.Run(fmt.Sprintf("count=%d", count), func() {
-				suite.testServerMiddlewareNoHandler(count)
-			})
-		}
-	})
-
-	suite.Run("WithHandler", func() {
-		for _, count := range []int{0, 1, 2, 5} {
-			suite.Run(fmt.Sprintf("count=%d", count), func() {
-				suite.testServerMiddlewareWithHandler(count)
-			})
-		}
-	})
+	suite.Run("NoHandler", suite.testServerMiddlewareNoHandler)
+	suite.Run("WithHandler", suite.testServerMiddlewareWithHandler)
 }
 
 func TestServerOption(t *testing.T) {

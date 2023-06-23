@@ -1,7 +1,6 @@
 ---
 linters:
   enable:
-    - bodyclose
     - errorlint
     - funlen
     - goconst
@@ -13,6 +12,7 @@ linters:
     - errcheck
     - ineffassign
     - dupl
+    - bodyclose
 
 issues:
   exclude-rules:

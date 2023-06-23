@@ -189,7 +189,7 @@ func (suite *ServerOptionSuite) testServerMiddleware(initialHandler http.Handler
 	for i := 0; i < count; i++ {
 		suite.Equal(
 			"true",
-			response.HeaderMap.Get(fmt.Sprintf("Middleware-%d", i)),
+			response.Result().Header.Get(fmt.Sprintf("Middleware-%d", i)),
 		)
 	}
 
@@ -211,7 +211,7 @@ func (suite *ServerOptionSuite) testServerMiddlewareWithHandler(count int) {
 
 	suite.Equal(
 		"true",
-		response.HeaderMap.Get("Handler"),
+		response.Result().Header.Get("Handler"),
 	)
 }
 

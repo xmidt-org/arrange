@@ -32,6 +32,9 @@ func NewServer(sc ServerConfig, h http.Handler, opts ...Option[http.Server]) (*h
 // NewServerCustom is a server constructor that allows a client to customize the concrete
 // ServerFactory and http.Handler for the server.  This function is useful when you have a
 // custom (possibly unmarshaled) configuration struct that implements ServerFactory.
+//
+// The ServerFactory may also optionally implement Option[http.Server].  If it does, the factory
+// option is applied after all other options have run.
 func NewServerCustom[F ServerFactory, H http.Handler](sf F, h H, opts ...Option[http.Server]) (s *http.Server, err error) {
 	s, err = sf.NewServer()
 	if err == nil {
@@ -46,6 +49,11 @@ func NewServerCustom[F ServerFactory, H http.Handler](sf F, h H, opts ...Option[
 		}
 
 		s, err = ApplyOptions(s, opts...)
+	}
+
+	// if the factory is itself an option, apply it last
+	if fo, ok := any(sf).(Option[http.Server]); ok && err == nil {
+		err = fo.Apply(s)
 	}
 
 	return

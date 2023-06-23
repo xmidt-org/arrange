@@ -36,7 +36,7 @@ func (suite *ClientOptionSuite) testClientMiddleware(initialTransport http.Round
 		})
 	}
 
-	ClientMiddleware(middleware...).ApplyToClient(c)
+	ClientMiddleware(middleware...).Apply(c)
 	suite.Require().NotNil(c.Transport)
 
 	response, err := c.Transport.RoundTrip(new(http.Request))

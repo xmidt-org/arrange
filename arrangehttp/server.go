@@ -22,16 +22,6 @@ var (
 	ErrServerNameRequired = errors.New("A server name is required")
 )
 
-// ApplyServerOptions executes options against a server.  The original server is returned, along
-// with any error(s) that occurred.  All options are executed, so the returned error may be an
-// aggregate error which can be inspected via go.uber.org/multierr.
-//
-// This function can be used as an fx decorator for a server within the enclosing application.
-func ApplyServerOptions(server *http.Server, opts ...Option[http.Server]) (*http.Server, error) {
-	err := Options[http.Server](opts).Apply(server)
-	return server, err
-}
-
 // NewServer is the primary server constructor for arrange.  Use this when you are creating a server
 // from a (possibly unmarshaled) ServerConfig.  The options can be annotated to come from a value group,
 // which is useful when there are multiple servers in a single fx.App.
@@ -55,7 +45,7 @@ func NewServerCustom[F ServerFactory, H http.Handler](sf F, h H, opts ...Option[
 			s.Handler = h
 		}
 
-		s, err = ApplyServerOptions(s, opts...)
+		s, err = ApplyOptions(s, opts...)
 	}
 
 	return
@@ -159,7 +149,7 @@ func ProvideServerCustom[F ServerFactory, H http.Handler](serverName string, ext
 		ctor = func(sf F, h H, injected ...Option[http.Server]) (s *http.Server, err error) {
 			s, err = NewServerCustom(sf, h, injected...)
 			if err == nil {
-				s, err = ApplyServerOptions(s, external...)
+				s, err = ApplyOptions(s, external...)
 			}
 
 			return

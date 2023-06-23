@@ -75,9 +75,9 @@ func (suite *ApplyOptionsSuite[T]) testOptions(count int) {
 		}))
 	}
 
-	suite.NoError(
-		ApplyOptions(suite.target, opts...),
-	)
+	actual, err := ApplyOptions(suite.target, opts...)
+	suite.Same(suite.target, actual)
+	suite.NoError(err)
 }
 
 func (suite *ApplyOptionsSuite[T]) TestOptions() {

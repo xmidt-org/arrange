@@ -13,50 +13,6 @@ type ServerSuite struct {
 	suite.Suite
 }
 
-func (suite *ServerSuite) TestApplyServerOptions() {
-	var (
-		expectedServer = new(http.Server)
-		actualServer   *http.Server
-
-		mock0 = new(mockOption[http.Server])
-		mock1 = new(mockOption[http.Server])
-	)
-
-	mock0.ExpectApply(expectedServer).Return(nil)
-	mock1.ExpectApply(expectedServer).Return(nil)
-
-	app := fxtest.New(
-		suite.T(),
-		fx.Provide(
-			func() *http.Server {
-				return expectedServer
-			},
-			fx.Annotate(
-				func() Option[http.Server] { return mock0 },
-				fx.ResultTags(`group:"options"`),
-			),
-			fx.Annotate(
-				func() Option[http.Server] { return mock1 },
-				fx.ResultTags(`group:"options"`),
-			),
-		),
-		fx.Decorate(
-			fx.Annotate(
-				ApplyServerOptions,
-				fx.ParamTags("", `group:"options"`),
-			),
-		),
-		fx.Populate(&actualServer),
-	)
-
-	app.RequireStart()
-	app.RequireStop()
-
-	suite.Same(expectedServer, actualServer)
-	mock0.AssertExpectations(suite.T())
-	mock1.AssertExpectations(suite.T())
-}
-
 func (suite *ServerSuite) TestNewServer() {
 	var server *http.Server
 	app := fxtest.New(

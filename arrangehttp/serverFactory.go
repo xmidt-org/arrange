@@ -62,8 +62,6 @@ type ServerConfig struct {
 // This should serve most needs.  Nothing needs to be done to use this implementation.
 // By default, a Fluent Builder chain begun with Server() will use ServerConfig.
 func (sc ServerConfig) NewServer() (server *http.Server, err error) {
-	// TODO: header := httpaux.NewHeader(sc.Header)
-
 	server = &http.Server{
 		Addr:              sc.Address,
 		ReadTimeout:       sc.ReadTimeout,
@@ -85,4 +83,45 @@ func (sc ServerConfig) Listen(ctx context.Context, s *http.Server) (net.Listener
 		},
 		Network: sc.Network,
 	}.Listen(ctx, s)
+}
+
+type headerDecorator struct {
+	names  []string
+	values []string
+	next   http.Handler
+}
+
+func (hd headerDecorator) ServeHTTP(response http.ResponseWriter, request *http.Request) {
+	for i := 0; i < len(hd.names); i++ {
+		response.Header().Add(hd.names[i], hd.values[i])
+	}
+
+	hd.next.ServeHTTP(response, request)
+}
+
+func newHeaderDecorator(h http.Header, next http.Handler) (hd headerDecorator) {
+	hd.names = make([]string, 0, len(h))
+	hd.values = make([]string, 0, len(h))
+	hd.next = next
+
+	for name, values := range h {
+		for _, value := range values {
+			hd.names = append(hd.names, name)
+			hd.values = append(hd.values, value)
+		}
+	}
+
+	return
+}
+
+// Apply allows this configuration object to be seen as an Option[http.Server].
+// This method adds the configured headers to every response.
+func (sc ServerConfig) Apply(s *http.Server) error {
+	if len(sc.Header) > 0 {
+		return ServerMiddleware(func(next http.Handler) http.Handler {
+			return newHeaderDecorator(sc.Header, next)
+		}).Apply(s)
+	}
+
+	return nil
 }

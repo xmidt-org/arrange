@@ -34,85 +34,10 @@ func (lff ListenerFactoryFunc) Listen(ctx context.Context, s *http.Server) (net.
 	return lff(ctx, s)
 }
 
-// ListenerConstructor is a decorator for net.Listener instances.  If supplied to
-// a server builder, a constructor is applied after the Listen closure creates the listener.
-type ListenerConstructor func(net.Listener) net.Listener
-
-// ListenerChain is a sequence of ListenerConstructors.  A ListenerChain is immutable,
-// and will apply its constructors in order.  The zero value for this type is a valid,
-// empty chain that will not decorate anything.
-type ListenerChain struct {
-	c []ListenerConstructor
-}
-
-// NewListenerChain creates a chain from a sequence of constructors.  The constructors
-// are always applied in the order presented here.
-func NewListenerChain(c ...ListenerConstructor) ListenerChain {
-	return ListenerChain{
-		c: append([]ListenerConstructor{}, c...),
-	}
-}
-
-// Append adds additional ListenerConstructors to this chain, and returns the new chain.
-// This chain is not modified.  If more has zero length, this chain is returned.
-func (lc ListenerChain) Append(more ...ListenerConstructor) ListenerChain {
-	if len(more) > 0 {
-		return ListenerChain{
-			c: append(
-				append([]ListenerConstructor{}, lc.c...),
-				more...,
-			),
-		}
-	}
-
-	return lc
-}
-
-// Extend is like Append, except that the additional ListenerConstructors come from
-// another chain
-func (lc ListenerChain) Extend(more ListenerChain) ListenerChain {
-	return lc.Append(more.c...)
-}
-
-// Then decorates the given Listen strategy with all of the constructors
-// applied, in the order they were presented to this chain.
-func (lc ListenerChain) Then(next net.Listener) net.Listener {
-	// apply in reverse order, so that the order of
-	// execution matches the order supplied to this chain
-	for i := len(lc.c) - 1; i >= 0; i-- {
-		next = lc.c[i](next)
-	}
-
-	return next
-}
-
-// Factory decorates a ListenerFactory so that the factory's product, net.Listener,
-// is decorated with the constructors in this chain.
-func (lc ListenerChain) Factory(next ListenerFactory) ListenerFactory {
-	if len(lc.c) > 0 {
-		return ListenerFactoryFunc(func(ctx context.Context, s *http.Server) (net.Listener, error) {
-			listener, err := next.Listen(ctx, s)
-			if err == nil {
-				listener = lc.Then(listener)
-			}
-
-			return listener, err
-		})
-	}
-
-	return next
-}
-
-// CaptureListenAddress returns a ListenerConstructor that sends the actual network address of
-// the created listener to a channel.  This is useful to capture the actual address
-// of a server, usually for testing, when an address such as ":0" is used.
-//
-// The returned contructor performs no actual decoration.
-func CaptureListenAddress(ch chan<- net.Addr) ListenerConstructor {
-	return func(next net.Listener) net.Listener {
-		ch <- next.Addr()
-		return next
-	}
+// ListenerMiddlewareFunc is the underlying type for closures which can decorate
+// net.Listener instances.
+type ListenerMiddlewareFunc interface {
+	~func(net.Listener) net.Listener
 }
 
 // DefaultListenerFactory is the default implementation of ListenerFactory.  The

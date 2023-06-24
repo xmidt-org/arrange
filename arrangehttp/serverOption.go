@@ -88,16 +88,11 @@ func ErrorLog(l *log.Logger) Option[http.Server] {
 	})
 }
 
-// ServerMiddlewareFunc is the underlying type for any serverside middleware.
-type ServerMiddlewareFunc interface {
-	~func(http.Handler) http.Handler
-}
-
 // ServerMiddleware returns an option that applies any number of middleware functions
 // to a server's handler.
-func ServerMiddleware[M ServerMiddlewareFunc](fns ...M) Option[http.Server] {
+func ServerMiddleware[M Middleware[http.Handler]](fns ...M) Option[http.Server] {
 	return AsOption[http.Server](func(s *http.Server) {
-		s.Handler = arrangereflect.Decorate(
+		s.Handler = ApplyMiddleware(
 			arrangereflect.Safe[http.Handler](s.Handler, http.DefaultServeMux),
 			fns...,
 		)

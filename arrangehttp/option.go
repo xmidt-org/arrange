@@ -46,10 +46,11 @@ func AsOption[T any, F OptionClosure[T]](f F) Option[T] {
 }
 
 // ApplyOptions applies several options to a target.  This function
-// can be used to decorate targets via fx.Decorate.
-func ApplyOptions[T any](t *T, opts ...Option[T]) (err error) {
+// returns the original target t so that it can be used with fx.Decorate.
+func ApplyOptions[T any](t *T, opts ...Option[T]) (result *T, err error) {
+	result = t
 	for _, o := range opts {
-		err = multierr.Append(err, o.Apply(t))
+		err = multierr.Append(err, o.Apply(result))
 	}
 
 	return

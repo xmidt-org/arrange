@@ -1,8 +1,8 @@
 package arrangehttp
 
 import (
-	"fmt"
 	"net/http"
+	"net/http/httptest"
 	"testing"
 
 	"github.com/stretchr/testify/suite"
@@ -12,48 +12,65 @@ type ClientOptionSuite struct {
 	OptionSuite[http.Client]
 }
 
-func (suite *ClientOptionSuite) testClientMiddleware(initialTransport http.RoundTripper, count int) *http.Response {
-	var (
-		current    = 0
-		middleware []func(http.RoundTripper) http.RoundTripper
-		c          = &http.Client{
-			Transport: initialTransport,
-		}
-	)
+func (suite *ClientOptionSuite) testClientMiddlewareNoTransport() {
+	called := false
 
-	for i := 0; i < count; i++ {
-		i := i
-		middleware = append(middleware, func(next http.RoundTripper) http.RoundTripper {
-			suite.Require().NotNil(next)
-			return RoundTripperFunc(func(request *http.Request) (*http.Response, error) {
-				suite.Equal(current, i)
-				current++
-				response, err := next.RoundTrip(request)
-				suite.Require().NoError(err)
-				response.Header.Set(fmt.Sprintf("Middleware-%d", i), "true")
-				return response, err
-			})
+	ClientMiddleware(func(next http.RoundTripper) http.RoundTripper {
+		suite.Same(http.DefaultTransport, next)
+		return AsRoundTripper(func(request *http.Request) (*http.Response, error) {
+			called = true
+			return nil, nil
 		})
-	}
+	}).Apply(suite.target)
 
-	ClientMiddleware(middleware...).Apply(c)
-	suite.Require().NotNil(c.Transport)
+	suite.Require().NotNil(suite.target.Transport)
+	suite.target.Transport.RoundTrip(new(http.Request))
+	suite.True(called)
+}
 
-	response, err := c.Transport.RoundTrip(new(http.Request))
+func (suite *ClientOptionSuite) testClientMiddlewareWithTransport() {
+	expectedRequest := httptest.NewRequest("GET", "/", nil)
+
+	suite.target.Transport = AsRoundTripper(func(actualRequest *http.Request) (*http.Response, error) {
+		suite.Same(expectedRequest, actualRequest)
+		return &http.Response{
+			Header: http.Header{
+				"Custom": []string{"true"},
+			},
+		}, nil
+	})
+
+	ClientMiddleware(func(next http.RoundTripper) http.RoundTripper {
+		suite.Require().NotNil(next)
+		return AsRoundTripper(func(request *http.Request) (*http.Response, error) {
+			response, err := next.RoundTrip(request)
+			suite.Require().NoError(err)
+			suite.Require().NotNil(response)
+
+			response.Header.Set("Middleware", "true")
+			return response, err
+		})
+	}).Apply(suite.target)
+
+	suite.Require().NotNil(suite.target.Transport)
+
+	response, err := suite.target.Transport.RoundTrip(expectedRequest)
 	suite.Require().NoError(err)
 	suite.Require().NotNil(response)
-	suite.Equal(count, current)
-	for i := 0; i < count; i++ {
-		suite.Equal(
-			"true",
-			response.Header.Get(fmt.Sprintf("Middleware-%d", i)),
-		)
-	}
+	suite.Equal(
+		"true",
+		response.Header.Get("Custom"),
+	)
 
-	return response
+	suite.Equal(
+		"true",
+		response.Header.Get("Middleware"),
+	)
 }
 
 func (suite *ClientOptionSuite) TestClientMiddleware() {
+	suite.Run("NoTransport", suite.testClientMiddlewareNoTransport)
+	suite.Run("WithTransport", suite.testClientMiddlewareWithTransport)
 }
 
 func TestClientOption(t *testing.T) {

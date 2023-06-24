@@ -14,12 +14,23 @@ var (
 	ErrClientNameRequired = errors.New("A client name is required")
 )
 
-// RoundTripperFunc is a function type that implements http.RoundTripper.  Useful
-// when building client middleware.
-type RoundTripperFunc func(*http.Request) (*http.Response, error)
+// RoundTripperFunc is the underlying type for a closure which provides HTTP
+// round trip logic.
+type RoundTripperFunc interface {
+	~func(*http.Request) (*http.Response, error)
+}
 
-func (rtf RoundTripperFunc) RoundTrip(request *http.Request) (*http.Response, error) {
-	return rtf(request)
+type roundTripperFunc[F RoundTripperFunc] struct {
+	f F
+}
+
+func (rtf roundTripperFunc[F]) RoundTrip(request *http.Request) (*http.Response, error) {
+	return rtf.f(request)
+}
+
+// AsRoundTripper converts a closure into an http.RoundTripper implementation.
+func AsRoundTripper[F RoundTripperFunc](f F) http.RoundTripper {
+	return roundTripperFunc[F]{f: f}
 }
 
 // NewClient is the primary client constructor for arrange.  Use this when you are creating a client

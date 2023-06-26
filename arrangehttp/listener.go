@@ -26,20 +26,6 @@ type ListenerFactory interface {
 	Listen(context.Context, *http.Server) (net.Listener, error)
 }
 
-// ListenerFactoryFunc is a closure type that implements ListenerFactory
-type ListenerFactoryFunc func(context.Context, *http.Server) (net.Listener, error)
-
-// Listen implements ListenerFactory
-func (lff ListenerFactoryFunc) Listen(ctx context.Context, s *http.Server) (net.Listener, error) {
-	return lff(ctx, s)
-}
-
-// ListenerMiddlewareFunc is the underlying type for closures which can decorate
-// net.Listener instances.
-type ListenerMiddlewareFunc interface {
-	~func(net.Listener) net.Listener
-}
-
 // DefaultListenerFactory is the default implementation of ListenerFactory.  The
 // zero value of this type is a valid factory.
 type DefaultListenerFactory struct {

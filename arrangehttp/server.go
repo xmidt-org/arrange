@@ -27,6 +27,19 @@ var (
 // NewServer is the primary server constructor for arrange.  Use this when you are creating a server
 // from a (possibly unmarshaled) ServerConfig.  The options can be annotated to come from a value group,
 // which is useful when there are multiple servers in a single fx.App.
+//
+// ProvideServer gives an opinionated approach to using this function to create an *http.Server.
+// However, this function can be used by itself to allow very flexible binding:
+//
+//	app := fx.New(
+//	  fx.Provide(
+//	    arrangehttp.NewServer, // all the parameters need to be global, unnamed components
+//	    fx.Annotate(
+//	      arrangehttp.NewServer,
+//	      fx.ResultTags(`name:"myserver"`), // change the component name of the *http.Server
+//	    ),
+//	  ),
+//	)
 func NewServer(sc ServerConfig, h http.Handler, opts ...Option[http.Server]) (*http.Server, error) {
 	return NewServerCustom(sc, h, opts...)
 }
@@ -119,6 +132,22 @@ func ProvideServerCustom[F ServerFactory, H http.Handler](serverName string, ext
 // calling http.Server.Serve.
 //
 // The server is shutdown gracefully via http.Server.Shutdown.
+//
+// InvokeServer provides an opinionated way to use this function.  However, this function can be
+// used with fx.Invoke directly to allow very flexible ways of binding a server:
+//
+//	app := fx.New(
+//	  fx.Invoke(
+//	    arrangehttp.BindServer, // all the parameters need to be global
+//	    fx.Annotate(
+//	      arrangehttp.BindServer,
+//	      fx.ParamTags(
+//	        "", // the ServerConfig is a global component
+//	        `name:"myserver"`, // the name of the *http.Server being bound
+//	      ),
+//	    ),
+//	  ),
+//	)
 func BindServer(cfg ServerConfig, server *http.Server, lifecycle fx.Lifecycle, shutdowner fx.Shutdowner, lm ...ListenerMiddleware) {
 	BindServerCustom(cfg, server, lifecycle, shutdowner, lm...)
 }

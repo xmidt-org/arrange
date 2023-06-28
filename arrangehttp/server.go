@@ -1,12 +1,14 @@
 package arrangehttp
 
 import (
+	"context"
 	"errors"
 	"net"
 	"net/http"
 	"reflect"
 
 	"github.com/xmidt-org/arrange"
+	"github.com/xmidt-org/arrange/internal/arrangereflect"
 	"go.uber.org/fx"
 )
 
@@ -59,70 +61,6 @@ func NewServerCustom[F ServerFactory, H http.Handler](sf F, h H, opts ...Option[
 	return
 }
 
-func serve(server *http.Server, listener net.Listener) error {
-	return server.Serve(listener)
-}
-
-func listenAndServeTLS(server *http.Server, _ net.Listener) error {
-	return server.ListenAndServeTLS("", "") // certificates must be in the TLSConfig
-}
-
-func listenAndServe(server *http.Server, _ net.Listener) error {
-	return server.ListenAndServe()
-}
-
-func newServerHook(server *http.Server, listener net.Listener, shutdowner fx.Shutdowner) (hook fx.Hook) {
-	lv := reflect.ValueOf(listener)
-
-	var startFunc func(*http.Server, net.Listener) error
-
-	switch {
-	// handle the case of a non-nil interface which is invalid (nil object underneath)
-	case lv.IsValid() && (lv.Kind() != reflect.Ptr || !lv.IsNil()):
-		startFunc = serve
-
-	case server.TLSConfig != nil:
-		startFunc = listenAndServeTLS
-
-	default:
-		startFunc = listenAndServe
-	}
-
-	hook = fx.StartStopHook(
-		func() {
-			go func() {
-				var exitCode int
-				defer func() {
-					shutdowner.Shutdown(
-						fx.ExitCode(exitCode),
-					)
-				}()
-
-				err := startFunc(server, listener)
-				if !errors.Is(err, http.ErrServerClosed) {
-					exitCode = ServerAbnormalExitCode
-				}
-			}()
-		},
-		server.Shutdown,
-	)
-
-	return
-}
-
-// BindServer binds a server to the enclosing application's lifecycle.
-//
-// - If listener is not nil, then the server is started with http.Server.Serve.
-// - If server.TLSConfig is not nil, then a TLS listener is created and the server is started via http.Server.ServeTLS.
-// - Finally, by default the server is started with http.Server.ListenAndServe.
-//
-// The server is shutdown gracefully via http.Server.Shutdown.
-func BindServer(server *http.Server, listener net.Listener, lifecycle fx.Lifecycle, shutdowner fx.Shutdowner) {
-	lifecycle.Append(
-		newServerHook(server, listener, shutdowner),
-	)
-}
-
 // ProvideServer assembles a server out of application components in a standard, opinionated way.
 // The serverName parameter is used as both the name of the *http.Server component and a prefix
 // for that server's dependencies:
@@ -130,21 +68,20 @@ func BindServer(server *http.Server, listener net.Listener, lifecycle fx.Lifecyc
 //   - NewServer is used to create the server as a component named serverName
 //   - ServerConfig is an optional dependency with the name serverName+".config"
 //   - http.Handler is an optional dependency with the name serverName+".handler"
-//   - []ServerOption is an optional value group dependency with the name serverName+".options"
-//   - net.Listener is an optional dependency with the name serverName+".listener"
+//   - []Option[http.Server] is a value group dependency with the name serverName+".options"
 //
 // The external set of options, if supplied, is applied to the server after any injected options.
 // This allows for options that come from outside the enclosing fx.App, as might be the case
 // for options driven by the command line.
-//
-// BindServer is used as an fx.Invoke function to bind the resulting server to the enclosing
-// application's lifecycle.
 func ProvideServer(serverName string, external ...Option[http.Server]) fx.Option {
 	return ProvideServerCustom[ServerConfig, http.Handler](serverName, external...)
 }
 
 // ProvideServerCustom is like ProvideServer, but it allows customization of the concrete
 // ServerFactory and http.Handler dependencies.
+//
+// If the concrete ServerFactory type also implements ListenerFactory, it is used to create
+// the net.Listener for the server.  Otherwise, DefaultListenerFactory is used.
 func ProvideServerCustom[F ServerFactory, H http.Handler](serverName string, external ...Option[http.Server]) fx.Option {
 	if len(serverName) == 0 {
 		return fx.Error(ErrServerNameRequired)
@@ -164,27 +101,90 @@ func ProvideServerCustom[F ServerFactory, H http.Handler](serverName string, ext
 		}
 	}
 
-	return fx.Options(
-		fx.Provide(
-			fx.Annotate(
-				ctor,
-				arrange.Tags().
-					OptionalName(serverName+".config").
-					OptionalName(serverName+".handler").
-					Group(serverName+".options").
-					OptionalName(serverName+".listener").
-					ParamTags(),
-				arrange.Tags().Name(serverName).ResultTags(),
-			),
+	return fx.Provide(
+		fx.Annotate(
+			ctor,
+			arrange.Tags().
+				OptionalName(serverName+".config").
+				OptionalName(serverName+".handler").
+				Group(serverName+".options").
+				ParamTags(),
+			arrange.Tags().Name(serverName).ResultTags(),
 		),
-		fx.Invoke(
-			fx.Annotate(
-				BindServer,
-				arrange.Tags().
-					Name(serverName).
-					OptionalName(serverName+".listener").
-					ParamTags(),
-			),
+	)
+}
+
+// BindServer binds a server to the enclosing application's lifecycle.  The ServerConfig, acting as a
+// ListenerFactory, is used to create the listener.  Middleware is applied to this listener before
+// calling http.Server.Serve.
+//
+// The server is shutdown gracefully via http.Server.Shutdown.
+func BindServer(cfg ServerConfig, server *http.Server, lifecycle fx.Lifecycle, shutdowner fx.Shutdowner, lm ...ListenerMiddleware) {
+	BindServerCustom(cfg, server, lifecycle, shutdowner, lm...)
+}
+
+// BindServerCustom is like BindServer, but allows injection of a different concrete type for the ListenerFactory.
+func BindServerCustom[F ListenerFactory](cfg F, server *http.Server, lifecycle fx.Lifecycle, shutdowner fx.Shutdowner, lm ...ListenerMiddleware) {
+	lifecycle.Append(
+		fx.StartStopHook(
+			func(ctx context.Context) (err error) {
+				lf := arrangereflect.Safe[ListenerFactory](cfg, DefaultListenerFactory{})
+
+				var l net.Listener
+				l, err = lf.Listen(ctx, server)
+				if err == nil {
+					l = ApplyMiddleware(l, lm...)
+					go func() {
+						var exitCode int
+						defer func() {
+							shutdowner.Shutdown(
+								fx.ExitCode(exitCode),
+							)
+						}()
+
+						serveErr := server.Serve(l)
+						if !errors.Is(serveErr, http.ErrServerClosed) {
+							exitCode = ServerAbnormalExitCode
+						}
+					}()
+				}
+
+				return
+			},
+			server.Shutdown,
+		),
+	)
+}
+
+func InvokeServer(serverName string, external ...ListenerMiddleware) fx.Option {
+	return InvokeServerCustom[ServerConfig](serverName, external...)
+}
+
+func InvokeServerCustom[F ListenerFactory](serverName string, external ...ListenerMiddleware) fx.Option {
+	if len(serverName) == 0 {
+		return fx.Error(ErrServerNameRequired)
+	}
+
+	invoke := BindServerCustom[F]
+	if len(external) > 0 {
+		invoke = func(lf F, server *http.Server, lifecycle fx.Lifecycle, shutdowner fx.Shutdowner, injected ...ListenerMiddleware) {
+			m := make([]ListenerMiddleware, 0, len(injected)+len(external))
+			m = append(m, external...) // external middleware will execute first, before injected
+			m = append(m, injected...)
+			BindServerCustom(lf, server, lifecycle, shutdowner, m...)
+		}
+	}
+
+	return fx.Invoke(
+		fx.Annotate(
+			invoke,
+			arrange.Tags().
+				OptionalName(serverName+".config").
+				Name(serverName).
+				Skip().
+				Skip().
+				Group(serverName+".listener.middleware").
+				ParamTags(),
 		),
 	)
 }

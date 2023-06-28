@@ -24,7 +24,48 @@ import (
 //	  ),
 //	)
 type TagBuilder struct {
-	tags []string
+	prefixes []string
+	tags     []string
+}
+
+// Push pushes a new prefix (or, scope) onto this builder.  Subsequent
+// names and groups are prefixed with this string, separated by a '.'.
+// For example:
+//
+//	arrange.Tags().Push("foo").Name("bar").ParamTags()
+//
+// results in a `name="foo.bar"` parameter tag.
+//
+// If the given prefix is the empty string, then no prefix is applied.
+// This allows temporarily suspending prefixed names and groups during
+// a sequence of tags by doing Push("") followed by Pop() and continuing
+// with the previous prefix.
+func (tb *TagBuilder) Push(prefix string) *TagBuilder {
+	tb.prefixes = append(tb.prefixes, prefix)
+	return tb
+}
+
+// Pop removes the most recent prefix established with Push.  If no
+// prefixes are currently in use, this method does nothing.
+func (tb *TagBuilder) Pop() *TagBuilder {
+	if len(tb.prefixes) > 0 {
+		tb.prefixes[len(tb.prefixes)-1] = ""
+		tb.prefixes = tb.prefixes[0 : len(tb.prefixes)-1]
+	}
+
+	return tb
+}
+
+func (tb *TagBuilder) writePrefixedValue(o *strings.Builder, v string) {
+	if len(tb.prefixes) > 0 {
+		// allow prefixes to be blank, to "suspend" prefixing via Push("")
+		if prefix := tb.prefixes[len(tb.prefixes)-1]; len(prefix) > 0 {
+			o.WriteString(prefix)
+			o.WriteRune('.')
+		}
+	}
+
+	o.WriteString(v)
 }
 
 // Skip adds an empty tag to the sequence of tags under construction.
@@ -46,7 +87,7 @@ func (tb *TagBuilder) Optional() *TagBuilder {
 func (tb *TagBuilder) Name(v string) *TagBuilder {
 	var o strings.Builder
 	o.WriteString(`name:"`)
-	o.WriteString(v)
+	tb.writePrefixedValue(&o, v)
 	o.WriteRune('"')
 	tb.tags = append(tb.tags, o.String())
 
@@ -57,7 +98,7 @@ func (tb *TagBuilder) Name(v string) *TagBuilder {
 func (tb *TagBuilder) OptionalName(v string) *TagBuilder {
 	var o strings.Builder
 	o.WriteString(`name:"`)
-	o.WriteString(v)
+	tb.writePrefixedValue(&o, v)
 	o.WriteString(`" optional:"true"`)
 	tb.tags = append(tb.tags, o.String())
 
@@ -69,7 +110,7 @@ func (tb *TagBuilder) OptionalName(v string) *TagBuilder {
 func (tb *TagBuilder) Group(v string) *TagBuilder {
 	var o strings.Builder
 	o.WriteString(`group:"`)
-	o.WriteString(v)
+	tb.writePrefixedValue(&o, v)
 	o.WriteRune('"')
 	tb.tags = append(tb.tags, o.String())
 

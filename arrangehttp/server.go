@@ -104,10 +104,10 @@ func ProvideServerCustom[F ServerFactory, H http.Handler](serverName string, ext
 	return fx.Provide(
 		fx.Annotate(
 			ctor,
-			arrange.Tags().
-				OptionalName(serverName+".config").
-				OptionalName(serverName+".handler").
-				Group(serverName+".options").
+			arrange.Tags().Push(serverName).
+				OptionalName("config").
+				OptionalName("handler").
+				Group("options").
 				ParamTags(),
 			arrange.Tags().Name(serverName).ResultTags(),
 		),
@@ -178,12 +178,12 @@ func InvokeServerCustom[F ListenerFactory](serverName string, external ...Listen
 	return fx.Invoke(
 		fx.Annotate(
 			invoke,
-			arrange.Tags().
-				OptionalName(serverName+".config").
-				Name(serverName).
+			arrange.Tags().Push(serverName).
+				OptionalName("config").
+				Push("").Name(serverName).Pop().
 				Skip().
 				Skip().
-				Group(serverName+".listener.middleware").
+				Group("listener.middleware").
 				ParamTags(),
 		),
 	)

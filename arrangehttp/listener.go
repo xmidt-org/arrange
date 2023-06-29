@@ -7,6 +7,9 @@ import (
 	"net/http"
 )
 
+// ListenerMiddleware represents a strategy for decorating net.Listener instances.
+type ListenerMiddleware func(net.Listener) net.Listener
+
 // ListenerFactory is a strategy for creating net.Listener instances.  Since any applied
 // options may have changed the http.Server instance, this strategy is passed
 // that server instance.
@@ -24,20 +27,6 @@ type ListenerFactory interface {
 	// Listen creates the appropriate net.Listener, binding to a TCP address in
 	// the process
 	Listen(context.Context, *http.Server) (net.Listener, error)
-}
-
-// ListenerFactoryFunc is a closure type that implements ListenerFactory
-type ListenerFactoryFunc func(context.Context, *http.Server) (net.Listener, error)
-
-// Listen implements ListenerFactory
-func (lff ListenerFactoryFunc) Listen(ctx context.Context, s *http.Server) (net.Listener, error) {
-	return lff(ctx, s)
-}
-
-// ListenerMiddlewareFunc is the underlying type for closures which can decorate
-// net.Listener instances.
-type ListenerMiddlewareFunc interface {
-	~func(net.Listener) net.Listener
 }
 
 // DefaultListenerFactory is the default implementation of ListenerFactory.  The
@@ -67,7 +56,8 @@ func (f DefaultListenerFactory) Listen(ctx context.Context, server *http.Server)
 	}
 
 	if server.TLSConfig != nil {
-		l = tls.NewListener(l, server.TLSConfig)
+		// clone the TLSConfig, as the stdlib does, to avoid racyness
+		l = tls.NewListener(l, server.TLSConfig.Clone())
 	}
 
 	return l, nil

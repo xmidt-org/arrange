@@ -1,4 +1,4 @@
-package arrangetest
+package arrangetls
 
 import (
 	"crypto/tls"
@@ -8,12 +8,11 @@ import (
 	"os"
 
 	"github.com/stretchr/testify/suite"
-	"github.com/xmidt-org/arrange/arrangetls"
 )
 
-// TLSSuite is a simple stretchr/testify suite that manages the lifecycle
+// Suite is a simple stretchr/testify suite that manages the lifecycle
 // of a testing certificate.  Useful primarily for testing TLS code.
-type TLSSuite struct {
+type Suite struct {
 	suite.Suite
 
 	certificate     *tls.Certificate
@@ -21,9 +20,27 @@ type TLSSuite struct {
 	keyFile         string
 }
 
-func (suite *TLSSuite) SetupSuite() {
+// TLSConfig creates a new *tls.Config using the certificate generated in setup.
+func (suite *Suite) TLSConfig() *tls.Config {
+	tlsConfig, err := (&Config{
+		Certificates: ExternalCertificates{
+			{
+				CertificateFile: suite.certificateFile,
+				KeyFile:         suite.keyFile,
+			},
+		},
+	}).New()
+
+	suite.Require().NoError(err)
+	suite.Require().NotNil(tlsConfig)
+	return tlsConfig
+}
+
+// SetupSuite creates a testing certificate and stores the certificate and its
+// private key in temporary files.
+func (suite *Suite) SetupSuite() {
 	var err error
-	suite.certificate, err = arrangetls.CreateTestCertificate(&x509.Certificate{
+	suite.certificate, err = CreateTestCertificate(&x509.Certificate{
 		SerialNumber: big.NewInt(837492837),
 		Issuer: pkix.Name{
 			CommonName: "test",
@@ -41,14 +58,15 @@ func (suite *TLSSuite) SetupSuite() {
 		"Unable to generate test certificate",
 	)
 
-	suite.certificateFile, suite.keyFile, err = arrangetls.CreateTestServerFiles(suite.certificate)
+	suite.certificateFile, suite.keyFile, err = CreateTestServerFiles(suite.certificate)
 	suite.Require().NoError(
 		err,
 		"Unable to create temporary server files",
 	)
 }
 
-func (suite *TLSSuite) TearDownSuite() {
+// TearDownSuite cleans up the temporary files created in setup.
+func (suite *Suite) TearDownSuite() {
 	if err := os.Remove(suite.certificateFile); err != nil {
 		suite.T().Logf(
 			"Unable to remove certificate file %s: %s", suite.certificateFile, err,

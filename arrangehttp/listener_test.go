@@ -5,16 +5,16 @@ import (
 	"net/http"
 	"testing"
 
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
+	"github.com/stretchr/testify/suite"
 	"github.com/xmidt-org/arrange/arrangetls"
 )
 
-func testDefaultListenerFactoryBasic(t *testing.T) {
-	var (
-		assert  = assert.New(t)
-		require = require.New(t)
+type DefaultListenerFactorySuite struct {
+	arrangetls.Suite
+}
 
+func (suite *DefaultListenerFactorySuite) TestBasic() {
+	var (
 		factory DefaultListenerFactory
 		server  = &http.Server{
 			Addr: ":0",
@@ -22,47 +22,30 @@ func testDefaultListenerFactoryBasic(t *testing.T) {
 	)
 
 	listener, err := factory.Listen(context.Background(), server)
-	require.NoError(err)
-	require.NotNil(listener)
-	assert.NotNil(listener.Addr())
+	suite.Require().NoError(err)
+	suite.Require().NotNil(listener)
+	suite.NotNil(listener.Addr())
 	listener.Close()
 }
 
-func testDefaultListenerFactoryTLS(t *testing.T) {
+func (suite *DefaultListenerFactorySuite) TestTLS() {
 	var (
-		assert  = assert.New(t)
-		require = require.New(t)
-
 		factory DefaultListenerFactory
 		server  = &http.Server{
-			Addr: ":0",
+			Addr:      ":0",
+			TLSConfig: suite.TLSConfig(),
 		}
 	)
 
-	tlsConfig, err := (&arrangetls.Config{
-		Certificates: arrangetls.ExternalCertificates{
-			{
-				CertificateFile: CertificateFile,
-				KeyFile:         KeyFile,
-			},
-		},
-	}).New()
-
-	require.NoError(err)
-	require.NotNil(tlsConfig)
-	server.TLSConfig = tlsConfig
-
 	listener, err := factory.Listen(context.Background(), server)
-	require.NoError(err)
-	require.NotNil(listener)
-	assert.NotNil(listener.Addr())
+	suite.Require().NoError(err)
+	suite.Require().NotNil(listener)
+	suite.NotNil(listener.Addr())
 	listener.Close()
 }
 
-func testDefaultListenerFactoryListenError(t *testing.T) {
+func (suite *DefaultListenerFactorySuite) TestError() {
 	var (
-		assert = assert.New(t)
-
 		factory = DefaultListenerFactory{
 			Network: "this is a bad network",
 		}
@@ -73,15 +56,15 @@ func testDefaultListenerFactoryListenError(t *testing.T) {
 	)
 
 	listener, err := factory.Listen(context.Background(), server)
-	assert.Error(err)
-	if !assert.Nil(listener) {
-		// cleanup on a failed test
+	suite.Error(err)
+
+	if !suite.Nil(listener) {
+		// cleanup if the assertion fails, meaning the factory incorrectly
+		// returned a non-nil listener AND a non-nil error.
 		listener.Close()
 	}
 }
 
 func TestDefaultListenerFactory(t *testing.T) {
-	t.Run("Basic", testDefaultListenerFactoryBasic)
-	t.Run("TLS", testDefaultListenerFactoryTLS)
-	t.Run("ListenError", testDefaultListenerFactoryListenError)
+	suite.Run(t, new(DefaultListenerFactorySuite))
 }

@@ -5,7 +5,6 @@ import (
 	"errors"
 	"net"
 	"net/http"
-	"reflect"
 
 	"github.com/xmidt-org/arrange"
 	"github.com/xmidt-org/arrange/internal/arrangereflect"
@@ -53,16 +52,7 @@ func NewServer(sc ServerConfig, h http.Handler, opts ...Option[http.Server]) (*h
 func NewServerCustom[F ServerFactory, H http.Handler](sf F, h H, opts ...Option[http.Server]) (s *http.Server, err error) {
 	s, err = sf.NewServer()
 	if err == nil {
-		// guard against both the http.Handler being nil and it being
-		// a non-nil interface tuple that points to a nil instance.
-		// this allows all types of handlers to be optional components.
-		hv := reflect.ValueOf(h)
-		if !hv.IsValid() || (hv.Kind() == reflect.Ptr && hv.IsNil()) {
-			s.Handler = http.DefaultServeMux
-		} else {
-			s.Handler = h
-		}
-
+		s.Handler = arrangereflect.Safe[http.Handler](s.Handler, http.DefaultServeMux)
 		s, err = ApplyOptions(s, opts...)
 	}
 

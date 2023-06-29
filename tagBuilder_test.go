@@ -18,8 +18,10 @@ func (suite *TagBuilderSuite) TestParamTags() {
 	type parameters struct {
 		fx.Out
 
-		Named  string   `name:"name"`
-		Values []string `group:"values"`
+		Named          string   `name:"name"`
+		Values         []string `group:"values"`
+		PrefixedNamed  string   `name:"prefix.name"`
+		PrefixedValues []string `group:"prefix.values"`
 	}
 
 	var buffer *bytes.Buffer
@@ -32,14 +34,16 @@ func (suite *TagBuilderSuite) TestParamTags() {
 			func() int { return 123 },
 			fx.Annotate(
 				func(
-					name string, optional string, values []string, optionalUnnamed string, skipped int,
+					name, prefixedName string, optional string, values, prefixedValues []string, optionalUnnamed string, skipped int,
 				) *bytes.Buffer {
 					return new(bytes.Buffer) // dummy component
 				},
 				Tags().
 					Name("name").
+					Push("prefix").Name("name").Pop().
 					OptionalName("optional").
 					Group("values").
+					Push("prefix").Group("values").Pop().
 					Optional().
 					Skip().
 					ParamTags(),
@@ -56,8 +60,10 @@ func (suite *TagBuilderSuite) TestParamTags() {
 func (suite *TagBuilderSuite) TestResultTags() {
 	type populate struct {
 		fx.In
-		Named   *bytes.Buffer   `name:"named"`
-		Buffers []*bytes.Buffer `group:"buffers"`
+		Named           *bytes.Buffer   `name:"named"`
+		Buffers         []*bytes.Buffer `group:"buffers"`
+		PrefixedNamed   *bytes.Buffer   `name:"prefix.named"`
+		PrefixedBuffers []*bytes.Buffer `group:"prefix.buffers"`
 	}
 
 	var p populate
@@ -77,6 +83,18 @@ func (suite *TagBuilderSuite) TestResultTags() {
 				func() *bytes.Buffer { return new(bytes.Buffer) },
 				Tags().Group("buffers").ResultTags(),
 			),
+			fx.Annotate(
+				func() *bytes.Buffer { return new(bytes.Buffer) },
+				Tags().Push("prefix").Name("named").ResultTags(),
+			),
+			fx.Annotate(
+				func() *bytes.Buffer { return new(bytes.Buffer) },
+				Tags().Push("prefix").Group("buffers").ResultTags(),
+			),
+			fx.Annotate(
+				func() *bytes.Buffer { return new(bytes.Buffer) },
+				Tags().Push("prefix").Group("buffers").ResultTags(),
+			),
 		),
 		fx.Invoke(
 			func(in populate) {
@@ -88,7 +106,9 @@ func (suite *TagBuilderSuite) TestResultTags() {
 	app.RequireStart()
 	app.RequireStop()
 	suite.NotNil(p.Named)
+	suite.NotNil(p.PrefixedNamed)
 	suite.Len(p.Buffers, 2)
+	suite.Len(p.PrefixedBuffers, 2)
 }
 
 func (suite *TagBuilderSuite) assertStructTag(st reflect.StructTag, expectedName, expectedGroup string, optional bool) {
@@ -121,14 +141,20 @@ func (suite *TagBuilderSuite) TestStructTags() {
 		Group("group").
 		Name("name").
 		OptionalName("optional").
+		Push("prefix1").Name("name").
+		Push("prefix2").Name("name").
+		Pop().Pop().Name("notprefixed").
 		StructTags()
 
-	suite.Require().Len(tags, 5)
+	suite.Require().Len(tags, 8)
 	suite.assertStructTag(tags[0], "", "", true)
 	suite.Empty(string(tags[1]))
 	suite.assertStructTag(tags[2], "", "group", false)
 	suite.assertStructTag(tags[3], "name", "", false)
 	suite.assertStructTag(tags[4], "optional", "", true)
+	suite.assertStructTag(tags[5], "prefix1.name", "", false)
+	suite.assertStructTag(tags[6], "prefix2.name", "", false)
+	suite.assertStructTag(tags[7], "notprefixed", "", false)
 }
 
 func TestTagBuilder(t *testing.T) {

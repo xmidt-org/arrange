@@ -18,6 +18,12 @@ func (suite *SuiteSuite) TestState() {
 	suite.FileExists(suite.keyFile)
 }
 
+func (suite *SuiteSuite) TestConfig() {
+	suite.NotNil(
+		suite.Config(),
+	)
+}
+
 func (suite *SuiteSuite) TestTLSConfig() {
 	suite.NotNil(
 		suite.TLSConfig(),

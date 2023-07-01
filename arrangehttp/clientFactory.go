@@ -15,7 +15,8 @@ type ClientFactory interface {
 	NewClient() (*http.Client, error)
 }
 
-// TransportConfig holds the unmarshalable configuration options for building an http.Transport
+// TransportConfig holds the unmarshalable configuration options for building an http.Transport.
+// Fields in this struct correspond almost entirely with those in http.Transport.
 type TransportConfig struct {
 	TLSHandshakeTimeout    time.Duration
 	DisableKeepAlives      bool

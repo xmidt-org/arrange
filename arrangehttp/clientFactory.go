@@ -73,11 +73,18 @@ func (cc ClientConfig) NewClient() (client *http.Client, err error) {
 		Timeout: cc.Timeout,
 	}
 
-	header := httpaux.NewHeader(cc.Header)
-	transport, err := cc.Transport.NewTransport(cc.TLS)
-	if err == nil {
-		client.Transport = roundtrip.Header(header.SetTo)(transport)
+	client.Transport, err = cc.Transport.NewTransport(cc.TLS)
+	return
+}
+
+// Apply allows a ClientConfig to be used as an Option[http.Client].  This method
+// decorates the client's transport so that the configured headers are supplied
+// with every request.
+func (cc ClientConfig) Apply(c *http.Client) error {
+	if len(cc.Header) > 0 {
+		header := httpaux.NewHeader(cc.Header)
+		c.Transport = roundtrip.Header(header.SetTo)(c.Transport)
 	}
 
-	return
+	return nil
 }

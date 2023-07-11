@@ -69,19 +69,6 @@ func (suite *ClientConfigSuite) expectedTransportConfig() TransportConfig {
 	}
 }
 
-// expectedClientConfig creates a ClientConfig with everything set to distinct, non-default
-// values.  The given TLS config is optional and may be nil.
-func (suite *ClientConfigSuite) expectedClientConfig(tls *arrangetls.Config) ClientConfig {
-	return ClientConfig{
-		Timeout:   457 * time.Millisecond,
-		Transport: suite.expectedTransportConfig(),
-		Header: http.Header{
-			"Custom": []string{"true"},
-		},
-		TLS: tls,
-	}
-}
-
 // assertTransport asserts that an *http.Transport was correctly created from a TransportConfig.
 func (suite *ClientConfigSuite) assertTransport(expected TransportConfig, actual *http.Transport) {
 	suite.Equal(expected.TLSHandshakeTimeout, actual.TLSHandshakeTimeout)
@@ -192,6 +179,11 @@ func (suite *ClientConfigSuite) testApplyWithHeader() {
 
 	client := new(http.Client)
 	suite.Require().NoError(cc.Apply(client))
+	suite.addTestRequestAssertions(
+		func(candidate *http.Request) {
+			suite.Equal("true", candidate.Header.Get("Custom"))
+		},
+	)
 
 	response := suite.sendRequest(client, "GET", nil)
 	suite.Equal(299, response.StatusCode)
@@ -200,6 +192,9 @@ func (suite *ClientConfigSuite) testApplyWithHeader() {
 func (suite *ClientConfigSuite) testApplyCustomRoundTripper() {
 	cc := ClientConfig{
 		Timeout: 15 * time.Second,
+		Header: http.Header{
+			"Custom": []string{"true"},
+		},
 	}
 
 	mockRoundTripper := httpmock.NewRoundTripperSuite(suite)
@@ -209,7 +204,11 @@ func (suite *ClientConfigSuite) testApplyCustomRoundTripper() {
 
 	suite.Require().NoError(cc.Apply(client))
 
-	mockRoundTripper.OnMatchAll().Response(&http.Response{
+	mockRoundTripper.OnMatchAll(httpmock.RequestMatcherFunc(
+		func(candidate *http.Request) bool {
+			return candidate.Header.Get("Custom") == "true"
+		},
+	)).Response(&http.Response{
 		StatusCode: 299,
 	}).Once()
 

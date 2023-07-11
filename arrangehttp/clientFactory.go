@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/xmidt-org/arrange/arrangetls"
+	"github.com/xmidt-org/arrange/internal/arrangereflect"
 	"github.com/xmidt-org/httpaux"
 	"github.com/xmidt-org/httpaux/roundtrip"
 )
@@ -83,7 +84,9 @@ func (cc ClientConfig) NewClient() (client *http.Client, err error) {
 func (cc ClientConfig) Apply(c *http.Client) error {
 	if len(cc.Header) > 0 {
 		header := httpaux.NewHeader(cc.Header)
-		c.Transport = roundtrip.Header(header.SetTo)(c.Transport)
+		c.Transport = roundtrip.Header(header.SetTo)(
+			arrangereflect.Safe(c.Transport, http.DefaultTransport),
+		)
 	}
 
 	return nil

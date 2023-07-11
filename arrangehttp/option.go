@@ -18,6 +18,8 @@ func (of OptionFunc[T]) Apply(t *T) error {
 // be grouped together.
 type Options[T any] []Option[T]
 
+// Apply applies all the options in this slice, returning an
+// aggregate error if any errors occurred.
 func (o Options[T]) Apply(t *T) (err error) {
 	for _, opt := range o {
 		err = multierr.Append(err, opt.Apply(t))
@@ -49,10 +51,7 @@ func AsOption[T any, F OptionClosure[T]](f F) Option[T] {
 // returns the original target t so that it can be used with fx.Decorate.
 func ApplyOptions[T any](t *T, opts ...Option[T]) (result *T, err error) {
 	result = t
-	for _, o := range opts {
-		err = multierr.Append(err, o.Apply(result))
-	}
-
+	err = Options[T](opts).Apply(result)
 	return
 }
 

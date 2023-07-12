@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/xmidt-org/arrange/arrangetls"
+	"github.com/xmidt-org/arrange/internal/arrangereflect"
 	"github.com/xmidt-org/httpaux"
 	"github.com/xmidt-org/httpaux/roundtrip"
 )
@@ -15,7 +16,8 @@ type ClientFactory interface {
 	NewClient() (*http.Client, error)
 }
 
-// TransportConfig holds the unmarshalable configuration options for building an http.Transport
+// TransportConfig holds the unmarshalable configuration options for building an http.Transport.
+// Fields in this struct correspond almost entirely with those in http.Transport.
 type TransportConfig struct {
 	TLSHandshakeTimeout    time.Duration
 	DisableKeepAlives      bool
@@ -72,11 +74,20 @@ func (cc ClientConfig) NewClient() (client *http.Client, err error) {
 		Timeout: cc.Timeout,
 	}
 
-	header := httpaux.NewHeader(cc.Header)
-	transport, err := cc.Transport.NewTransport(cc.TLS)
-	if err == nil {
-		client.Transport = roundtrip.Header(header.SetTo)(transport)
+	client.Transport, err = cc.Transport.NewTransport(cc.TLS)
+	return
+}
+
+// Apply allows a ClientConfig to be used as an Option[http.Client].  This method
+// decorates the client's transport so that the configured headers are supplied
+// with every request.
+func (cc ClientConfig) Apply(c *http.Client) error {
+	if len(cc.Header) > 0 {
+		header := httpaux.NewHeader(cc.Header)
+		c.Transport = roundtrip.Header(header.SetTo)(
+			arrangereflect.Safe(c.Transport, http.DefaultTransport),
+		)
 	}
 
-	return
+	return nil
 }

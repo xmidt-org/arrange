@@ -20,17 +20,21 @@ type Suite struct {
 	keyFile         string
 }
 
-// TLSConfig creates a new *tls.Config using the certificate generated in setup.
-func (suite *Suite) TLSConfig() *tls.Config {
-	tlsConfig, err := (&Config{
+// Config returns a configuration object using this suite's certificate.
+func (suite *Suite) Config() *Config {
+	return &Config{
 		Certificates: ExternalCertificates{
 			{
 				CertificateFile: suite.certificateFile,
 				KeyFile:         suite.keyFile,
 			},
 		},
-	}).New()
+	}
+}
 
+// TLSConfig creates a new *tls.Config using the certificate generated in setup.
+func (suite *Suite) TLSConfig() *tls.Config {
+	tlsConfig, err := suite.Config().New()
 	suite.Require().NoError(err)
 	suite.Require().NotNil(tlsConfig)
 	return tlsConfig

@@ -59,7 +59,7 @@ type ApplyOptionsSuite[T any] struct {
 	OptionSuite[T]
 }
 
-func (suite *ApplyOptionsSuite[T]) testOptions(count int) {
+func (suite *ApplyOptionsSuite[T]) testApplyOptions(count int) {
 	var (
 		current = 0
 		opts    = make(Options[T], 0, count)
@@ -80,10 +80,10 @@ func (suite *ApplyOptionsSuite[T]) testOptions(count int) {
 	suite.NoError(err)
 }
 
-func (suite *ApplyOptionsSuite[T]) TestOptions() {
+func (suite *ApplyOptionsSuite[T]) TestApplyOptions() {
 	for _, count := range []int{0, 1, 2, 5} {
 		suite.Run(fmt.Sprintf("count=%d", count), func() {
-			suite.testOptions(count)
+			suite.testApplyOptions(count)
 		})
 	}
 }

@@ -43,10 +43,17 @@ func NewClient(cc ClientConfig, opts ...Option[http.Client]) (*http.Client, erro
 // NewClientCustom is an *http.Client constructor that allows customization of the concrete
 // ClientFactory used to create the *http.Client.  This function is useful when you have a
 // custom (possibly unmarshaled) configuration struct that implements ClientFactory.
+//
+// If the ClientFactory type also implements Option[http.Client], it is applied after
+// all the other options are applied.
 func NewClientCustom[F ClientFactory](cf F, opts ...Option[http.Client]) (c *http.Client, err error) {
 	c, err = cf.NewClient()
 	if err == nil {
 		c, err = ApplyOptions(c, opts...)
+	}
+
+	if co, ok := any(cf).(Option[http.Client]); ok && err == nil {
+		err = co.Apply(c)
 	}
 
 	return

@@ -52,7 +52,7 @@ func NewServer(sc ServerConfig, h http.Handler, opts ...Option[http.Server]) (*h
 func NewServerCustom[F ServerFactory, H http.Handler](sf F, h H, opts ...Option[http.Server]) (s *http.Server, err error) {
 	s, err = sf.NewServer()
 	if err == nil {
-		s.Handler = arrangereflect.Safe[http.Handler](s.Handler, http.DefaultServeMux)
+		s.Handler = arrangereflect.Safe[http.Handler](h, http.DefaultServeMux)
 		s, err = ApplyOptions(s, opts...)
 	}
 

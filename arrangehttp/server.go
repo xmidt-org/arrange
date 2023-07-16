@@ -52,7 +52,7 @@ func NewServer(sc ServerConfig, h http.Handler, opts ...Option[http.Server]) (*h
 func NewServerCustom[F ServerFactory, H http.Handler](sf F, h H, opts ...Option[http.Server]) (s *http.Server, err error) {
 	s, err = sf.NewServer()
 	if err == nil {
-		s.Handler = arrangereflect.Safe[http.Handler](s.Handler, http.DefaultServeMux)
+		s.Handler = arrangereflect.Safe[http.Handler](h, http.DefaultServeMux)
 		s, err = ApplyOptions(s, opts...)
 	}
 
@@ -175,10 +175,18 @@ func BindServerCustom[F ListenerFactory](cfg F, server *http.Server, lifecycle f
 	)
 }
 
+// InvokeServer produces an fx.Invoke that binds a server to the application's lifecycle.
+// This function uses BindServer, with the following dependencies:
+//
+//   - ServerConfig as an optional dependency with the name serverName+".config".  This is used as the listener factory.
+//   - *http.Server as a required dependency named serverName.  This is typically the component created by NewServer or NewServerCustom.
+//   - []ListenerMiddleware as a value group named serverName+".listener.middleware".  These injected middleware are executed after the external middleware.
 func InvokeServer(serverName string, external ...ListenerMiddleware) fx.Option {
 	return InvokeServerCustom[ServerConfig](serverName, external...)
 }
 
+// InvokeServerCustom is like InvokeServer, but allows customization of the concrete ListenerFactory implementation.
+// Useful when you have a custom configuration object different from ServerConfig.
 func InvokeServerCustom[F ListenerFactory](serverName string, external ...ListenerMiddleware) fx.Option {
 	if len(serverName) == 0 {
 		return fx.Error(ErrServerNameRequired)

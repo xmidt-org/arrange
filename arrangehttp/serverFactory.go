@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/xmidt-org/arrange/arrangetls"
+	"github.com/xmidt-org/arrange/internal/arrangereflect"
 	"github.com/xmidt-org/httpaux"
 	"github.com/xmidt-org/httpaux/server"
 )
@@ -18,6 +19,7 @@ import (
 // A custom ServerFactory implementation can be injected and used via NewServerCustom
 // or ProvideServerCustom.
 type ServerFactory interface {
+	// NewServer constructs an *http.Server.
 	NewServer() (*http.Server, error)
 }
 
@@ -92,7 +94,9 @@ func (sc ServerConfig) Listen(ctx context.Context, s *http.Server) (net.Listener
 func (sc ServerConfig) Apply(s *http.Server) error {
 	if len(sc.Header) > 0 {
 		header := httpaux.NewHeader(sc.Header)
-		s.Handler = server.Header(header.SetTo)(s.Handler)
+		s.Handler = server.Header(header.SetTo)(
+			arrangereflect.Safe[http.Handler](s.Handler, http.DefaultServeMux),
+		)
 	}
 
 	return nil

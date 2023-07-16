@@ -1,6 +1,7 @@
 package arrangehttp
 
 import (
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -152,13 +153,81 @@ func (suite *ServerSuite) testProvideServerSimple() {
 }
 
 func (suite *ServerSuite) testProvideServerFull() {
-	// TODO
+	var server *http.Server
+	app := arrangetest.NewApp(
+		suite,
+		suite.supplyConstantHandler(fx.As(new(http.Handler))),
+		fx.Supply(
+			fx.Annotated{
+				Target: ServerConfig{
+					ReadTimeout: 27 * time.Second,
+				},
+				Name: "test.config",
+			},
+		),
+		ProvideServer(
+			"test",
+			// verify that external options work:
+			AsOption[http.Server](func(s *http.Server) {
+				s.WriteTimeout = 23973 * time.Hour
+			}),
+		),
+		fx.Populate(
+			fx.Annotate(
+				&server,
+				arrange.Tags().Name("test").ParamTags(),
+			),
+		),
+	)
+
+	app.RequireStart()
+	app.RequireStop()
+	suite.assertUsesConstantHandler(server, nil)
+	suite.Equal(27*time.Second, server.ReadTimeout)
+	suite.Equal(23973*time.Hour, server.WriteTimeout)
 }
 
 func (suite *ServerSuite) TestProvideServer() {
 	suite.Run("NoName", suite.testProvideServerNoName)
 	suite.Run("Simple", suite.testProvideServerSimple)
 	suite.Run("Full", suite.testProvideServerFull)
+}
+
+func (suite *ServerSuite) testBindServerNoTLS() {
+	ch := make(chan net.Addr, 1)
+	app := arrangetest.NewApp(
+		suite,
+		fx.Supply(
+			ServerConfig{},
+			&http.Server{
+				Addr: ":0",
+			},
+		),
+		fx.Provide(
+			fx.Annotate(
+				func() ListenerMiddleware {
+					return arrangetest.ListenCapture(ch)
+				},
+				arrange.Tags().Group("listener.middleware").ResultTags(),
+			),
+		),
+		fx.Invoke(
+			fx.Annotate(
+				BindServer,
+				arrange.Tags().Skip().Skip().Group("listener.middleware").ParamTags(),
+			),
+		),
+	)
+
+	app.RequireStart()
+	_, ok := arrangetest.ListenReceive(ch, 2*time.Second)
+	suite.True(ok)
+
+	app.RequireStop()
+}
+
+func (suite *ServerSuite) TestBindServer() {
+	suite.Run("NoTLS", suite.testBindServerNoTLS)
 }
 
 func TestServer(t *testing.T) {

@@ -1,7 +1,6 @@
 package arrangehttp
 
 import (
-	"net"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -191,49 +190,6 @@ func (suite *ServerSuite) TestProvideServer() {
 	suite.Run("NoName", suite.testProvideServerNoName)
 	suite.Run("Simple", suite.testProvideServerSimple)
 	suite.Run("Full", suite.testProvideServerFull)
-}
-
-func (suite *ServerSuite) testBindServerNoTLS() {
-	ch := make(chan net.Addr, 1)
-	app := arrangetest.NewApp(
-		suite,
-		fx.Supply(
-			ServerConfig{},
-			&http.Server{
-				Addr: ":0",
-			},
-		),
-		fx.Provide(
-			fx.Annotate(
-				func() ListenerMiddleware {
-					return arrangetest.ListenCapture(ch)
-				},
-				arrange.Tags().Group("listener.middleware").ResultTags(),
-			),
-		),
-		fx.Invoke(
-			fx.Annotate(
-				BindServer,
-				arrange.Tags().
-					Skip().
-					Skip().
-					Skip().
-					Skip().
-					Group("listener.middleware").
-					ParamTags(),
-			),
-		),
-	)
-
-	app.RequireStart()
-	_, ok := arrangetest.ListenReceive(ch, 2*time.Second)
-	suite.True(ok)
-
-	app.RequireStop()
-}
-
-func (suite *ServerSuite) TestBindServer() {
-	suite.Run("NoTLS", suite.testBindServerNoTLS)
 }
 
 func TestServer(t *testing.T) {

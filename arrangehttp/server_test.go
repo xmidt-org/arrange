@@ -214,7 +214,13 @@ func (suite *ServerSuite) testBindServerNoTLS() {
 		fx.Invoke(
 			fx.Annotate(
 				BindServer,
-				arrange.Tags().Skip().Skip().Group("listener.middleware").ParamTags(),
+				arrange.Tags().
+					Skip().
+					Skip().
+					Skip().
+					Skip().
+					Group("listener.middleware").
+					ParamTags(),
 			),
 		),
 	)

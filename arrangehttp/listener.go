@@ -65,8 +65,8 @@ func (f DefaultListenerFactory) Listen(ctx context.Context, server *http.Server)
 	return l, nil
 }
 
-// NewListener encapsulates the logic for creating a net.Listener for a server.  Typically,
-// this function should be called from within an start fx.Hook.
+// NewListener encapsulates the logic for creating a net.Listener for a server.
+// This function should be called from within a start hook, typically via fx.Hook.OnStart.
 //
 // The ListenerFactory may be nil, in which case an instance of DefaultListenerFactory will be used.
 func NewListener(ctx context.Context, lf ListenerFactory, server *http.Server, lm ...ListenerMiddleware) (l net.Listener, err error) {

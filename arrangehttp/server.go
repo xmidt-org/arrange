@@ -147,12 +147,9 @@ func BindServerCustom[F ListenerFactory](cfg F, server *http.Server, lifecycle f
 	lifecycle.Append(
 		fx.StartStopHook(
 			func(ctx context.Context) (err error) {
-				lf := arrangereflect.Safe[ListenerFactory](cfg, DefaultListenerFactory{})
-
 				var l net.Listener
-				l, err = lf.Listen(ctx, server)
+				l, err = NewListener(ctx, cfg, server, lm...)
 				if err == nil {
-					l = ApplyMiddleware(l, lm...)
 					go func() {
 						var exitCode int
 						defer func() {

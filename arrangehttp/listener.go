@@ -5,6 +5,8 @@ import (
 	"crypto/tls"
 	"net"
 	"net/http"
+
+	"github.com/xmidt-org/arrange/internal/arrangereflect"
 )
 
 // ListenerMiddleware represents a strategy for decorating net.Listener instances.
@@ -61,4 +63,18 @@ func (f DefaultListenerFactory) Listen(ctx context.Context, server *http.Server)
 	}
 
 	return l, nil
+}
+
+// NewListener encapsulates the logic for creating a net.Listener for a server.
+// This function should be called from within a start hook, typically via fx.Hook.OnStart.
+//
+// The ListenerFactory may be nil, in which case an instance of DefaultListenerFactory will be used.
+func NewListener(ctx context.Context, lf ListenerFactory, server *http.Server, lm ...ListenerMiddleware) (l net.Listener, err error) {
+	lf = arrangereflect.Safe[ListenerFactory](lf, DefaultListenerFactory{})
+	l, err = lf.Listen(ctx, server)
+	if err == nil {
+		l = ApplyMiddleware(l, lm...)
+	}
+
+	return
 }

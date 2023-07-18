@@ -87,8 +87,10 @@ func (suite *ShutdownWhenDoneSuite) TestShutdownWhenDone() {
 }
 
 func (suite *ShutdownWhenDoneSuite) testShutdownWhenDoneCtxNoError() {
+	type contextKey struct{}
+
 	var (
-		expectedCtx = context.WithValue(context.Background(), "foo", "bar")
+		expectedCtx = context.WithValue(context.Background(), contextKey{}, "bar")
 		control     = make(chan struct{})
 		app         = arrangetest.NewApp(
 			suite,
@@ -122,8 +124,10 @@ func (suite *ShutdownWhenDoneSuite) testShutdownWhenDoneCtxNoError() {
 }
 
 func (suite *ShutdownWhenDoneSuite) testShutdownWhenDoneCtxWithError() {
+	type contextKey struct{}
+
 	var (
-		expectedCtx = context.WithValue(context.Background(), "foo", "bar")
+		expectedCtx = context.WithValue(context.Background(), contextKey{}, "bar")
 		expectedErr = errors.New("expected")
 		control     = make(chan struct{})
 		app         = arrangetest.NewApp(

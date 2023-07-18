@@ -2,18 +2,21 @@ package arrangehttp
 
 import (
 	"context"
+	"net"
 	"net/http"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/suite"
+	"github.com/xmidt-org/arrange/arrangetest"
 	"github.com/xmidt-org/arrange/arrangetls"
 )
 
-type DefaultListenerFactorySuite struct {
+type ListenerSuite struct {
 	arrangetls.Suite
 }
 
-func (suite *DefaultListenerFactorySuite) TestBasic() {
+func (suite *ListenerSuite) testDefaultListenerFactoryBasic() {
 	var (
 		factory DefaultListenerFactory
 		server  = &http.Server{
@@ -28,7 +31,7 @@ func (suite *DefaultListenerFactorySuite) TestBasic() {
 	listener.Close()
 }
 
-func (suite *DefaultListenerFactorySuite) TestTLS() {
+func (suite *ListenerSuite) testDefaultListenerFactoryWithTLS() {
 	var (
 		factory DefaultListenerFactory
 		server  = &http.Server{
@@ -44,7 +47,7 @@ func (suite *DefaultListenerFactorySuite) TestTLS() {
 	listener.Close()
 }
 
-func (suite *DefaultListenerFactorySuite) TestError() {
+func (suite *ListenerSuite) testDefaultListenerFactoryError() {
 	var (
 		factory = DefaultListenerFactory{
 			Network: "this is a bad network",
@@ -65,6 +68,59 @@ func (suite *DefaultListenerFactorySuite) TestError() {
 	}
 }
 
-func TestDefaultListenerFactory(t *testing.T) {
-	suite.Run(t, new(DefaultListenerFactorySuite))
+func (suite *ListenerSuite) TestDefaultListenerFactory() {
+	suite.Run("Basic", suite.testDefaultListenerFactoryBasic)
+	suite.Run("WithTLS", suite.testDefaultListenerFactoryWithTLS)
+	suite.Run("Error", suite.testDefaultListenerFactoryError)
+}
+
+func (suite *ListenerSuite) testNewListenerNilListenerFactory() {
+	var (
+		capture = make(chan net.Addr, 1)
+		l, err  = NewListener(
+			context.Background(),
+			nil,
+			&http.Server{
+				Addr: ":0",
+			},
+			arrangetest.ListenCapture(capture),
+		)
+	)
+
+	suite.Require().NoError(err)
+	suite.Require().NotNil(l)
+	defer l.Close()
+	actual, ok := arrangetest.ListenReceive(capture, time.Second)
+	suite.True(ok)
+	suite.Equal(l.Addr(), actual)
+}
+
+func (suite *ListenerSuite) testNewListenerCustomListenerFactory() {
+	var (
+		capture = make(chan net.Addr, 1)
+		l, err  = NewListener(
+			context.Background(),
+			ServerConfig{},
+			&http.Server{
+				Addr: ":0",
+			},
+			arrangetest.ListenCapture(capture),
+		)
+	)
+
+	suite.Require().NoError(err)
+	suite.Require().NotNil(l)
+	defer l.Close()
+	actual, ok := arrangetest.ListenReceive(capture, time.Second)
+	suite.True(ok)
+	suite.Equal(l.Addr(), actual)
+}
+
+func (suite *ListenerSuite) TestNewListener() {
+	suite.Run("NilListenerFactory", suite.testNewListenerNilListenerFactory)
+	suite.Run("CustomListenerFactory", suite.testNewListenerCustomListenerFactory)
+}
+
+func TestListener(t *testing.T) {
+	suite.Run(t, new(ListenerSuite))
 }

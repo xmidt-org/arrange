@@ -2,15 +2,15 @@ package arrangetest
 
 import "github.com/stretchr/testify/mock"
 
-type mockTB struct {
+type mockTestable struct {
 	mock.Mock
 }
 
-func (m *mockTB) Logf(format string, args ...any) {
+func (m *mockTestable) Logf(format string, args ...any) {
 	m.Called(format, args)
 }
 
-func (m *mockTB) ExpectAnyLogf() *mock.Call {
+func (m *mockTestable) ExpectAnyLogf() *mock.Call {
 	return m.On(
 		"Logf",
 		mock.AnythingOfType("string"),
@@ -18,11 +18,11 @@ func (m *mockTB) ExpectAnyLogf() *mock.Call {
 	)
 }
 
-func (m *mockTB) Errorf(format string, args ...any) {
+func (m *mockTestable) Errorf(format string, args ...any) {
 	m.Called(format, args)
 }
 
-func (m *mockTB) ExpectAnyErrorf() *mock.Call {
+func (m *mockTestable) ExpectAnyErrorf() *mock.Call {
 	return m.On(
 		"Errorf",
 		mock.AnythingOfType("string"),
@@ -30,10 +30,10 @@ func (m *mockTB) ExpectAnyErrorf() *mock.Call {
 	)
 }
 
-func (m *mockTB) FailNow() {
+func (m *mockTestable) FailNow() {
 	m.Called()
 }
 
-func (m *mockTB) ExpectFailNow() *mock.Call {
+func (m *mockTestable) ExpectFailNow() *mock.Call {
 	return m.On("FailNow")
 }

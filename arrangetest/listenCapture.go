@@ -19,20 +19,26 @@ func ListenCapture(ch chan<- net.Addr) func(net.Listener) net.Listener {
 	}
 }
 
-func listenReceive(ch <-chan net.Addr, t <-chan time.Time) (net.Addr, bool) {
-	select {
-	case a := <-ch:
-		return a, true
-	case <-t:
-		return nil, false
-	}
-}
-
 // ListenReceive returns the first net.Addr received on a channel, typically previously
-// passed to ListenCapture.  If timeout elapses, this function return nil, false.  Otherwise,
-// the received net.Addr is returned along with true.
-func ListenReceive(ch <-chan net.Addr, timeout time.Duration) (net.Addr, bool) {
-	t := time.NewTimer(timeout)
-	defer t.Stop()
-	return listenReceive(ch, t.C)
+// passed to ListenCapture.  If timeout elapses, the enclosing test is failed.
+//
+// The v parameter must be convertible via AsTestable, or this function panics.
+func ListenReceive(v any, ch <-chan net.Addr, timeout time.Duration) (addr net.Addr) {
+	t := AsTestable(v)
+
+	timer := time.NewTimer(timeout)
+	defer timer.Stop()
+	select {
+	case addr = <-ch:
+		// passing
+	case <-timer.C:
+		// fail
+	}
+
+	if addr == nil {
+		t.Errorf("no listen address captured within %s", timeout)
+		t.FailNow()
+	}
+
+	return
 }

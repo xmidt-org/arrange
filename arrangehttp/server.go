@@ -88,7 +88,7 @@ func newServerProvider[H http.Handler, F ServerFactory](serverName string, exter
 	for _, e := range external {
 		if o, ok := e.(Option[http.Server]); ok {
 			sp.options = append(sp.options, o)
-		} else if lm, ok := e.(ListenerMiddleware); ok {
+		} else if lm, ok := e.(func(net.Listener) net.Listener); ok {
 			sp.listenerMiddleware = append(sp.listenerMiddleware, lm)
 		} else {
 			err = multierr.Append(err, fmt.Errorf("%T is not a valid external server option", e))

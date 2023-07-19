@@ -1,6 +1,7 @@
 package arrangehttp
 
 import (
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -135,9 +136,18 @@ func (suite *ServerSuite) testProvideServerNoName() {
 
 func (suite *ServerSuite) testProvideServerSimple() {
 	var server *http.Server
+	capture := make(chan net.Addr, 1)
 	app := arrangetest.NewApp(
 		suite,
-		ProvideServer("test"),
+		fx.Supply(
+			fx.Annotated{
+				Target: ServerConfig{
+					Address: ":0",
+				},
+				Name: "test.config",
+			},
+		),
+		ProvideServer("test", arrangetest.ListenCapture(capture)),
 		fx.Populate(
 			fx.Annotate(
 				&server,
@@ -147,12 +157,14 @@ func (suite *ServerSuite) testProvideServerSimple() {
 	)
 
 	app.RequireStart()
+	arrangetest.ListenReceive(suite, capture, time.Second)
 	app.RequireStop()
 	suite.NotNil(server)
 }
 
 func (suite *ServerSuite) testProvideServerFull() {
 	var server *http.Server
+	capture := make(chan net.Addr, 1)
 	app := arrangetest.NewApp(
 		suite,
 		suite.supplyConstantHandler(fx.As(new(http.Handler))),
@@ -162,6 +174,10 @@ func (suite *ServerSuite) testProvideServerFull() {
 					ReadTimeout: 27 * time.Second,
 				},
 				Name: "test.config",
+			},
+			fx.Annotated{
+				Target: arrangetest.ListenCapture(capture),
+				Name:   "test.listener.middleware",
 			},
 		),
 		ProvideServer(
@@ -180,10 +196,11 @@ func (suite *ServerSuite) testProvideServerFull() {
 	)
 
 	app.RequireStart()
-	app.RequireStop()
 	suite.assertUsesConstantHandler(server, nil)
 	suite.Equal(27*time.Second, server.ReadTimeout)
 	suite.Equal(23973*time.Hour, server.WriteTimeout)
+
+	app.RequireStop()
 }
 
 func (suite *ServerSuite) TestProvideServer() {

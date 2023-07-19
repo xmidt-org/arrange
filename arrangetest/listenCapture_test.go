@@ -44,26 +44,27 @@ func (suite *ListenSuite) testListenReceiveSuccess() {
 	)
 
 	ch <- expected // won't block, buffer size is 1
-	actual, ok := ListenReceive(ch, time.Second)
-	suite.True(ok)
+	actual := ListenReceive(suite, ch, time.Second)
 	suite.Same(expected, actual)
 }
 
-func (suite *ListenSuite) testListenReceiveTimeout() {
+func (suite *ListenSuite) testListenReceiveFail() {
 	var (
-		ch = make(chan net.Addr, 1)
-		t  = make(chan time.Time, 1)
+		mockT = new(mockTestable)
+		ch    = make(chan net.Addr, 1)
 	)
 
-	t <- time.Now() // won't block, buffer size is 1
-	actual, ok := listenReceive(ch, t)
-	suite.False(ok)
+	mockT.ExpectAnyErrorf()
+	mockT.ExpectFailNow()
+
+	actual := ListenReceive(mockT, ch, time.Millisecond)
 	suite.Nil(actual)
+	mockT.AssertExpectations(suite.T())
 }
 
 func (suite *ListenSuite) TestListenReceive() {
 	suite.Run("Success", suite.testListenReceiveSuccess)
-	suite.Run("Timeout", suite.testListenReceiveTimeout)
+	suite.Run("Fail", suite.testListenReceiveFail)
 }
 
 func TestListen(t *testing.T) {

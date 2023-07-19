@@ -57,12 +57,12 @@ func (suite *AppSuite) testNewErrAppSuccess() {
 }
 
 func (suite *AppSuite) testNewErrAppFail() {
-	mockTB := new(mockTB)
-	mockTB.ExpectAnyErrorf()
+	mockT := new(mockTestable)
+	mockT.ExpectAnyErrorf()
 
-	NewErrApp(mockTB) // no error should cause an assert failure, which is a success for this test
+	NewErrApp(mockT) // no error should cause an assert failure, which is a success for this test
 
-	mockTB.AssertExpectations(suite.T())
+	mockT.AssertExpectations(suite.T())
 }
 
 func (suite *AppSuite) TestNewErrApp() {

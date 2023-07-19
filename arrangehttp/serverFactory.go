@@ -12,13 +12,15 @@ import (
 	"github.com/xmidt-org/httpaux/server"
 )
 
-// ServerFactory is the strategy for instantiating an *http.Server.  ServerConfig is this
-// package's implementation of this interface, and allows a ServerFactory instance to be
-// read from an external source.
+// ServerFactory is the strategy for instantiating an *http.Server and an associated net.Listener.
+// ServerConfig is this package's implementation of this interface, and allows a ServerFactory instance
+// to be read from an external source.
 //
 // A custom ServerFactory implementation can be injected and used via NewServerCustom
 // or ProvideServerCustom.
 type ServerFactory interface {
+	ListenerFactory
+
 	// NewServer constructs an *http.Server.
 	NewServer() (*http.Server, error)
 }

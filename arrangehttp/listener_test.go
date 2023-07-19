@@ -90,8 +90,7 @@ func (suite *ListenerSuite) testNewListenerNilListenerFactory() {
 	suite.Require().NoError(err)
 	suite.Require().NotNil(l)
 	defer l.Close()
-	actual, ok := arrangetest.ListenReceive(capture, time.Second)
-	suite.True(ok)
+	actual := arrangetest.ListenReceive(suite, capture, time.Second)
 	suite.Equal(l.Addr(), actual)
 }
 
@@ -111,8 +110,7 @@ func (suite *ListenerSuite) testNewListenerCustomListenerFactory() {
 	suite.Require().NoError(err)
 	suite.Require().NotNil(l)
 	defer l.Close()
-	actual, ok := arrangetest.ListenReceive(capture, time.Second)
-	suite.True(ok)
+	actual := arrangetest.ListenReceive(suite, capture, time.Second)
 	suite.Equal(l.Addr(), actual)
 }
 

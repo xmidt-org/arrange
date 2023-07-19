@@ -1,6 +1,7 @@
 package arrangehttp
 
 import (
+	"errors"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -136,9 +137,18 @@ func (suite *ServerSuite) testProvideServerNoName() {
 
 func (suite *ServerSuite) testProvideServerSimple() {
 	var server *http.Server
+	capture := make(chan net.Addr, 1)
 	app := arrangetest.NewApp(
 		suite,
-		ProvideServer("test"),
+		fx.Supply(
+			fx.Annotated{
+				Target: ServerConfig{
+					Address: ":0",
+				},
+				Name: "test.config",
+			},
+		),
+		ProvideServer("test", arrangetest.ListenCapture(capture)),
 		fx.Populate(
 			fx.Annotate(
 				&server,
@@ -148,12 +158,14 @@ func (suite *ServerSuite) testProvideServerSimple() {
 	)
 
 	app.RequireStart()
+	arrangetest.ListenReceive(suite, capture, time.Second)
 	app.RequireStop()
 	suite.NotNil(server)
 }
 
 func (suite *ServerSuite) testProvideServerFull() {
 	var server *http.Server
+	capture := make(chan net.Addr, 1)
 	app := arrangetest.NewApp(
 		suite,
 		suite.supplyConstantHandler(fx.As(new(http.Handler))),
@@ -163,6 +175,10 @@ func (suite *ServerSuite) testProvideServerFull() {
 					ReadTimeout: 27 * time.Second,
 				},
 				Name: "test.config",
+			},
+			fx.Annotated{
+				Target: arrangetest.ListenCapture(capture),
+				Name:   "test.listener.middleware",
 			},
 		),
 		ProvideServer(
@@ -181,59 +197,66 @@ func (suite *ServerSuite) testProvideServerFull() {
 	)
 
 	app.RequireStart()
-	app.RequireStop()
 	suite.assertUsesConstantHandler(server, nil)
 	suite.Equal(27*time.Second, server.ReadTimeout)
 	suite.Equal(23973*time.Hour, server.WriteTimeout)
+
+	app.RequireStop()
+}
+
+func (suite *ServerSuite) testProvideServerInvalidExternalValue() {
+	var server *http.Server
+	arrangetest.NewErrApp(
+		suite,
+		ProvideServer("test", "this is not a valid external value"),
+		fx.Populate(&server), // needed to force the constructor to run
+	)
+}
+
+func (suite *ServerSuite) testProvideServerAbnormalServerExit() {
+	var (
+		server       *http.Server
+		expectedErr  = errors.New("expected")
+		mockListener = new(arrangetest.MockListener)
+
+		app = arrangetest.NewApp(
+			suite,
+			ProvideServer(
+				"test",
+				func(l net.Listener) net.Listener {
+					// replace with a misbehaving listener
+					l.Close()
+					return mockListener
+				},
+			),
+			fx.Populate(
+				fx.Annotate(
+					&server,
+					arrange.Tags().Name("test").ParamTags(),
+				),
+			),
+		)
+	)
+
+	mockListener.ExpectAccept(nil, expectedErr)
+	mockListener.ExpectClose(nil)
+	app.RequireStart()
+	select {
+	case signal := <-app.Wait():
+		suite.Equal(ServerAbnormalExitCode, signal.ExitCode)
+		mockListener.AssertExpectations(suite.T())
+
+	case <-time.After(time.Second):
+		suite.Fail("did not receive an fx.ShutdownSignal")
+	}
 }
 
 func (suite *ServerSuite) TestProvideServer() {
 	suite.Run("NoName", suite.testProvideServerNoName)
 	suite.Run("Simple", suite.testProvideServerSimple)
 	suite.Run("Full", suite.testProvideServerFull)
-}
-
-func (suite *ServerSuite) testBindServerNoTLS() {
-	ch := make(chan net.Addr, 1)
-	app := arrangetest.NewApp(
-		suite,
-		fx.Supply(
-			ServerConfig{},
-			&http.Server{
-				Addr: ":0",
-			},
-		),
-		fx.Provide(
-			fx.Annotate(
-				func() ListenerMiddleware {
-					return arrangetest.ListenCapture(ch)
-				},
-				arrange.Tags().Group("listener.middleware").ResultTags(),
-			),
-		),
-		fx.Invoke(
-			fx.Annotate(
-				BindServer,
-				arrange.Tags().
-					Skip().
-					Skip().
-					Skip().
-					Skip().
-					Group("listener.middleware").
-					ParamTags(),
-			),
-		),
-	)
-
-	app.RequireStart()
-	_, ok := arrangetest.ListenReceive(ch, 2*time.Second)
-	suite.True(ok)
-
-	app.RequireStop()
-}
-
-func (suite *ServerSuite) TestBindServer() {
-	suite.Run("NoTLS", suite.testBindServerNoTLS)
+	suite.Run("InvalidExternalValue", suite.testProvideServerInvalidExternalValue)
+	suite.Run("AbnormalServerExit", suite.testProvideServerAbnormalServerExit)
 }
 
 func TestServer(t *testing.T) {

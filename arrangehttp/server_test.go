@@ -1,6 +1,7 @@
 package arrangehttp
 
 import (
+	"errors"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -203,10 +204,59 @@ func (suite *ServerSuite) testProvideServerFull() {
 	app.RequireStop()
 }
 
+func (suite *ServerSuite) testProvideServerInvalidExternalValue() {
+	var server *http.Server
+	arrangetest.NewErrApp(
+		suite,
+		ProvideServer("test", "this is not a valid external value"),
+		fx.Populate(&server), // needed to force the constructor to run
+	)
+}
+
+func (suite *ServerSuite) testProvideServerAbnormalServerExit() {
+	var (
+		server       *http.Server
+		expectedErr  = errors.New("expected")
+		mockListener = new(arrangetest.MockListener)
+
+		app = arrangetest.NewApp(
+			suite,
+			ProvideServer(
+				"test",
+				func(l net.Listener) net.Listener {
+					// replace with a misbehaving listener
+					l.Close()
+					return mockListener
+				},
+			),
+			fx.Populate(
+				fx.Annotate(
+					&server,
+					arrange.Tags().Name("test").ParamTags(),
+				),
+			),
+		)
+	)
+
+	mockListener.ExpectAccept(nil, expectedErr)
+	mockListener.ExpectClose(nil)
+	app.RequireStart()
+	select {
+	case signal := <-app.Wait():
+		suite.Equal(ServerAbnormalExitCode, signal.ExitCode)
+		mockListener.AssertExpectations(suite.T())
+
+	case <-time.After(time.Second):
+		suite.Fail("did not receive an fx.ShutdownSignal")
+	}
+}
+
 func (suite *ServerSuite) TestProvideServer() {
 	suite.Run("NoName", suite.testProvideServerNoName)
 	suite.Run("Simple", suite.testProvideServerSimple)
 	suite.Run("Full", suite.testProvideServerFull)
+	suite.Run("InvalidExternalValue", suite.testProvideServerInvalidExternalValue)
+	suite.Run("AbnormalServerExit", suite.testProvideServerAbnormalServerExit)
 }
 
 func TestServer(t *testing.T) {

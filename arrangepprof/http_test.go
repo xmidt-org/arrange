@@ -1,154 +1,71 @@
 package arrangepprof
 
 import (
-	"context"
 	"net/http"
-	"net/http/httptest"
+	"net/url"
+	"path"
 	"testing"
 
-	"github.com/gorilla/mux"
-	"github.com/stretchr/testify/assert"
-	"go.uber.org/fx"
-	"go.uber.org/fx/fxtest"
+	"github.com/stretchr/testify/suite"
 )
 
-func TestConfigureRoutes(t *testing.T) {
-	router := new(mux.Router)
-	ConfigureRoutes(router.PathPrefix("/foo/").Subrouter())
-
-	// just spot check a few URLs, this isn't exhaustive
-	testData := []string{
-		"/foo/",
-		"/foo/cmdline",
-		"/foo/symbol",
-		"/foo/trace",
-		"/foo/allocs",
-	}
-
-	for _, url := range testData {
-		t.Run(url, func(t *testing.T) {
-			var (
-				assert   = assert.New(t)
-				response = httptest.NewRecorder()
-				request  = httptest.NewRequest("GET", url, nil)
-			)
-
-			router.ServeHTTP(response, request)
-			assert.Equal(http.StatusOK, response.Code)
-			assert.Greater(response.Body.Len(), 0)
-		})
-	}
+type HTTPSuite struct {
+	suite.Suite
 }
 
-func testHTTPUnnamedRouter(t *testing.T) {
-	var (
-		assert = assert.New(t)
-		router = new(mux.Router)
-		app    = fxtest.New(
-			t,
-			fx.Supply(router),
-			HTTP{}.Provide(),
-		)
-	)
+// assertPprofRoutes verifies that the multiplexer was correctly configured
+func (suite *HTTPSuite) assertPprofRoutes(mux *http.ServeMux, expectedPathPrefix string) {
+	suite.Require().NotNil(mux)
 
-	app.RequireStart()
-	defer app.Stop(context.Background())
+	suite.HTTPSuccess(mux.ServeHTTP, http.MethodGet, expectedPathPrefix, nil)
+	suite.HTTPSuccess(mux.ServeHTTP, http.MethodGet, expectedPathPrefix+"/", nil)
+	suite.HTTPSuccess(mux.ServeHTTP, http.MethodGet, path.Join(expectedPathPrefix, "/cmdline"), nil)
 
-	response := httptest.NewRecorder()
-	router.ServeHTTP(response, httptest.NewRequest("GET", "/debug/pprof", nil))
-	assert.Equal(http.StatusOK, response.Code)
-	assert.Greater(response.Body.Len(), 0)
+	// the profile endpoint will block for 30s by default, which we don't want in a unit test
+	profileQuery, err := url.ParseQuery("seconds=1")
+	suite.Require().NoError(err)
+	suite.HTTPSuccess(mux.ServeHTTP, "GET", path.Join(expectedPathPrefix, "/profile"), profileQuery)
 
-	response = httptest.NewRecorder()
-	router.ServeHTTP(response, httptest.NewRequest("GET", "/debug/pprof/", nil))
-	assert.Equal(http.StatusOK, response.Code)
-	assert.Greater(response.Body.Len(), 0)
-
-	response = httptest.NewRecorder()
-	router.ServeHTTP(response, httptest.NewRequest("GET", "/debug/pprof/cmdline", nil))
-	assert.Equal(http.StatusOK, response.Code)
-	assert.Greater(response.Body.Len(), 0)
-
-	app.RequireStop()
+	suite.HTTPSuccess(mux.ServeHTTP, http.MethodGet, path.Join(expectedPathPrefix, "/symbol"), nil)
+	suite.HTTPSuccess(mux.ServeHTTP, http.MethodGet, path.Join(expectedPathPrefix, "/trace"), nil)
 }
 
-func testHTTPNamedRouter(t *testing.T) {
-	var (
-		assert = assert.New(t)
-		router = new(mux.Router)
-		app    = fxtest.New(
-			t,
-			fx.Provide(
-				fx.Annotated{
-					Name: "test",
-					Target: func() *mux.Router {
-						return router
-					},
-				},
-			),
-			HTTP{
-				RouterName: "test",
-			}.Provide(),
-		)
-	)
+func (suite *HTTPSuite) testApply(expectedPathPrefix, configuredPathPrefix string) {
+	mux := HTTP{
+		PathPrefix: configuredPathPrefix,
+	}.Apply(http.NewServeMux())
 
-	app.RequireStart()
-	defer app.Stop(context.Background())
-
-	response := httptest.NewRecorder()
-	router.ServeHTTP(response, httptest.NewRequest("GET", "/debug/pprof", nil))
-	assert.Equal(http.StatusOK, response.Code)
-	assert.Greater(response.Body.Len(), 0)
-
-	response = httptest.NewRecorder()
-	router.ServeHTTP(response, httptest.NewRequest("GET", "/debug/pprof/", nil))
-	assert.Equal(http.StatusOK, response.Code)
-	assert.Greater(response.Body.Len(), 0)
-
-	response = httptest.NewRecorder()
-	router.ServeHTTP(response, httptest.NewRequest("GET", "/debug/pprof/cmdline", nil))
-	assert.Equal(http.StatusOK, response.Code)
-	assert.Greater(response.Body.Len(), 0)
-
-	app.RequireStop()
+	suite.assertPprofRoutes(mux, expectedPathPrefix)
 }
 
-func testHTTPCustomPathPrefix(t *testing.T) {
-	var (
-		assert = assert.New(t)
-		router = new(mux.Router)
-		app    = fxtest.New(
-			t,
-			fx.Supply(router),
-			HTTP{
-				PathPrefix: "/test/debug/",
-			}.Provide(),
-		)
-	)
+func (suite *HTTPSuite) TestApply() {
+	suite.Run("DefaultPathPrefix", func() {
+		suite.testApply(DefaultPathPrefix, "")
+	})
 
-	app.RequireStart()
-	defer app.Stop(context.Background())
+	suite.Run("CustomPathPrefix", func() {
+		suite.testApply("/custom", "/custom")
+	})
+}
 
-	response := httptest.NewRecorder()
-	router.ServeHTTP(response, httptest.NewRequest("GET", "/test/debug", nil))
-	assert.Equal(http.StatusOK, response.Code)
-	assert.Greater(response.Body.Len(), 0)
+func (suite *HTTPSuite) testNew(expectedPathPrefix, configuredPathPrefix string) {
+	mux := HTTP{
+		PathPrefix: configuredPathPrefix,
+	}.New()
 
-	response = httptest.NewRecorder()
-	router.ServeHTTP(response, httptest.NewRequest("GET", "/test/debug/", nil))
-	assert.Equal(http.StatusOK, response.Code)
-	assert.Greater(response.Body.Len(), 0)
+	suite.assertPprofRoutes(mux, expectedPathPrefix)
+}
 
-	response = httptest.NewRecorder()
-	router.ServeHTTP(response, httptest.NewRequest("GET", "/test/debug/cmdline", nil))
-	assert.Equal(http.StatusOK, response.Code)
-	assert.Greater(response.Body.Len(), 0)
+func (suite *HTTPSuite) TestNew() {
+	suite.Run("DefaultPathPrefix", func() {
+		suite.testNew(DefaultPathPrefix, "")
+	})
 
-	app.RequireStop()
+	suite.Run("CustomPathPrefix", func() {
+		suite.testNew("/custom", "/custom")
+	})
 }
 
 func TestHTTP(t *testing.T) {
-	t.Run("UnnamedRouter", testHTTPUnnamedRouter)
-	t.Run("NamedRouter", testHTTPNamedRouter)
-	t.Run("CustomPathPrefix", testHTTPCustomPathPrefix)
+	suite.Run(t, new(HTTPSuite))
 }

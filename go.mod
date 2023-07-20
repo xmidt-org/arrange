@@ -3,7 +3,6 @@ module github.com/xmidt-org/arrange
 go 1.19
 
 require (
-	github.com/gorilla/mux v1.8.0
 	github.com/stretchr/testify v1.8.4
 	github.com/xmidt-org/httpaux v0.4.0
 	go.uber.org/fx v1.20.0

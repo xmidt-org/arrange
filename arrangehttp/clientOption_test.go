@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/suite"
+	"github.com/xmidt-org/httpaux/roundtrip"
 )
 
 type ClientOptionSuite struct {
@@ -17,7 +18,7 @@ func (suite *ClientOptionSuite) testClientMiddlewareNoTransport() {
 
 	ClientMiddleware(func(next http.RoundTripper) http.RoundTripper {
 		suite.Same(http.DefaultTransport, next)
-		return AsRoundTripper(func(request *http.Request) (*http.Response, error) {
+		return roundtrip.Func(func(request *http.Request) (*http.Response, error) {
 			called = true
 			return nil, nil
 		})
@@ -31,7 +32,7 @@ func (suite *ClientOptionSuite) testClientMiddlewareNoTransport() {
 func (suite *ClientOptionSuite) testClientMiddlewareWithTransport() {
 	expectedRequest := httptest.NewRequest("GET", "/", nil)
 
-	suite.target.Transport = AsRoundTripper(func(actualRequest *http.Request) (*http.Response, error) {
+	suite.target.Transport = roundtrip.Func(func(actualRequest *http.Request) (*http.Response, error) {
 		suite.Same(expectedRequest, actualRequest)
 		return &http.Response{
 			Header: http.Header{
@@ -42,7 +43,7 @@ func (suite *ClientOptionSuite) testClientMiddlewareWithTransport() {
 
 	ClientMiddleware(func(next http.RoundTripper) http.RoundTripper {
 		suite.Require().NotNil(next)
-		return AsRoundTripper(func(request *http.Request) (*http.Response, error) {
+		return roundtrip.Func(func(request *http.Request) (*http.Response, error) {
 			response, err := next.RoundTrip(request)
 			suite.Require().NoError(err)
 			suite.Require().NotNil(response)

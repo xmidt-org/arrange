@@ -14,25 +14,6 @@ var (
 	ErrClientNameRequired = errors.New("A client name is required")
 )
 
-// RoundTripperFunc is the underlying type for a closure which provides HTTP
-// round trip logic.
-type RoundTripperFunc interface {
-	~func(*http.Request) (*http.Response, error)
-}
-
-type roundTripperFunc[F RoundTripperFunc] struct {
-	f F
-}
-
-func (rtf roundTripperFunc[F]) RoundTrip(request *http.Request) (*http.Response, error) {
-	return rtf.f(request)
-}
-
-// AsRoundTripper converts a closure into an http.RoundTripper implementation.
-func AsRoundTripper[F RoundTripperFunc](f F) http.RoundTripper {
-	return roundTripperFunc[F]{f: f}
-}
-
 // NewClient is the primary client constructor for arrange.  Use this when you are creating a client
 // from a (possibly unmarshaled) ClientConfig.  The options can be annotated to come from a value group,
 // which is useful when there are multiple clients in a single fx.App.

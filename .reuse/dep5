@@ -1,0 +1,9 @@
+Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
+Upstream-Name: retry
+Upstream-Contact: John Bass <john_bass2@cable.comcast.com>
+Source: https://github.com/xmidt-org/retry
+
+Files: .golangci.yml
+Copyright: SPDX-FileCopyrightText: 2023 Comcast Cable Communications Management, LLC
+License: Apache-2.0
+

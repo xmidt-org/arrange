@@ -1,12 +1,11 @@
-package arrangehttp
+package arrangelisten
 
 import (
 	"context"
 	"crypto/tls"
-	"net"
-	"net/http"
-
+	"github.com/xmidt-org/arrange/arrangemiddle"
 	"github.com/xmidt-org/arrange/internal/arrangereflect"
+	"net"
 )
 
 // ListenerMiddleware represents a strategy for decorating net.Listener instances.
@@ -28,7 +27,7 @@ type ListenerMiddleware func(net.Listener) net.Listener
 type ListenerFactory interface {
 	// Listen creates the appropriate net.Listener, binding to a TCP address in
 	// the process
-	Listen(context.Context, *http.Server) (net.Listener, error)
+	Listen(context.Context) (net.Listener, error)
 }
 
 // DefaultListenerFactory is the default implementation of ListenerFactory.  The
@@ -40,26 +39,39 @@ type DefaultListenerFactory struct {
 	// Network is the network to listen on, which must always be a TCP network.
 	// If not set, "tcp" is used.
 	Network string
+
+	// Address string
+	Address string
+
+	// TLSConfig is the TLS configuration to use for the listener.  If nil,
+	// no TLS is used.
+	TLSConfig *tls.Config
 }
 
 // Listen provides the default ListenerFactory behavior for this package.
 // It essentially does the same thing as net/http, but allows the network
 // to be configured externally and ensures that the listen address matches
 // the server address.
-func (f DefaultListenerFactory) Listen(ctx context.Context, server *http.Server) (net.Listener, error) {
+func (f DefaultListenerFactory) Listen(ctx context.Context) (net.Listener, error) {
 	network := f.Network
 	if len(network) == 0 {
 		network = "tcp"
 	}
+	//
+	//// if server is nil, leverage default values in the DefaultListenerFactory
+	//if server != nil {
+	//	f.Address = server.Addr
+	//	f.TLSConfig = server.TLSConfig.Clone()
+	//}
 
-	l, err := f.ListenConfig.Listen(ctx, network, server.Addr)
+	l, err := f.ListenConfig.Listen(ctx, network, f.Address)
 	if err != nil {
 		return nil, err
 	}
 
-	if server.TLSConfig != nil {
+	if f.TLSConfig != nil {
 		// clone the TLSConfig, as the stdlib does, to avoid racyness
-		l = tls.NewListener(l, server.TLSConfig.Clone())
+		l = tls.NewListener(l, f.TLSConfig.Clone())
 	}
 
 	return l, nil
@@ -69,11 +81,11 @@ func (f DefaultListenerFactory) Listen(ctx context.Context, server *http.Server)
 // This function should be called from within a start hook, typically via fx.Hook.OnStart.
 //
 // The ListenerFactory may be nil, in which case an instance of DefaultListenerFactory will be used.
-func NewListener(ctx context.Context, lf ListenerFactory, server *http.Server, lm ...ListenerMiddleware) (l net.Listener, err error) {
+func NewListener(ctx context.Context, lf ListenerFactory, lm ...ListenerMiddleware) (l net.Listener, err error) {
 	lf = arrangereflect.Safe[ListenerFactory](lf, DefaultListenerFactory{})
-	l, err = lf.Listen(ctx, server)
+	l, err = lf.Listen(ctx)
 	if err == nil {
-		l = ApplyMiddleware(l, lm...)
+		l = arrangemiddle.ApplyMiddleware(l, lm...)
 	}
 
 	return

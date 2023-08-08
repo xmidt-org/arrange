@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"github.com/xmidt-org/arrange/arrangetest"
 	"log"
 	"net"
 	"net/http"
@@ -15,7 +16,7 @@ import (
 )
 
 type ServerOptionSuite struct {
-	OptionSuite[http.Server]
+	arrangetest.OptionSuite[http.Server]
 }
 
 func (suite *ServerOptionSuite) TestConnState() {
@@ -29,10 +30,10 @@ func (suite *ServerOptionSuite) TestConnState() {
 			suite.Same(expectedConn, actualConn)
 			suite.Equal(http.StateNew, cs)
 			called = true
-		}).Apply(suite.target),
+		}).Apply(suite.Target),
 	)
 
-	suite.target.ConnState(expectedConn, http.StateNew)
+	suite.Target.ConnState(expectedConn, http.StateNew)
 	suite.True(called)
 }
 
@@ -146,16 +147,16 @@ func (suite *ServerOptionSuite) TestErrorLog() {
 	)
 
 	suite.Require().NoError(
-		ErrorLog(errorLog).Apply(suite.target),
+		ErrorLog(errorLog).Apply(suite.Target),
 	)
 
-	suite.Require().NotNil(suite.target.ErrorLog)
-	suite.target.ErrorLog.Printf("an error")
+	suite.Require().NotNil(suite.Target.ErrorLog)
+	suite.Target.ErrorLog.Printf("an error")
 	suite.NotEmpty(output.String())
 }
 
 func (suite *ServerOptionSuite) testServerMiddleware(initialHandler http.Handler) *httptest.ResponseRecorder {
-	suite.target.Handler = initialHandler
+	suite.Target.Handler = initialHandler
 
 	ServerMiddleware(func(next http.Handler) http.Handler {
 		suite.Require().NotNil(next)
@@ -163,16 +164,16 @@ func (suite *ServerOptionSuite) testServerMiddleware(initialHandler http.Handler
 			response.Header().Set("Middleware", "true")
 			next.ServeHTTP(response, request)
 		})
-	}).Apply(suite.target)
+	}).Apply(suite.Target)
 
-	suite.Require().NotNil(suite.target.Handler)
+	suite.Require().NotNil(suite.Target.Handler)
 
 	var (
 		request  = httptest.NewRequest("GET", "/", nil)
 		response = httptest.NewRecorder()
 	)
 
-	suite.target.Handler.ServeHTTP(response, request)
+	suite.Target.Handler.ServeHTTP(response, request)
 	suite.Equal(
 		"true",
 		response.Result().Header.Get("Middleware"),

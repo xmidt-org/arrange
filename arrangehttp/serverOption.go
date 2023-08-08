@@ -2,6 +2,8 @@ package arrangehttp
 
 import (
 	"context"
+	"github.com/xmidt-org/arrange/arrangemiddle"
+	"github.com/xmidt-org/arrange/arrangeoption"
 	"log"
 	"net"
 	"net/http"
@@ -10,8 +12,8 @@ import (
 )
 
 // ConnState returns a server option that sets or replaces the http.Server.ConnState function.
-func ConnState(fn func(net.Conn, http.ConnState)) Option[http.Server] {
-	return AsOption[http.Server](func(s *http.Server) {
+func ConnState(fn func(net.Conn, http.ConnState)) arrangeoption.Option[http.Server] {
+	return arrangeoption.AsOption[http.Server](func(s *http.Server) {
 		s.ConnState = fn
 	})
 }
@@ -34,8 +36,8 @@ func (bcf baseContextFuncs[BCF]) build(l net.Listener) (ctx context.Context) {
 
 // BaseContext returns a server option that sets or replaces the http.Server.BaseContext function.
 // Each individual context function is composed to produce the context for the given listener.
-func BaseContext[BCF BaseContextFunc](ctxFns ...BCF) Option[http.Server] {
-	return AsOption[http.Server](func(s *http.Server) {
+func BaseContext[BCF BaseContextFunc](ctxFns ...BCF) arrangeoption.Option[http.Server] {
+	return arrangeoption.AsOption[http.Server](func(s *http.Server) {
 		if len(ctxFns) > 0 {
 			bcf := make(baseContextFuncs[BCF], 0, len(ctxFns))
 			bcf = append(bcf, ctxFns...)
@@ -62,8 +64,8 @@ func (ccf connContextFuncs[CCF]) build(ctx context.Context, c net.Conn) context.
 // ConnContext returns a server option that sets or augments the http.Server.ConnContext function.
 // Any existing ConnContext on the server is merged with the given functions to create a single
 // ConnContext closure that uses each function to build the context for each server connection.
-func ConnContext[CCF ConnContextFunc](ctxFns ...CCF) Option[http.Server] {
-	return AsOption[http.Server](func(s *http.Server) {
+func ConnContext[CCF ConnContextFunc](ctxFns ...CCF) arrangeoption.Option[http.Server] {
+	return arrangeoption.AsOption[http.Server](func(s *http.Server) {
 		size := len(ctxFns)
 		if size == 0 {
 			return
@@ -82,17 +84,17 @@ func ConnContext[CCF ConnContextFunc](ctxFns ...CCF) Option[http.Server] {
 }
 
 // ErrorLog returns a server option that sets or replaces the http.Server.ErrorLog
-func ErrorLog(l *log.Logger) Option[http.Server] {
-	return AsOption[http.Server](func(s *http.Server) {
+func ErrorLog(l *log.Logger) arrangeoption.Option[http.Server] {
+	return arrangeoption.AsOption[http.Server](func(s *http.Server) {
 		s.ErrorLog = l
 	})
 }
 
 // ServerMiddleware returns an option that applies any number of middleware functions
 // to a server's handler.
-func ServerMiddleware[M Middleware[http.Handler]](fns ...M) Option[http.Server] {
-	return AsOption[http.Server](func(s *http.Server) {
-		s.Handler = ApplyMiddleware(
+func ServerMiddleware[M arrangemiddle.Middleware[http.Handler]](fns ...M) arrangeoption.Option[http.Server] {
+	return arrangeoption.AsOption[http.Server](func(s *http.Server) {
+		s.Handler = arrangemiddle.ApplyMiddleware(
 			arrangereflect.Safe[http.Handler](s.Handler, http.DefaultServeMux),
 			fns...,
 		)

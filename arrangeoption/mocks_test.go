@@ -1,4 +1,4 @@
-package arrangehttp
+package arrangeoption
 
 import (
 	"github.com/stretchr/testify/mock"

@@ -66,13 +66,9 @@ func (suite *ServerConfigSuite) TestNewServer() {
 
 func (suite *ServerConfigSuite) testListenDefault() {
 	var (
-		s = &http.Server{
-			Addr: ":0",
-		}
-
 		// all defaults in the ServerConfig
 		l, err = ServerConfig{}.Listen(
-			context.Background(), s,
+			context.Background(),
 		)
 	)
 
@@ -85,15 +81,11 @@ func (suite *ServerConfigSuite) testListenDefault() {
 
 func (suite *ServerConfigSuite) testListenNoTLS() {
 	var (
-		s = &http.Server{
-			Addr: ":0",
-		}
-
 		l, err = ServerConfig{
 			Network:   "tcp",
 			KeepAlive: 2 * time.Minute,
 		}.Listen(
-			context.Background(), s,
+			context.Background(),
 		)
 	)
 
@@ -106,15 +98,11 @@ func (suite *ServerConfigSuite) testListenNoTLS() {
 
 func (suite *ServerConfigSuite) testListenTLS() {
 	var (
-		s = &http.Server{
-			Addr:      ":0",
-			TLSConfig: suite.TLSConfig(),
-		}
-
 		l, err = ServerConfig{
 			KeepAlive: time.Minute,
+			TLS:       suite.Config(),
 		}.Listen(
-			context.Background(), s,
+			context.Background(),
 		)
 	)
 

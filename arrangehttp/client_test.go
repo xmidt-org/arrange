@@ -1,6 +1,7 @@
 package arrangehttp
 
 import (
+	"github.com/xmidt-org/arrange/arrangeoption"
 	"net/http"
 	"net/url"
 	"testing"
@@ -29,7 +30,7 @@ func (suite *ClientSuite) TestNewClient() {
 	}
 
 	client, err := NewClient(cc,
-		AsOption[http.Client](func(c *http.Client) {
+		arrangeoption.AsOption[http.Client](func(c *http.Client) {
 			c.Transport = mockTransport
 		}),
 	)
@@ -101,8 +102,8 @@ func (suite *ClientSuite) testProvideClientWithConfig() {
 		),
 		fx.Provide(
 			fx.Annotate(
-				func() Option[http.Client] {
-					return AsOption[http.Client](func(c *http.Client) {
+				func() arrangeoption.Option[http.Client] {
+					return arrangeoption.AsOption[http.Client](func(c *http.Client) {
 						c.Transport = mockTransport
 					})
 				},
@@ -152,8 +153,8 @@ func (suite *ClientSuite) TestProvideClientCustom() {
 		),
 		fx.Provide(
 			fx.Annotate(
-				func() Option[http.Client] {
-					return AsOption[http.Client](func(c *http.Client) {
+				func() arrangeoption.Option[http.Client] {
+					return arrangeoption.AsOption[http.Client](func(c *http.Client) {
 						c.Transport = mockTransport
 					})
 				},

@@ -1,9 +1,8 @@
-package arrangehttp
+package arrangelisten
 
 import (
 	"context"
 	"net"
-	"net/http"
 	"testing"
 	"time"
 
@@ -19,12 +18,9 @@ type ListenerSuite struct {
 func (suite *ListenerSuite) testDefaultListenerFactoryBasic() {
 	var (
 		factory DefaultListenerFactory
-		server  = &http.Server{
-			Addr: ":0",
-		}
 	)
 
-	listener, err := factory.Listen(context.Background(), server)
+	listener, err := factory.Listen(context.Background())
 	suite.Require().NoError(err)
 	suite.Require().NotNil(listener)
 	suite.NotNil(listener.Addr())
@@ -33,14 +29,12 @@ func (suite *ListenerSuite) testDefaultListenerFactoryBasic() {
 
 func (suite *ListenerSuite) testDefaultListenerFactoryWithTLS() {
 	var (
-		factory DefaultListenerFactory
-		server  = &http.Server{
-			Addr:      ":0",
+		factory = DefaultListenerFactory{
 			TLSConfig: suite.TLSConfig(),
 		}
 	)
 
-	listener, err := factory.Listen(context.Background(), server)
+	listener, err := factory.Listen(context.Background())
 	suite.Require().NoError(err)
 	suite.Require().NotNil(listener)
 	suite.NotNil(listener.Addr())
@@ -52,13 +46,9 @@ func (suite *ListenerSuite) testDefaultListenerFactoryError() {
 		factory = DefaultListenerFactory{
 			Network: "this is a bad network",
 		}
-
-		server = &http.Server{
-			Addr: ":0",
-		}
 	)
 
-	listener, err := factory.Listen(context.Background(), server)
+	listener, err := factory.Listen(context.Background())
 	suite.Error(err)
 
 	if !suite.Nil(listener) {
@@ -80,9 +70,6 @@ func (suite *ListenerSuite) testNewListenerNilListenerFactory() {
 		l, err  = NewListener(
 			context.Background(),
 			nil,
-			&http.Server{
-				Addr: ":0",
-			},
 			arrangetest.ListenCapture(capture),
 		)
 	)
@@ -94,15 +81,19 @@ func (suite *ListenerSuite) testNewListenerNilListenerFactory() {
 	suite.Equal(l.Addr(), actual)
 }
 
+type customListenerFactory struct {
+}
+
+func (f *customListenerFactory) Listen(ctx context.Context) (net.Listener, error) {
+	return net.Listen("tcp", ":0")
+}
+
 func (suite *ListenerSuite) testNewListenerCustomListenerFactory() {
 	var (
 		capture = make(chan net.Addr, 1)
 		l, err  = NewListener(
 			context.Background(),
-			ServerConfig{},
-			&http.Server{
-				Addr: ":0",
-			},
+			&customListenerFactory{},
 			arrangetest.ListenCapture(capture),
 		)
 	)

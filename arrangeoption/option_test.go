@@ -1,8 +1,9 @@
-package arrangehttp
+package arrangeoption
 
 import (
 	"errors"
 	"fmt"
+	"github.com/xmidt-org/arrange/arrangetest"
 	"net/http"
 	"testing"
 
@@ -10,21 +11,8 @@ import (
 	"github.com/stretchr/testify/suite"
 )
 
-type OptionSuite[T any] struct {
-	suite.Suite
-	target *T
-}
-
-func (suite *OptionSuite[T]) SetupTest() {
-	suite.target = new(T)
-}
-
-func (suite *OptionSuite[T]) SetupSubTest() {
-	suite.target = new(T)
-}
-
 type AsOptionSuite[T any] struct {
-	OptionSuite[T]
+	arrangetest.OptionSuite[T]
 }
 
 func (suite *AsOptionSuite[T]) TestClosure() {
@@ -32,8 +20,8 @@ func (suite *AsOptionSuite[T]) TestClosure() {
 	wrapper := AsOption[T](expected.Apply)
 	suite.Require().NotNil(wrapper)
 
-	expected.ExpectApply(suite.target).Return(nil)
-	suite.NoError(wrapper.Apply(suite.target))
+	expected.ExpectApply(suite.Target).Return(nil)
+	suite.NoError(wrapper.Apply(suite.Target))
 	expected.AssertExpectations(suite.T())
 }
 
@@ -42,8 +30,8 @@ func (suite *AsOptionSuite[T]) TestClosureNoError() {
 	wrapper := AsOption[T](expected.Apply)
 	suite.Require().NotNil(wrapper)
 
-	expected.ExpectApply(suite.target)
-	suite.NoError(wrapper.Apply(suite.target))
+	expected.ExpectApply(suite.Target)
+	suite.NoError(wrapper.Apply(suite.Target))
 	expected.AssertExpectations(suite.T())
 }
 
@@ -56,7 +44,7 @@ func TestAsOptionClient(t *testing.T) {
 }
 
 type ApplyOptionsSuite[T any] struct {
-	OptionSuite[T]
+	arrangetest.OptionSuite[T]
 }
 
 func (suite *ApplyOptionsSuite[T]) testApplyOptions(count int) {
@@ -69,14 +57,14 @@ func (suite *ApplyOptionsSuite[T]) testApplyOptions(count int) {
 		i := i
 		opts = append(opts, AsOption[T](func(actual *T) {
 			suite.NotNil(actual)
-			suite.Same(suite.target, actual)
+			suite.Same(suite.Target, actual)
 			suite.Equal(i, current)
 			current++
 		}))
 	}
 
-	actual, err := ApplyOptions(suite.target, opts...)
-	suite.Same(suite.target, actual)
+	actual, err := ApplyOptions(suite.Target, opts...)
+	suite.Same(suite.Target, actual)
 	suite.NoError(err)
 }
 

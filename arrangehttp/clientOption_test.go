@@ -1,6 +1,7 @@
 package arrangehttp
 
 import (
+	"github.com/xmidt-org/arrange/arrangetest"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -10,7 +11,7 @@ import (
 )
 
 type ClientOptionSuite struct {
-	OptionSuite[http.Client]
+	arrangetest.OptionSuite[http.Client]
 }
 
 func (suite *ClientOptionSuite) testClientMiddlewareNoTransport() {
@@ -22,17 +23,17 @@ func (suite *ClientOptionSuite) testClientMiddlewareNoTransport() {
 			called = true
 			return nil, nil
 		})
-	}).Apply(suite.target)
+	}).Apply(suite.Target)
 
-	suite.Require().NotNil(suite.target.Transport)
-	suite.target.Transport.RoundTrip(new(http.Request))
+	suite.Require().NotNil(suite.Target.Transport)
+	suite.Target.Transport.RoundTrip(new(http.Request))
 	suite.True(called)
 }
 
 func (suite *ClientOptionSuite) testClientMiddlewareWithTransport() {
 	expectedRequest := httptest.NewRequest("GET", "/", nil)
 
-	suite.target.Transport = roundtrip.Func(func(actualRequest *http.Request) (*http.Response, error) {
+	suite.Target.Transport = roundtrip.Func(func(actualRequest *http.Request) (*http.Response, error) {
 		suite.Same(expectedRequest, actualRequest)
 		return &http.Response{
 			Header: http.Header{
@@ -51,11 +52,11 @@ func (suite *ClientOptionSuite) testClientMiddlewareWithTransport() {
 			response.Header.Set("Middleware", "true")
 			return response, err
 		})
-	}).Apply(suite.target)
+	}).Apply(suite.Target)
 
-	suite.Require().NotNil(suite.target.Transport)
+	suite.Require().NotNil(suite.Target.Transport)
 
-	response, err := suite.target.Transport.RoundTrip(expectedRequest)
+	response, err := suite.Target.Transport.RoundTrip(expectedRequest)
 	suite.Require().NoError(err)
 	suite.Require().NotNil(response)
 	suite.Equal(

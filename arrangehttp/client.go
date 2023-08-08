@@ -2,6 +2,7 @@ package arrangehttp
 
 import (
 	"errors"
+	"github.com/xmidt-org/arrange/arrangeoption"
 	"net/http"
 
 	"github.com/xmidt-org/arrange"
@@ -17,7 +18,7 @@ var (
 // NewClient is the primary client constructor for arrange.  Use this when you are creating a client
 // from a (possibly unmarshaled) ClientConfig.  The options can be annotated to come from a value group,
 // which is useful when there are multiple clients in a single fx.App.
-func NewClient(cc ClientConfig, opts ...Option[http.Client]) (*http.Client, error) {
+func NewClient(cc ClientConfig, opts ...arrangeoption.Option[http.Client]) (*http.Client, error) {
 	return NewClientCustom(cc, opts...)
 }
 
@@ -27,13 +28,13 @@ func NewClient(cc ClientConfig, opts ...Option[http.Client]) (*http.Client, erro
 //
 // If the ClientFactory type also implements Option[http.Client], it is applied after
 // all the other options are applied.
-func NewClientCustom[F ClientFactory](cf F, opts ...Option[http.Client]) (c *http.Client, err error) {
+func NewClientCustom[F ClientFactory](cf F, opts ...arrangeoption.Option[http.Client]) (c *http.Client, err error) {
 	c, err = cf.NewClient()
 	if err == nil {
-		c, err = ApplyOptions(c, opts...)
+		c, err = arrangeoption.ApplyOptions(c, opts...)
 	}
 
-	if co, ok := any(cf).(Option[http.Client]); ok && err == nil {
+	if co, ok := any(cf).(arrangeoption.Option[http.Client]); ok && err == nil {
 		err = co.Apply(c)
 	}
 
@@ -51,13 +52,13 @@ func NewClientCustom[F ClientFactory](cf F, opts ...Option[http.Client]) (c *htt
 // The external set of options, if supplied, is applied to the client after any injected options.
 // This allows for options that come from outside the enclosing fx.App, as might be the case
 // for options driven by the command line.
-func ProvideClient(clientName string, external ...Option[http.Client]) fx.Option {
+func ProvideClient(clientName string, external ...arrangeoption.Option[http.Client]) fx.Option {
 	return ProvideClientCustom[ClientConfig](clientName, external...)
 }
 
 // ProvideClientCustom is like ProvideClient, but it allows customization of the concrete
 // ClientFactory dependency.
-func ProvideClientCustom[F ClientFactory](clientName string, external ...Option[http.Client]) fx.Option {
+func ProvideClientCustom[F ClientFactory](clientName string, external ...arrangeoption.Option[http.Client]) fx.Option {
 	if len(clientName) == 0 {
 		return fx.Error(ErrClientNameRequired)
 	}

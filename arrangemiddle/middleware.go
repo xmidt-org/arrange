@@ -1,4 +1,4 @@
-package arrangehttp
+package arrangemiddle
 
 // Middleware is the underlying type for decorators.
 type Middleware[T any] interface {

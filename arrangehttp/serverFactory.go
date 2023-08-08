@@ -2,6 +2,7 @@ package arrangehttp
 
 import (
 	"context"
+	"github.com/xmidt-org/arrange/arrangelisten"
 	"net"
 	"net/http"
 	"time"
@@ -19,7 +20,7 @@ import (
 // A custom ServerFactory implementation can be injected and used via NewServerCustom
 // or ProvideServerCustom.
 type ServerFactory interface {
-	ListenerFactory
+	arrangelisten.ListenerFactory
 
 	// NewServer constructs an *http.Server.
 	NewServer() (*http.Server, error)
@@ -82,13 +83,22 @@ func (sc ServerConfig) NewServer() (server *http.Server, err error) {
 }
 
 // Listen is the ListenerFactory implementation driven by ServerConfig
-func (sc ServerConfig) Listen(ctx context.Context, s *http.Server) (net.Listener, error) {
-	return DefaultListenerFactory{
+func (sc ServerConfig) Listen(ctx context.Context) (net.Listener, error) {
+	dlf := arrangelisten.DefaultListenerFactory{
 		ListenConfig: net.ListenConfig{
 			KeepAlive: sc.KeepAlive,
 		},
 		Network: sc.Network,
-	}.Listen(ctx, s)
+		Address: sc.Address,
+	}
+	if sc.TLS != nil {
+		tls, err := sc.TLS.New()
+		if err != nil {
+			return nil, err
+		}
+		dlf.TLSConfig = tls
+	}
+	return dlf.Listen(ctx)
 }
 
 // Apply allows this configuration object to be seen as an Option[http.Server].

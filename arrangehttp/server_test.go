@@ -2,6 +2,7 @@ package arrangehttp
 
 import (
 	"errors"
+	"github.com/xmidt-org/arrange/arrangeoption"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -88,16 +89,16 @@ func (suite *ServerSuite) testNewServerWithOptions() {
 		suite.supplyConstantHandler(fx.As(new(http.Handler))),
 		fx.Provide(
 			fx.Annotate(
-				func() Option[http.Server] {
-					return AsOption[http.Server](func(s *http.Server) {
+				func() arrangeoption.Option[http.Server] {
+					return arrangeoption.AsOption[http.Server](func(s *http.Server) {
 						s.ReadTimeout = 27 * time.Second
 					})
 				},
 				arrange.Tags().Group("options").ResultTags(),
 			),
 			fx.Annotate(
-				func() Option[http.Server] {
-					return AsOption[http.Server](func(s *http.Server) {
+				func() arrangeoption.Option[http.Server] {
+					return arrangeoption.AsOption[http.Server](func(s *http.Server) {
 						s.WriteTimeout = 345 * time.Minute
 					})
 				},
@@ -184,7 +185,7 @@ func (suite *ServerSuite) testProvideServerFull() {
 		ProvideServer(
 			"test",
 			// verify that external options work:
-			AsOption[http.Server](func(s *http.Server) {
+			arrangeoption.AsOption[http.Server](func(s *http.Server) {
 				s.WriteTimeout = 23973 * time.Hour
 			}),
 		),

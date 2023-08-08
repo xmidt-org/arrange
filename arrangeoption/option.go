@@ -1,4 +1,4 @@
-package arrangehttp
+package arrangeoption
 
 import "go.uber.org/multierr"
 

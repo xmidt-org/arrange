@@ -7,7 +7,7 @@ require (
 	github.com/xmidt-org/httpaux v0.4.0
 	go.uber.org/fx v1.20.1
 	go.uber.org/multierr v1.11.0
-	go.uber.org/zap v1.26.0
+	go.uber.org/zap v1.27.0
 )
 
 require (

@@ -295,10 +295,10 @@ type Config struct {
 	// NextProtos is the list of supported application protocols.  Defaults to "http/1.1" if unset.
 	NextProtos []string
 
-	// MinVersion is the minimum required TLS version.  If unset, the internal crypto/tls default is used.
+	// MinVersion is the minimum required TLS version.  If unset, defaults to TLS 1.3.
 	MinVersion uint16
 
-	// MaxVersion is the maximum required TLS version.  If unset, the internal crypto/tls default is used.
+	// MaxVersion is the maximum required TLS version.  If unset, defaults to TLS 1.3.
 	MaxVersion uint16
 
 	// PeerVerify specifies the certificate validation done on client certificates.

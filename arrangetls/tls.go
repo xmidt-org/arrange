@@ -11,6 +11,18 @@ import (
 	"strings"
 )
 
+const (
+	// ENVIRON_PREFIX is used to prefix an environment variable name when used
+	// as a key log file name.  The remainder of the string is the environment
+	// variable name.
+	ENVIRON_PREFIX = "environ:"
+
+	// FILE_PREFIX is used to prefix a file name when used as a key log file name.
+	// The remainder of the string is the file name.  If the file does not exist,
+	// it is created.  If the file does exist, it is truncated.
+	FILE_PREFIX = "file:"
+)
+
 var (
 	ErrTLSCertificateRequired         = errors.New("Both a certificateFile and keyFile are required")
 	ErrUnableToAddClientCACertificate = errors.New("Unable to add client CA certificate")
@@ -305,6 +317,19 @@ type Config struct {
 	// If supplied, this verifier strategy is merged with any extra PeerVerifiers
 	// supplied in application code.
 	PeerVerify *PeerVerifyConfig
+
+	// KeyLogWriter specifies a writer to log the TLS session keys.  This is useful for
+	// debugging purposes, and is not used in production code.  If unset, no logging
+	// is done.
+	//
+	// If the value starts with "file:", the remainder of the string is used as the
+	// file name.  If the file does not exist, it is created.  If the file does exist,
+	// the file is truncated.
+	//
+	// If the value starts with "env:", the remainder of the string is used as the
+	// environment variable name.  The value of the environment variable is used as
+	// the file name.  If the environment variable does not exist, no logging is done.
+	KeyLogWriter string
 }
 
 // nextProtos returns the appropriate next protocols for the TLS handshake.  By default, http/1.1 is used.
@@ -376,6 +401,27 @@ func (c *Config) certificates(tc *tls.Config) error {
 	return nil
 }
 
+// setKeyLogWriter configures the KeyLogWriter for this configuration.
+func (c *Config) setKeyLogWriter(tc *tls.Config, fn func(string) (*os.File, error)) error {
+	var filename string
+	if strings.HasPrefix(c.KeyLogWriter, FILE_PREFIX) {
+		filename = strings.TrimPrefix(c.KeyLogWriter, FILE_PREFIX)
+	} else if strings.HasPrefix(c.KeyLogWriter, ENVIRON_PREFIX) {
+		envName := strings.TrimPrefix(c.KeyLogWriter, ENVIRON_PREFIX)
+		filename = os.Getenv(envName)
+	}
+
+	if filename != "" {
+		file, err := fn(filename)
+		if err != nil {
+			return err
+		}
+		tc.KeyLogWriter = file
+	}
+
+	return nil
+}
+
 // New constructs a *tls.Config from this Config instance, usually unmarshaled
 // from some external source.  If this instance is nil, it returns nil with no error.
 //
@@ -400,6 +446,9 @@ func (c *Config) New(extra ...PeerVerifier) (*tls.Config, error) {
 	c.enforceVersions(tc)
 	c.peerVerifiers(tc, extra...)
 	if err := c.certificates(tc); err != nil {
+		return nil, err
+	}
+	if err := c.setKeyLogWriter(tc, os.Create); err != nil {
 		return nil, err
 	}
 

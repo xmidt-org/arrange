@@ -806,6 +806,93 @@ func testConfigVersionDefaults(t *testing.T) {
 	}
 }
 
+func testConfigKeyLogWriter(t *testing.T) {
+	testCases := []struct {
+		cfg       Config
+		environ   map[string]string
+		filename  string
+		createErr bool
+		err       bool
+		cfgNil    bool
+	}{
+		{
+			cfg:       Config{},
+			filename:  "",
+			createErr: false,
+			err:       false,
+			cfgNil:    true,
+		},
+		{
+			cfg: Config{
+				KeyLogWriter: "file:/test.log",
+			},
+			filename:  "/test.log",
+			createErr: false,
+			err:       false,
+		},
+		{
+			cfg: Config{
+				KeyLogWriter: "environ:KEY_FILE",
+			},
+			environ: map[string]string{
+				"KEY_FILE": "/test.log",
+			},
+			filename:  "/test.log",
+			createErr: false,
+			err:       false,
+		},
+		{
+			cfg: Config{
+				KeyLogWriter: "environ:NO_ENV_VAR_SET",
+			},
+			createErr: false,
+			err:       false,
+			cfgNil:    true,
+		},
+		{
+			cfg: Config{
+				KeyLogWriter: "file:/test.log",
+			},
+			filename:  "/test.log",
+			createErr: true,
+			err:       true,
+		},
+	}
+
+	for i, testCase := range testCases {
+		t.Run(strconv.Itoa(i), func(t *testing.T) {
+			var tlscfg tls.Config
+
+			mock := func(s string) (*os.File, error) {
+				assert.Equal(t, testCase.filename, s)
+
+				if testCase.createErr {
+					return nil, fmt.Errorf("create error")
+				}
+
+				return &os.File{}, nil
+			}
+
+			for k, v := range testCase.environ {
+				t.Setenv(k, v)
+			}
+
+			err := testCase.cfg.setKeyLogWriter(&tlscfg, mock)
+
+			if testCase.err {
+				assert.Error(t, err)
+			} else {
+				if testCase.cfgNil {
+					assert.Nil(t, tlscfg.KeyLogWriter)
+				} else {
+					assert.NotNil(t, tlscfg.KeyLogWriter)
+				}
+				assert.NoError(t, err)
+			}
+		})
+	}
+}
+
 func TestConfig(t *testing.T) {
 	t.Run("Nil", testConfigNil)
 	t.Run("NoCertificate", testConfigNoCertificate)
@@ -817,4 +904,5 @@ func TestConfig(t *testing.T) {
 	t.Run("RootCAsError", testConfigRootCAsError)
 	t.Run("ClientCAsError", testConfigClientCAsError)
 	t.Run("VersionDefaults", testConfigVersionDefaults)
+	t.Run("KeyLogWriter", testConfigKeyLogWriter)
 }

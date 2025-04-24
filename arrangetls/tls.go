@@ -326,7 +326,7 @@ type Config struct {
 	// file name.  If the file does not exist, it is created.  If the file does exist,
 	// the file is truncated.
 	//
-	// If the value starts with "env:", the remainder of the string is used as the
+	// If the value starts with "environ:", the remainder of the string is used as the
 	// environment variable name.  The value of the environment variable is used as
 	// the file name.  If the environment variable does not exist, no logging is done.
 	KeyLogWriter string

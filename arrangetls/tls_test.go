@@ -65,7 +65,7 @@ func testPeerVerifiersSuccess(t *testing.T) {
 		}
 	)
 
-	key, err := rsa.GenerateKey(random, 512) //nolint:gosec
+	key, err := rsa.GenerateKey(random, 1024) //nolint:gosec
 	require.NoError(err)
 
 	peerCert, err := x509.CreateCertificate(random, template, template, &key.PublicKey, key)
@@ -106,7 +106,7 @@ func testPeerVerifiersExtend(t *testing.T) {
 		}
 	)
 
-	key, err := rsa.GenerateKey(random, 512) //nolint:gosec
+	key, err := rsa.GenerateKey(random, 1024) //nolint:gosec
 	require.NoError(err)
 
 	peerCert, err := x509.CreateCertificate(random, template, template, &key.PublicKey, key)
@@ -145,7 +145,7 @@ func testPeerVerifiersFailure(t *testing.T) {
 		}
 	)
 
-	key, err := rsa.GenerateKey(random, 512) //nolint:gosec
+	key, err := rsa.GenerateKey(random, 1024) //nolint:gosec
 	require.NoError(err)
 
 	peerCert, err := x509.CreateCertificate(random, template, template, &key.PublicKey, key)
@@ -659,7 +659,7 @@ func testConfigVerifyPeerCertificate(t *testing.T) {
 		}
 	)
 
-	key, err := rsa.GenerateKey(random, 512) //nolint:gosec
+	key, err := rsa.GenerateKey(random, 1024) //nolint:gosec
 	require.NoError(err)
 
 	peerCert, err := x509.CreateCertificate(random, template, template, &key.PublicKey, key)

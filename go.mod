@@ -3,7 +3,7 @@ module github.com/xmidt-org/arrange
 go 1.24
 
 require (
-	github.com/stretchr/testify v1.11.0
+	github.com/stretchr/testify v1.11.1
 	github.com/xmidt-org/httpaux v0.4.2
 	go.uber.org/fx v1.24.0
 	go.uber.org/multierr v1.11.0

@@ -157,6 +157,7 @@ func (suite *ClientConfigSuite) TestNewClient() {
 	client := suite.getClient(cc)
 
 	response := suite.sendRequest(client, "GET", nil)
+	defer response.Body.Close()
 	suite.Equal(299, response.StatusCode)
 }
 
@@ -169,6 +170,7 @@ func (suite *ClientConfigSuite) testApplyNoHeader() {
 	suite.Require().NoError(cc.Apply(client))
 
 	response := suite.sendRequest(client, "GET", nil)
+	defer response.Body.Close()
 	suite.Equal(299, response.StatusCode)
 }
 
@@ -189,6 +191,7 @@ func (suite *ClientConfigSuite) testApplyWithHeader() {
 	)
 
 	response := suite.sendRequest(client, "GET", nil)
+	defer response.Body.Close()
 	suite.Equal(299, response.StatusCode)
 }
 
@@ -217,6 +220,7 @@ func (suite *ClientConfigSuite) testApplyCustomRoundTripper() {
 
 	// this will send things to the mock ...
 	response := suite.sendRequest(client, "GET", nil)
+	defer response.Body.Close()
 	suite.Equal(299, response.StatusCode)
 	mockRoundTripper.AssertExpectations()
 }

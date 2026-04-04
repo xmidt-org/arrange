@@ -28,7 +28,10 @@ func (suite *ClientOptionSuite) testClientMiddlewareNoTransport() {
 	}).Apply(suite.target)
 
 	suite.Require().NotNil(suite.target.Transport)
-	suite.target.Transport.RoundTrip(new(http.Request))
+	response, _ := suite.target.Transport.RoundTrip(new(http.Request))
+	if response != nil && response.Body != nil {
+		defer response.Body.Close()
+	}
 	suite.True(called)
 }
 
@@ -61,6 +64,7 @@ func (suite *ClientOptionSuite) testClientMiddlewareWithTransport() {
 	response, err := suite.target.Transport.RoundTrip(expectedRequest)
 	suite.Require().NoError(err)
 	suite.Require().NotNil(response)
+	defer response.Body.Close()
 	suite.Equal(
 		"true",
 		response.Header.Get("Custom"),

@@ -35,6 +35,9 @@ linters:
           - dupl
           - funlen
         path: _test.go
+      - linters:
+          - staticcheck
+        text: "ST1005:"
     paths:
       - third_party$
       - builtin$

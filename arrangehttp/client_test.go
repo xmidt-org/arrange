@@ -41,7 +41,7 @@ func (suite *ClientSuite) TestNewClient() {
 	suite.Require().NotNil(client)
 
 	mockTransport.OnMatchAll(httpmock.RequestMatcherFunc(func(candidate *http.Request) bool {
-		return "true" == candidate.Header.Get("Custom")
+		return candidate.Header.Get("Custom") == "true"
 	})).Response(&http.Response{
 		StatusCode: 299,
 	}).Once()
@@ -55,6 +55,7 @@ func (suite *ClientSuite) TestNewClient() {
 
 	suite.Require().NoError(err)
 	suite.Require().NotNil(response)
+	defer response.Body.Close()
 	suite.Equal(299, response.StatusCode)
 
 	mockTransport.AssertExpectations()

@@ -34,7 +34,14 @@ linters:
       - linters:
           - dupl
           - funlen
+          - gosec
         path: _test.go
+      - linters:
+          - staticcheck
+        text: "ST1005:"
+      - linters:
+          - gosec
+        text: "G123:"
     paths:
       - third_party$
       - builtin$

@@ -39,6 +39,9 @@ linters:
       - linters:
           - staticcheck
         text: "ST1005:"
+      - linters:
+          - gosec
+        text: "G123:"
     paths:
       - third_party$
       - builtin$

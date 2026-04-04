@@ -50,3 +50,9 @@ path = "go.sum"
 precedence = "aggregate"
 SPDX-FileCopyrightText = "SPDX-FileCopyrightText: 2023 Comcast Cable Communications Management, LLC"
 SPDX-License-Identifier = "Apache-2.0"
+
+[[annotations]]
+path = "AUTHORS"
+precedence = "aggregate"
+SPDX-FileCopyrightText = "SPDX-FileCopyrightText: 2020 Comcast Cable Communications Management, LLC"
+SPDX-License-Identifier = "Apache-2.0"

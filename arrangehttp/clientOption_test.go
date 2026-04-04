@@ -64,7 +64,9 @@ func (suite *ClientOptionSuite) testClientMiddlewareWithTransport() {
 	response, err := suite.target.Transport.RoundTrip(expectedRequest)
 	suite.Require().NoError(err)
 	suite.Require().NotNil(response)
-	defer response.Body.Close()
+	if response.Body != nil {
+		defer response.Body.Close()
+	}
 	suite.Equal(
 		"true",
 		response.Header.Get("Custom"),

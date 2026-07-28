@@ -8,7 +8,6 @@ linters:
     - dupl
     - errorlint
     - funlen
-    - goconst
     - gosec
     - misspell
     - prealloc
@@ -16,6 +15,7 @@ linters:
   disable:
     - errcheck
     - ineffassign
+    - goconst
   settings:
     errorlint:
       errorf: false

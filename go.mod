@@ -4,7 +4,7 @@ go 1.24
 
 require (
 	github.com/stretchr/testify v1.12.1
-	github.com/xmidt-org/httpaux v0.4.4
+	github.com/xmidt-org/httpaux v0.4.5
 	go.uber.org/fx v1.24.0
 	go.uber.org/multierr v1.11.0
 	go.uber.org/zap v1.28.0
